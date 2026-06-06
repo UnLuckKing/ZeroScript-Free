@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+
+# Old Playwright MCP profile (no longer used)
+edge_mcp_profile/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
