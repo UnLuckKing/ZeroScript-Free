@@ -18,8 +18,8 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const log = (...a) => console.log("[zeroscript]", ...a);
 
-  // Ko-fi tip link. ⚠️ Replace "zeroscript" with your real Ko-fi username.
-  const KOFI_URL = "https://ko-fi.com/zeroscript";
+  // Ko-fi tip link.
+  const KOFI_URL = "https://ko-fi.com/sebattfg";
   // Roblox "tip" Game Passes — the native currency for the audience.
   const ROBUX_PASSES = [
     { robux: 30, id: 1865342947 },
@@ -313,6 +313,7 @@
     const STABLE_MS = 9000; // generating-flag stuck ON but text frozen → treat as done
     let started = false, doneSince = 0, lastLimitScan = 0;
     let lastText = null, lastChangeAt = Date.now();
+    let preStartSilent = 0; // when Kimi has produced nothing AND isn't generating
 
     while (Date.now() - t0 < TIMEOUT) {
       if (A.stop) return { kind: "stopped" };
@@ -321,10 +322,18 @@
       const newReply = assistantCount() > base;
 
       if (!started) {
-        if (newReply) started = true;
+        if (newReply) { started = true; }
         else {
-          if (Date.now() - t0 > 45000) return { kind: gen ? "timeout" : "empty" };
-          await sleep(150);
+          // Kimi can be slow to even CREATE the reply turn (server queue, a long
+          // "thinking" phase, a big answer). As long as it is generating, keep
+          // waiting — up to the global TIMEOUT. Only give up if it stays silent
+          // (not generating, nothing produced) for a sustained window.
+          if (gen) preStartSilent = 0;
+          else {
+            if (!preStartSilent) preStartSilent = Date.now();
+            if (Date.now() - preStartSilent > 60000) return { kind: "empty" };
+          }
+          await sleep(200);
           continue;
         }
       }

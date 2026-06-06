@@ -1,5 +1,4 @@
-// ⚠️ Replace "zeroscript" with your real Ko-fi username before release.
-const KOFI_URL = "https://ko-fi.com/zeroscript";
+const KOFI_URL = "https://ko-fi.com/sebattfg";
 
 function render(s) {
   const dot = document.getElementById("dot");
