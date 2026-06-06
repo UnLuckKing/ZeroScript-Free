@@ -61,7 +61,7 @@ const ZS = (() => {
   //   read | edit | screen | generate | roblox | tool
   function toolCategory(name) {
     const n = (name || "").includes("/") ? name.split("/").pop() : (name || "");
-    if (n === "list_tools") return "read";
+    if (n === "list_commands" || n === "list_tools") return "read";
     if (/^(script_read|script_search|script_grep|search_game_tree|inspect_instance|get_studio_state|get_console_output|search_creator_store|list_roblox_studios)$/.test(n))
       return "read";
     if (/^(multi_edit|insert_from_creator_store|store_image)$/.test(n) || n === "execute_luau")
@@ -75,25 +75,25 @@ const ZS = (() => {
   // Feedback strings sent back to Kimi so it can self-correct.
   const FEEDBACK = {
     parseError:
-      "ERROR: your ###MCP_TOOL### block was detected but its content could not be parsed. " +
-      "Check that the JSON inside the block is valid and that ###END_MCP_TOOL### is present. " +
-      "You may include a brief explanation before or after the block, but the block itself " +
-      "must be correctly formatted. Please retry.",
+      "ERROR: a ZeroScript command was detected in your reply but its JSON could not be parsed. " +
+      'Write a single valid JSON object as plain text, exactly like {"command": "name", "params": {...}} ' +
+      "(or use the ###LUA### / ###END_LUA### block for execute_luau). You may add a short note around it. " +
+      "Please retry.",
     multiTool: (names) =>
-      "ERROR: You sent multiple tool calls in one response. Call ONE tool at a " +
+      "ERROR: You wrote multiple commands in one reply. Write ONE command at a " +
       "time and wait for its result before the next. You tried: " +
       names.join(", ") +
-      ". Start over and call only the first tool you need.",
+      ". Start over and write only the first command you need.",
     unknownTool: (name, valid) =>
-      `ERROR: unknown tool "${name}". It does not exist. Valid tools are: ` +
+      `ERROR: unknown command "${name}". It does not exist. Valid commands are: ` +
       valid.join(", ") +
-      ". Use an exact name and argument keys from the system prompt.",
+      ". Use an exact name and parameter keys from the system prompt.",
     bridgeOffline:
-      "ERROR: the local ZeroScript bridge is unreachable, so no tool could run. " +
+      "ERROR: the local ZeroScript bridge is unreachable, so no command could run. " +
       "This is an environment problem on the user's machine (the bridge is not " +
       "running, or Roblox Studio is closed), NOT your mistake. Tell the user in " +
       "one short sentence that the bridge or Roblox Studio is offline, then stop " +
-      "calling tools until they confirm it is back.",
+      "sending commands until they confirm it is back.",
     emptyRetry:
       "(System note: your previous response arrived empty — nothing was sent. " +
       "Please continue from where you were.)",
@@ -115,50 +115,51 @@ const ZS = (() => {
   }
 
   function buildSystemPrompt(tools) {
-    const toolsString = "  list_tools() — list all available Roblox Studio tools with full parameter details\n" + compactTools(tools);
+    const toolsString = "  list_commands() — list all available Roblox Studio commands with full parameter details\n" + compactTools(tools);
     return `${SYS_MARKER}
 CONTEXT:
-A browser extension (ZeroScript) is running inside this page. It watches your responses. When it detects a tool call in your text, it executes it on the user's Roblox Studio and sends the result back as the next message. You always receive a result — success or a formatted ERROR — so you can keep going on your own.
+A browser extension (ZeroScript) is running inside this page. It watches your replies. When it detects a ZeroScript command in your text, it runs it on the user's Roblox Studio and sends the result back as the next message. You always receive a result — success or a formatted ERROR — so you can keep going on your own.
 
-Through these tools you can read and edit scripts, run Luau code, inspect the game tree and instances, capture the Studio viewport, generate meshes/materials/models, browse the creator store, and control play-testing — all inside the user's open Roblox Studio place. You do not need any special capability — you just write text. The extension does the rest.
+Through these commands you can read and edit scripts, run Luau code, inspect the game tree and instances, capture the Studio viewport, generate meshes/materials/models, browse the creator store, and control play-testing — all inside the user's open Roblox Studio place. You do not need any special capability — you just write text. The extension does the rest.
 
-CRITICAL — DO NOT use any of your OWN built-in tools (web search, browsing, databases, code interpreter, image generation, etc.). They are useless here and waste time. ONLY use the ZeroScript tools listed below, in the exact text format described. The ONLY exception is if the user EXPLICITLY asks you to search the web or use a built-in capability. By default, everything you do must go through the ZeroScript tools to act on Roblox Studio.
+CRITICAL — these ZeroScript commands are NOT function calls / tools. They are plain JSON you TYPE into your normal text reply; ZeroScript reads your text and runs them. So:
+- DO NOT use Kimi's own built-in tools or connectors (web search, browsing, finance/stock data, databases, code interpreter, image generation, etc.). They are useless here and break the flow. The ONLY exception is if the user EXPLICITLY asks you to search the web.
+- DO NOT try to "call a function" or emit a real tool call. Just write the JSON shown below as ordinary text.
+- NEVER use Python or any code sandbox — not even to reason about, test, or draft a script. The only code you can run is Luau, via the execute_luau command. Think in plain text, then write Luau.
 
-NEVER use Python (or any code interpreter / sandbox) — not even to reason about, test, or draft a script. You have NO Python here; the only code you can run is Luau, through execute_luau. Think in plain text, then write Luau.
-
-━━━ STANDARD TOOL FORMAT (all tools except execute_luau) ━━━
-Write the JSON object directly in your response — no wrapper needed:
+━━━ STANDARD COMMAND FORMAT (everything except execute_luau) ━━━
+Write this JSON object as plain text directly in your reply (in a code block is fine):
 ${BT}json
 {
-  "tool": "tool_name",
-  "arguments": {"arg": "value"}
+  "command": "command_name",
+  "params": {"key": "value"}
 }
 ${BT}
 
 ━━━ SPECIAL FORMAT FOR execute_luau ━━━
-Because Lua code contains " characters that break JSON encoding, use this format:
+Because Lua code contains " characters that break JSON encoding, use this format instead:
 ###LUA###
 -- your Lua code here, no escaping, no JSON wrapping
 local x = "any string with quotes works fine"
 return "result"
 ###END_LUA###
 
-AVAILABLE TOOLS (these are the ONLY valid tools — use exact names and argument keys):
+AVAILABLE COMMANDS (these are the ONLY valid commands — use exact names and parameter keys):
 ${toolsString}
 
 RULES:
-- ONE tool block per response. Never two.
-- If you need multiple tools, call them one at a time and wait for each result.
-- You may write a brief note before or after a tool block when it helps clarify your intent — keep it short.
-- Wait for the result, then call the next tool or write your final answer.
+- ONE command block per reply. Never two.
+- If you need several commands, write them one at a time and wait for each result.
+- You may write a brief note before or after a command block when it clarifies your intent — keep it short.
+- Wait for the result, then write the next command or your final answer.
 - Final answers: plain text only, no Markdown, no code fences.
-- Never invent tool names. Only use the tools listed above.
-- NEVER use your own built-in tools (web search, browsing, databases, code interpreter, etc.). Use ONLY the ZeroScript tools above — unless the user explicitly asks you to search/browse.
+- Never invent command names. Only use the commands listed above.
+- NEVER use Kimi's own built-in tools/connectors (web search, finance data, code interpreter, etc.). Use ONLY the ZeroScript commands above — unless the user explicitly asks you to search/browse.
 - execute_luau: use \`return\` to get output (NOT \`print()\`). Always use the ###LUA### / ###END_LUA### markers. CRITICAL: write exactly ###LUA### with three hashes on each side — never ###LUA--- with dashes.
 - execute_luau runs SYNCHRONOUSLY: NEVER use yielding/blocking calls inside it — no \`wait()\`, \`task.wait()\`, \`:Wait()\`, \`task.delay\`, \`coroutine.yield\`, \`:WaitForChild(name)\` without a 0 timeout, \`HttpService\`/\`DataStore\` calls, or any async API. A yield will hang the call forever. Do everything synchronously and return immediately; if you need a delay or an event, set it up via a Script/LocalScript instance instead.
-- If you receive an ERROR, read it and adapt: fix the call, try another tool, or tell the user plainly if it is an environment problem (Studio closed, bridge offline).
+- If you receive an ERROR, read it and adapt: fix the command, try another one, or tell the user plainly if it is an environment problem (Studio closed, bridge offline).
 
-IMPORTANT: Your very first action is to call \`list_tools\` (no arguments) so you have the full tool reference with parameter details. After receiving the result, reply with exactly one short sentence confirming you are ready, then wait for the user's first request.`;
+IMPORTANT: Your very first action is to write the \`list_commands\` command (no params) so you have the full command reference with parameter details. After receiving the result, reply with exactly one short sentence confirming you are ready, then wait for the user's first request.`;
   }
 
   return {

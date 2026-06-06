@@ -194,8 +194,21 @@
       r.includes("MCP_TOOL") ||
       r.includes(LUA_START) ||
       r.includes(LUA_START_ALT) ||
+      (r.includes('"command"') && r.includes('"params"')) ||
       (r.includes('"tool"') && r.includes('"arguments"'))
     );
+  }
+
+  // Normalise a parsed JSON object into { tool, arguments }, accepting both the
+  // new ZeroScript schema ("command"/"params") and the legacy/function-calling
+  // schema ("tool"/"arguments"/"name"/"args"). Returns null if not a valid call.
+  function normalizeCall(o) {
+    if (!o || typeof o !== "object") return null;
+    const name = o.command != null ? o.command : (o.tool != null ? o.tool : o.name);
+    let args = o.params != null ? o.params : (o.arguments != null ? o.arguments : o.args);
+    if (typeof name !== "string" || !name) return null;
+    if (!args || typeof args !== "object") args = {};
+    return { tool: name, arguments: args };
   }
 
   function extractJson(raw) {
@@ -212,23 +225,25 @@
   }
 
   function extractToolAnywhere(text) {
-    let pos = 0;
-    while (true) {
-      const s = text.indexOf('"tool"', pos);
-      if (s === -1) break;
-      const start = text.lastIndexOf("{", s);
-      if (start === -1) { pos = s + 1; continue; }
-      let depth = 0, end = -1;
-      for (let i = start; i < text.length; i++) {
-        if (text[i] === "{") depth++;
-        else if (text[i] === "}") { depth--; if (depth === 0) { end = i; break; } }
+    for (const key of ['"command"', '"tool"']) {
+      let pos = 0;
+      while (true) {
+        const s = text.indexOf(key, pos);
+        if (s === -1) break;
+        const start = text.lastIndexOf("{", s);
+        if (start === -1) { pos = s + 1; continue; }
+        let depth = 0, end = -1;
+        for (let i = start; i < text.length; i++) {
+          if (text[i] === "{") depth++;
+          else if (text[i] === "}") { depth--; if (depth === 0) { end = i; break; } }
+        }
+        if (end === -1) { pos = s + 1; continue; }
+        try {
+          const call = normalizeCall(JSON.parse(text.slice(start, end + 1)));
+          if (call) return call;
+        } catch {}
+        pos = s + 1;
       }
-      if (end === -1) { pos = s + 1; continue; }
-      try {
-        const obj = JSON.parse(text.slice(start, end + 1));
-        if (typeof obj.tool === "string" && typeof obj.arguments === "object") return obj;
-      } catch {}
-      pos = s + 1;
     }
     return null;
   }
@@ -263,7 +278,7 @@
       for (const sub of body.split(START_M)) {
         const cleaned = sub.trim().replace(/^(?:json|JSON|Copy|copy)\s*/i, "").trim();
         if (!cleaned) continue;
-        const p = extractJson(cleaned);
+        const p = normalizeCall(extractJson(cleaned));
         if (p) out.push(p);
       }
       from = em + END_M.length;
@@ -283,10 +298,10 @@
   }
 
   function toolNameFromText(txt) {
-    const m = txt.match(/"tool"\s*:\s*"([^"]+)"/);
+    const m = txt.match(/"(?:command|tool)"\s*:\s*"([^"]+)"/);
     if (m) return m[1];
     if (txt.includes("execute_luau") || txt.includes(LUA_START) || txt.includes(LUA_START_ALT)) return "execute_luau";
-    return "tool";
+    return "command";
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -431,10 +446,10 @@
     const name = call.tool;
     const args = call.arguments || {};
     if (!name) return ZS.FEEDBACK.parseError;
-    // Virtual tool: list all available MCP tools with full parameter details.
-    if (name === "list_tools") {
+    // Virtual command: list all available Roblox commands with full parameter details.
+    if (name === "list_commands" || name === "list_tools") {
       await ensureTools();
-      if (!A.toolList.length) return "No tools available — the bridge or Roblox Studio may be offline.";
+      if (!A.toolList.length) return "No commands available — the bridge or Roblox Studio may be offline.";
       const lines = A.toolList.map((t) => {
         const props = (t.inputSchema && t.inputSchema.properties) || {};
         const req = new Set((t.inputSchema && t.inputSchema.required) || []);
@@ -443,7 +458,7 @@
           .join("\n");
         return `${t.name}: ${(t.description || "").split("\n")[0]}${params ? "\n" + params : ""}`;
       });
-      return `Output of 'list_tools':\nAvailable tools (${A.toolList.length}):\n\n${lines.join("\n\n")}`;
+      return `Output of '${name}':\nAvailable commands (${A.toolList.length}):\n\n${lines.join("\n\n")}`;
     }
     if (A.toolNames.size && !A.toolNames.has(name)) {
       return ZS.FEEDBACK.unknownTool(name, [...A.toolNames]);
@@ -634,11 +649,13 @@
       const base = await submitAndGetBase(prompt);
       decorate.sweep(); // show the animated "Starting Up" chip immediately
       const startRes = await waitForResponse(base);
-      // If Kimi calls list_tools as instructed, run it and wait for the "ready" reply.
-      if (startRes.kind === "tool" && startRes.calls && startRes.calls.length === 1 && startRes.calls[0].tool === "list_tools") {
-        decorate.toolBox(startRes.item, "Loading tools", "run", "", true);
+      // If Kimi calls list_commands as instructed, run it and wait for the "ready" reply.
+      const firstName = startRes.calls && startRes.calls[0] && startRes.calls[0].tool;
+      if (startRes.kind === "tool" && startRes.calls && startRes.calls.length === 1 &&
+          (firstName === "list_commands" || firstName === "list_tools")) {
+        decorate.toolBox(startRes.item, "Loading commands", "run", "", true);
         const toolFeedback = await runTool(startRes.calls[0]);
-        decorate.toolBox(startRes.item, "Loading tools", "done", `${A.toolList.length} tools`, true);
+        decorate.toolBox(startRes.item, "Loading commands", "done", `${A.toolList.length} commands`, true);
         const base2 = await submitAndGetBase(toolFeedback);
         await waitForResponse(base2); // wait for "I'm ready" reply
       }
@@ -782,7 +799,7 @@
         const txt = el.textContent || "";
         const tLow = txt.toLowerCase();
         const isToolEl = TOOL_MARKERS.some((m) => tLow.includes(m)) ||
-          /\{\s*"tool"\s*:/.test(txt);
+          /\{\s*"(?:command|tool)"\s*:/.test(txt);
         if (!isToolEl) continue;
         // Prefer hiding the whole code-block container if there is one, so the
         // language label / copy header disappears with the code.
@@ -880,8 +897,10 @@
         }
         return;
       }
-      // Assistant tool-call turns → live loading while streaming, ✓ when done.
-      if (txt.includes(START_M) || (txt.includes('"tool"') && txt.includes('"arguments"'))) {
+      // Assistant command turns → live loading while streaming, ✓ when done.
+      if (txt.includes(START_M) ||
+          (txt.includes('"command"') && txt.includes('"params"')) ||
+          (txt.includes('"tool"') && txt.includes('"arguments"'))) {
         const live = item === lastAssistant() && (isGenerating() || A.running);
         const phase = live ? "run" : "done";
         if (item.dataset.zphase !== phase) this.toolBox(item, toolNameFromText(txt), phase, "", false);
