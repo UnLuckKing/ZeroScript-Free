@@ -1796,8 +1796,7 @@
     function placeSetup() {
       if (!setupCard || setupCard.hidden || !panel) return;
       const r = panel.getBoundingClientRect();
-      setupCard.style.bottom = (window.innerHeight - r.top + 10) + "px";
-      setupCard.style.right = "18px";
+      setupCard.style.top = (r.bottom + 10) + "px";
       setupRaf = requestAnimationFrame(placeSetup);
     }
 
