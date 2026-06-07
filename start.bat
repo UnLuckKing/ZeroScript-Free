@@ -1,17 +1,18 @@
 @echo off
 REM ============================================================================
-REM  ZeroScript Free — launcher
+REM  ZeroScript Free - launcher
 REM
 REM  This file does only three things, and nothing is hidden:
-REM    1. Find Python on your PC.
+REM    1. Find Python on your PC (installs it automatically if missing).
 REM    2. Install the ONE dependency (the "websockets" library) if missing.
-REM    3. Run bridge.py — the local bridge, sitting right next to this file.
+REM    3. Run bridge.py, the local bridge sitting right next to this file.
 REM
 REM  Nothing is downloaded and run behind your back. Open bridge.py in any text
 REM  editor and read it: it's the whole program. This window stays open so you
-REM  can see what the bridge is doing — close it to stop the bridge.
+REM  can see what the bridge is doing, close it to stop the bridge.
 REM ============================================================================
 setlocal
+chcp 65001 >nul
 title ZeroScript Bridge
 cd /d "%~dp0"
 
@@ -21,20 +22,46 @@ where py >nul 2>nul && set "PY=py -3"
 if not defined PY (
     where python >nul 2>nul && set "PY=python"
 )
+
+REM --- If Python not found, try to install it automatically via winget ---------
 if not defined PY (
     echo.
-    echo   Python is not installed.
-    echo   Install it once from https://www.python.org/downloads/
-    echo   ^(tick "Add python.exe to PATH" in the installer^), then run this again.
+    echo   Python not found. Trying to install it automatically...
+    echo   (Windows will ask for confirmation, click Yes)
     echo.
-    pause
-    exit /b 1
+    winget install --id Python.Python.3.12 --source winget --accept-package-agreements --accept-source-agreements
+    if errorlevel 1 (
+        echo.
+        echo   Automatic install failed.
+        echo   Please install Python manually from https://www.python.org/downloads/
+        echo   Tick "Add python.exe to PATH" in the installer, then run this again.
+        echo.
+        pause
+        exit /b 1
+    )
+    REM Refresh PATH so the new Python is found
+    call refreshenv >nul 2>nul
+    where py >nul 2>nul && set "PY=py -3"
+    if not defined PY (
+        where python >nul 2>nul && set "PY=python"
+    )
+    if not defined PY (
+        echo.
+        echo   Python was installed but not found in PATH.
+        echo   Please close this window and run start.bat again.
+        echo.
+        pause
+        exit /b 1
+    )
+    echo.
+    echo   Python installed successfully!
+    echo.
 )
 
-REM --- 2. Make sure the "websockets" library is present ----------------------
+REM --- 2. Make sure the "websockets" library is present -----------------------
 %PY% -c "import websockets" >nul 2>nul
 if errorlevel 1 (
-    echo   Installing the websockets library ^(one-time^)...
+    echo   Installing the websockets library (one-time)...
     %PY% -m pip install --user websockets
     if errorlevel 1 (
         echo.
@@ -45,7 +72,7 @@ if errorlevel 1 (
     )
 )
 
-REM --- 3. Run the bridge -----------------------------------------------------
+REM --- 3. Run the bridge ------------------------------------------------------
 echo.
 %PY% "%~dp0bridge.py"
 
