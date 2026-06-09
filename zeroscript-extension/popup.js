@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 const KOFI_URL = "https://ko-fi.com/sebattfg";
 
 function render(s) {
