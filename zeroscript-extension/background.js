@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // background.js — service worker.
 // Owns ONE resilient WebSocket to the local bridge (ws://127.0.0.1:PORT).
 // Keeping the socket here (not in the content script) avoids https→ws mixed
