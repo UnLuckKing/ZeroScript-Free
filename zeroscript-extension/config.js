@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // config.js - shared constants for content.js (same isolated world).
 // Kept free of `window`/`document` so background.js could importScripts() it too.
 // This is the DeepSeek build (chat.deepseek.com). The Kimi build lives in
