@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // content.js - runs on chat.deepseek.com. Drives the agentic loop in-page.
 // Reads DeepSeek's DOM (textContent, render-independent), parses tool calls,
 // asks background to execute them on the Roblox MCP, and feeds results back.
