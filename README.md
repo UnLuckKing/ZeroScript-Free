@@ -18,7 +18,7 @@ The extension runs inside DeepSeek's chat page. When you type a request, it send
 
 ## Setup
 
-> 📺 **Lost? Watch the [setup tutorial on YouTube](https://youtu.be/QaViHSqzy5Q) — it covers every step below.**
+> 📺 **Lost? Watch the [setup tutorial on YouTube](https://youtu.be/QaViHSqzy5Q) it covers every step below.**
 
 ### 1. Download the zip and install the extension
 
