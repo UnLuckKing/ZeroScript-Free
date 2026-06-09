@@ -2,7 +2,7 @@
 
 ![GitHub stars](https://img.shields.io/github/stars/sebattfg/ZeroScript-Free?style=social)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
-![License](https://img.shields.io/badge/license-MIT-blue)
+![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 
 **ZeroScript** is a free browser extension that turns DeepSeek into a Roblox Studio AI agent.
 Control Roblox Studio with AI directly from your browser - read/edit scripts, run Luau, generate assets, all from chat.deepseek.com. No terminal needed.
