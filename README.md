@@ -8,7 +8,6 @@
 Control Roblox Studio with AI directly from your browser - read/edit scripts, run Luau, generate assets, all from chat.deepseek.com. No terminal needed.
 
 > *Also known as: ZeroScript Roblox, ZeroScript free download, Roblox DeepSeek agent, Roblox Studio AI automation, Luau AI, MCP Roblox*
-
 ## How it works
 
 ```
@@ -18,6 +17,8 @@ DeepSeek (browser) -> ZeroScript Extension -> Bridge (your PC) -> Roblox Studio
 The extension runs inside DeepSeek's chat page. When you type a request, it sends commands to the Bridge running on your PC, which drives Roblox Studio through the MCP plugin.
 
 ## Setup
+
+> 📺 **Lost? Watch the [setup tutorial on YouTube](https://youtu.be/QaViHSqzy5Q) — it covers every step below.**
 
 ### 1. Download the zip and install the extension
 
@@ -35,15 +36,11 @@ To load the extension:
 Open Studio and load a Place, then enable MCP (first time only):
 
 - Click **Assistant AI** in the top bar
-
-![Assistant AI button](https://private-user-images.githubusercontent.com/108460460/604112243-088c7880-4b6c-417b-bf11-87ae18868b75.png?raw=true)
-
 - Click **...** (top right of the Assistant panel)
-
-![MCP menu](https://private-user-images.githubusercontent.com/108460460/604112319-57948453-9fbd-4853-937c-d1ab98144130.png?raw=true)
-
 - Click **Manage MCP Servers**
 - Click **Enable Studio as MCP Server**
+
+> Not sure where to find these options? The [video tutorial](https://youtu.be/QaViHSqzy5Q) shows exactly where to click.
 
 ### 3. Run the Bridge
 
@@ -54,7 +51,6 @@ Double-click `start.bat` inside the extracted folder. A small window opens, that
 Go to https://chat.deepseek.com and open a new chat. The ZeroScript panel appears at the bottom right. Click **Start session**. Type what you want to build.
 
 > Only works on chat.deepseek.com - it will not work on any other site.
-
 ### 5. Watch the setup tutorial
 
 [Watch the setup tutorial on YouTube](https://youtu.be/QaViHSqzy5Q)
