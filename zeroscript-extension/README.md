@@ -14,10 +14,11 @@ Control Roblox Studio with AI directly from DeepSeek. Just describe what you wan
 **Then set up the Bridge:**
 1. **Download the Bridge** from the [GitHub releases page](https://github.com/sebattfg/ZeroScript-Free)
 2. **Open Roblox Studio** and load a Place
-3. **Run start.bat** - a small window opens, the Bridge is running
-4. **Go to https://chat.deepseek.com**, open a new chat (only works on this exact address)
-5. Click **Start session** in the ZeroScript panel
-6. Type what you want to build
+3. **Enable the MCP server in Roblox Studio** (first time only): click **Assistant AI** in the top bar, then **...** > **Manage MCP Servers** > **Enable Studio as MCP Server**
+4. **Run start.bat** - a small window opens, the Bridge is running
+5. **Go to https://chat.deepseek.com**, open a new chat (only works on this exact address)
+6. Click **Start session** in the ZeroScript panel
+7. Type what you want to build
 
 📺 [Watch the setup tutorial](https://youtu.be/QaViHSqzy5Q)
 
