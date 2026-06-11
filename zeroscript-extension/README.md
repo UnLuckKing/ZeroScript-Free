@@ -22,6 +22,27 @@ Control Roblox Studio with AI directly from DeepSeek. Just describe what you wan
 
 📺 [Watch the setup tutorial](https://youtu.be/QaViHSqzy5Q)
 
+## Architecture (for contributors)
+
+The extension is split between a provider-agnostic core and per-AI-site providers:
+
+```
+core/config.js        system prompt, feedback strings, tool categories (global ZS)
+core/parser.js        ZeroScript command parsing - pure string logic   (global ZSParse)
+core/main.js          agentic loop, UI, camouflage, session state      (uses ZSProvider)
+providers/deepseek.js everything DeepSeek-specific: DOM selectors, generation
+                      detection, send mechanics, composer modes…       (global ZSProvider)
+background.js         WebSocket to the local bridge (provider-agnostic)
+```
+
+`core/main.js` never touches the host site's DOM directly - it only calls the
+`ZSProvider` interface. To integrate another AI site: write a new
+`providers/<site>.js` exporting the same interface, then add its URL pattern to
+`manifest.json` (`content_scripts` + `host_permissions`) and to
+`PROVIDER_URLS` in `background.js`. No core change required.
+
+Run `node test-parser.js` to smoke-test the command parser.
+
 ## Support
 
 ☕ [Ko-fi](https://ko-fi.com/sebattfg) - Robux tip passes available in the extension panel

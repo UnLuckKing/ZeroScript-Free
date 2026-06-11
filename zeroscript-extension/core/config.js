@@ -1,104 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// config.js - shared constants for content.js (same isolated world).
-// Kept free of `window`/`document` so background.js could importScripts() it too.
-// This is the DeepSeek build (chat.deepseek.com). The Kimi build lives in
-// ../edge-extension and is left untouched.
+// core/config.js - provider-agnostic constants: app identity, system prompt,
+// feedback strings, tool categorisation. NOTHING in this file may reference a
+// specific AI site (DOM, selectors, site names) - that lives in providers/*.
 // eslint-disable-next-line no-unused-vars
 const ZS = (() => {
-  const WS_PORT = 17613; // same local bridge as the Kimi build (the bridge accepts many clients)
+  "use strict";
 
   // Display name + unique marker injected at the top of the system prompt so the
   // content script can reliably recognise (and camouflage) the bootstrap turn.
   const APP_NAME = "ZeroScript";
   const SYS_MARKER = "⟦ZS-SYS⟧";
-
-  // DOM selectors for chat.deepseek.com. Grouped so a future site tweak is a
-  // one-liner. DeepSeek ships hashed CSS-module class names (e.g. `d29f3d7d`);
-  // where possible we lean on its stable design-system "ds-" classes instead.
-  const SELECTORS = {
-    // One logical turn = one .ds-message. The user-turn variant carries an extra
-    // hashed modifier class (userMod) and a `.fbb737a4` bubble; the assistant
-    // turn carries a `.ds-markdown` body. content.js classifies with isUser()
-    // (multi-signal) rather than trusting a single fragile class.
-    chatItem: ".ds-message",
-    userMod: "d29f3d7d", // hashed modifier on user turns (one-liner to update if DeepSeek redeploys)
-    userBubble: ".fbb737a4", // user text bubble (secondary signal)
-    assistant: ".ds-message:not(.d29f3d7d)",
-    user: ".ds-message.d29f3d7d",
-    box: ".ds-markdown",
-    editor: "textarea", // DeepSeek uses a real <textarea>, NOT a contenteditable
-    // DeepSeek renders its DeepThink/R1 reasoning inside .ds-think-content. The
-    // real answer is a .ds-markdown OUTSIDE that container.
-    thinking: ".ds-think-content",
-    markdown: ".ds-markdown",
-    // The send/stop control: a single primary footer button. While generating it
-    // shows a <rect> (stop square); idle it shows a <path> (send arrow). The
-    // <rect> test lives in content.js isGenerating(); .ds-loading covers the
-    // brief spin-up before the first token. (CSS-only fallback signal here.)
-    generating: ".ds-loading",
-    sendBtn: ".ds-button--primary",
-    stopBtn: ".ds-button--primary",
-    // surfaces where DeepSeek shows errors / limit modals / toasts
-    errorSurfaces:
-      '[class*="ds-toast"],[class*="toast"],[class*="error"],[class*="alert"],' +
-      '[class*="warning"],[class*="modal"],[role="alert"]',
-    // composer image-attachment area (best-effort; DeepSeek's image support is
-    // limited, so the attach path degrades gracefully if these don't match).
-    attachArea: ".ds-file-list, [class*='file-preview'], [class*='upload']",
-    imageThumb: "[class*='thumbnail'], [class*='file-item']",
-    // ── Composer mode controls (empty chat only) ──────────────────────────
-    // A blank conversation shows a [role=radiogroup] with two [role=radio]
-    // options: "Rapide" (fast, default) and "Expert" (better results). We force
-    // Expert. The "Pensée profonde / Réflexion" DeepThink toggle is a single
-    // .ds-toggle-button below the textarea; we force it on and hide it so it can
-    // never be turned off. (Validated live.)
-    modeRadioGroup: '[role="radiogroup"]',
-    modeRadio: '[role="radio"]',
-    deepThinkToggle: ".ds-toggle-button",
-  };
-
-  // Error / state regexes (English + French - DeepSeek's UI follows the locale).
-  const RE = {
-    contextLimit: new RegExp(
-      [
-        "conversation.{0,20}(too long|trop long)",
-        "context.{0,20}(limit|exceeded|d\\u00e9pass\\u00e9)",
-        "session.{0,20}(expired|expir\\u00e9e)",
-        "please.{0,30}(start|cr\\u00e9er).{0,20}(new|nouveau).{0,20}(chat|conversation)",
-        "(token|context).{0,10}limit",
-        "message.{0,20}too.{0,10}long",
-        "maximum.{0,20}context",
-        "this conversation has reached",
-        "cette conversation a atteint",
-      ].join("|"),
-      "i"
-    ),
-    tooLong: /conversation .{0,20}(too long|getting too long|trop longue)/i,
-    // DeepSeek very frequently shows "The server is busy. Please try again later."
-    busy: /server is busy|serveur est occup|please try again|réessayer plus tard|system is currently busy/i,
-    // DeepSeek truncates long outputs and shows a "Continue" button to resume the
-    // SAME turn. We match it by (visible) button text - locale-robust.
-    continueBtn: /^(continue|continuer|继续(生成)?|fortfahren|continuar|seguir|続行)$/i,
-    // Per-turn "halted" marker DeepSeek renders INSIDE a stopped turn (manual stop
-    // or an interrupted generation). Used to tell "actively reasoning" apart from
-    // "stopped" without relying on the global footer Continue button.
-    stopped: /(arrêté|arrété|stopped|已停止|停止生成|已暂停)/i,
-    // Composer mode labels. "Expert" is the same token in FR/EN, so it is the
-    // reliable anchor: we select the Expert radio and hide every OTHER radio.
-    expertMode: /expert|专家|专业/i,
-    // The DeepThink toggle's label across locales ("Pensée profonde" FR,
-    // "DeepThink"/"Deep Thinking" EN, "Réflexion (approfondie)", 深度思考).
-    deepThink: /pensée profonde|pensee profonde|profonde|réflexion|reflexion|deep ?think|深度思考|r1/i,
-    // Search/browsing toggle. It is visible in "Rapide" and disappears in
-    // "Expert" (validated live), so absence is OK after Expert is selected.
-    searchMode: /recherche intelligente|smart search|search|web|搜索/i,
-    // DeepSeek's "New chat" button label (top of the sidebar). Used by the panel's
-    // "New session" action to open a FRESH conversation before injecting the
-    // system prompt - matched as the WHOLE trimmed text so a history item titled
-    // "Nouvelle conversation" (which links to an existing chat) is told apart by
-    // the caller (no href + an icon + near the top).
-    newChat: /^(nouvelle conversation|new chat|new conversation|开启新对话|新对话)$/i,
-  };
 
   // ── Tool → visual category (icon + colour theme for the chips) ─────────
   // Roblox Studio MCP only. Returns one of:
@@ -116,7 +27,7 @@ const ZS = (() => {
     return "tool";
   }
 
-  // Feedback strings sent back to DeepSeek so it can self-correct.
+  // Feedback strings sent back to the model so it can self-correct.
   const FEEDBACK = {
     parseError:
       "ERROR: a ZeroScript command was detected in your reply but its JSON could not be parsed. " +
@@ -132,6 +43,12 @@ const ZS = (() => {
       `ERROR: unknown command "${name}". It does not exist. Valid commands are: ` +
       valid.join(", ") +
       ". Use an exact name and parameter keys from the system prompt.",
+    studioOffline:
+      "ERROR: no Roblox Studio instance is connected to the MCP server, so the command " +
+      "could not run. Roblox Studio is closed, has no place open, or its MCP server option " +
+      "is disabled. This is an environment problem on the user's machine, NOT your mistake. " +
+      "Tell the user in one short sentence to open their place in Roblox Studio and enable " +
+      "the MCP server (Assistant settings), then stop sending commands until they confirm.",
     bridgeOffline:
       "ERROR: the local ZeroScript bridge is unreachable, so no command could run. " +
       "This is an environment problem on the user's machine (the bridge is not " +
@@ -159,7 +76,10 @@ const ZS = (() => {
       .join("\n");
   }
 
-  function buildSystemPrompt(tools) {
+  // `siteName` = the host AI's display name (provider.displayName), used only to
+  // word the "don't use the site's own features" rules; `siteNotes` lets a
+  // provider append site-specific instructions (optional).
+  function buildSystemPrompt(tools, siteName = "this AI site", siteNotes = "") {
     const toolsString = "  list_commands() - list all available Roblox Studio commands with full parameter details\n" + compactTools(tools);
     return `${SYS_MARKER}
 CONTEXT:
@@ -168,7 +88,7 @@ A browser extension (ZeroScript) is running inside this page. It watches your re
 Through these commands you can read and edit scripts, run Luau code, inspect the game tree and instances, capture the Studio viewport, generate meshes/materials/models, browse the creator store, and control play-testing - all inside the user's open Roblox Studio place. You do not need any special capability - you just write text. The extension does the rest.
 
 CRITICAL - these ZeroScript commands are NOT function calls / tools. They are plain JSON you TYPE into your normal text reply; ZeroScript reads your text and runs them. So:
-- DO NOT use DeepSeek's own built-in features (the "Search"/web-search toggle, browsing, file/web connectors, etc.). They are useless here and break the flow. The ONLY exception is if the user EXPLICITLY asks you to search the web. Internal reasoning (DeepThink) is fine.
+- DO NOT use ${siteName}'s own built-in features (the "Search"/web-search toggle, browsing, file/web connectors, etc.). They are useless here and break the flow. The ONLY exception is if the user EXPLICITLY asks you to search the web. Internal reasoning (deep-think modes) is fine.
 - DO NOT try to "call a function" or emit a real tool call. Just write the JSON shown below as ordinary text.
 - NEVER use a code sandbox or pretend to run code - not even to reason about, test, or draft a script. The only code you can run is Luau, via the execute_luau command. Think in plain text, then write Luau.
 
@@ -211,20 +131,18 @@ RULES:
 - Do ONLY what the user asked. Do NOT run extra "double-check", verification, or exploration commands they did not request. Prefer the fewest commands that get the job done.
 - When the task is finished, or the user signals satisfaction (e.g. "thanks", "perfect", "nice", "ok"), reply with ONE short plain-text sentence and STOP. Do not write another command - wait for the next request.
 - Never invent command names. Only use the commands listed above.
-- NEVER use DeepSeek's own built-in features (web search, connectors, etc.). Use ONLY the ZeroScript commands above - unless the user explicitly asks you to search/browse.
-- execute_luau: use \`return\` to get output (NOT \`print()\`). Always use the ###LUA### / ###END_LUA### markers. CRITICAL: write exactly ###LUA### with three hashes on each side - never ###LUA--- with dashes.
+- NEVER use ${siteName}'s own built-in features (web search, connectors, etc.). Use ONLY the ZeroScript commands above - unless the user explicitly asks you to search/browse.
+- execute_luau: use \`return\` to get output (NOT \`print()\`). Always use the ###LUA### / ###END_LUA### markers. CRITICAL: write exactly ###LUA### with three hashes on each side - never ###LUA--- with dashes. Do NOT add a datamodel_type parameter or JSON around the block - ZeroScript fills datamodel_type automatically (default: Edit). Only while play-testing (after start_stop_play) target the running game by writing ###LUA:Server### or ###LUA:Client### as the start marker instead.
+- JSON commands: include EVERY required parameter from the command reference (e.g. multi_edit requires "datamodel_type": "Edit"). A result that just says "... is required" means your call was missing that parameter.
 - execute_luau runs SYNCHRONOUSLY: NEVER use yielding/blocking calls inside it - no \`wait()\`, \`task.wait()\`, \`:Wait()\`, \`task.delay\`, \`coroutine.yield\`, \`:WaitForChild(name)\` without a 0 timeout, \`HttpService\`/\`DataStore\` calls, or any async API. A yield will hang the call forever. Do everything synchronously and return immediately; if you need a delay or an event, set it up via a Script/LocalScript instance instead.
-- If you receive an ERROR, read it and adapt: fix the command, try another one, or tell the user plainly if it is an environment problem (Studio closed, bridge offline).
+- If you receive an ERROR, read it and adapt: fix the command, try another one, or tell the user plainly if it is an environment problem (Studio closed, bridge offline).${siteNotes ? "\n" + siteNotes : ""}
 
 IMPORTANT: Your very first action is to write the \`list_commands\` command (no params) so you have the full command reference with parameter details. After receiving the result, reply with exactly one short sentence confirming you are ready, then wait for the user's first request.`;
   }
 
   return {
-    WS_PORT,
     APP_NAME,
     SYS_MARKER,
-    SELECTORS,
-    RE,
     FEEDBACK,
     toolCategory,
     buildSystemPrompt,

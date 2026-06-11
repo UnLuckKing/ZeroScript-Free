@@ -10,6 +10,11 @@
 const PORT = 17613;
 const URL = `ws://127.0.0.1:${PORT}`;
 
+// Chat sites where a ZeroScript provider content script runs. Status pushes go
+// to every tab matching these. Add the new provider's URL pattern here (and in
+// manifest.json content_scripts + host_permissions) when integrating another AI.
+const PROVIDER_URLS = ["https://chat.deepseek.com/*" /*, "https://gemini.google.com/*" */];
+
 const RECONNECT_MIN = 1000;
 const RECONNECT_MAX = 15000;
 const HEARTBEAT_MS = 18000;
@@ -25,6 +30,10 @@ const pending = new Map(); // id -> {resolve, timer}
 let toolsCache = [];
 let mcpAlive = false;
 let serversCache = [];
+// true/false = Roblox Studio connected to the MCP server or not; null = unknown.
+// The MCP process stays alive when Studio is closed or its MCP option is off,
+// so this is probed separately (bridge "studio_status").
+let studioConnected = null;
 
 function log(...a) {
   console.log("[zs-bg]", ...a);
@@ -65,6 +74,7 @@ function connect() {
   ws.onclose = () => {
     connected = false;
     mcpAlive = false;
+    studioConnected = null;
     serversCache = [];
     stopHeartbeat();
     failAllPending("bridge connection closed");
@@ -90,6 +100,7 @@ function startHeartbeat() {
     if (connected) {
       // Keeps the MV3 service worker alive AND detects a half-open socket.
       send({ type: "ping" }).catch(() => {});
+      refreshStudioStatus();
     }
   }, HEARTBEAT_MS);
 }
@@ -149,7 +160,33 @@ async function send(obj, timeout = REQUEST_TIMEOUT_DEFAULT) {
   });
 }
 
+// Ask the bridge whether a Roblox Studio instance is actually connected to the
+// MCP server. Broadcasts only on change so the UI updates promptly but quietly.
+let studioProbing = false;
+async function refreshStudioStatus() {
+  if (studioProbing || !connected) return;
+  studioProbing = true;
+  try {
+    const r = await send({ type: "studio_status" }, 12000);
+    const v = r && r.ok && typeof r.studio === "boolean" ? r.studio : null;
+    if (v !== studioConnected) {
+      studioConnected = v;
+      broadcastStatus();
+    }
+  } finally {
+    studioProbing = false;
+  }
+}
+
 function handleBridgeMessage(msg) {
+  if ("studio" in msg && (typeof msg.studio === "boolean" || msg.studio === null)) {
+    studioConnected = msg.studio;
+  }
+  if (msg.type === "studio_status") {
+    resolvePending(msg.id, { ok: true, studio: studioConnected });
+    broadcastStatus();
+    return;
+  }
   if (msg.type === "connected") {
     mcpAlive = !!msg.mcp_alive;
     if (Array.isArray(msg.tools)) toolsCache = msg.tools;
@@ -207,12 +244,12 @@ function failAllPending(reason) {
 
 // ── status push to any open DeepSeek tab + popup ─────────────────────────
 function statusObj() {
-  return { type: "zs-status", connected, mcpAlive, tools: toolsCache.length, servers: serversCache };
+  return { type: "zs-status", connected, mcpAlive, studio: studioConnected, tools: toolsCache.length, servers: serversCache };
 }
 
 function broadcastStatus() {
   chrome.runtime.sendMessage(statusObj()).catch(() => {});
-  chrome.tabs.query({ url: ["https://chat.deepseek.com/*"] }, (tabs) => {
+  chrome.tabs.query({ url: PROVIDER_URLS }, (tabs) => {
     for (const t of tabs) chrome.tabs.sendMessage(t.id, statusObj()).catch(() => {});
   });
 }

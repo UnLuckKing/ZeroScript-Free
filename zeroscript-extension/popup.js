@@ -8,10 +8,14 @@ function render(s) {
   const servers = document.getElementById("servers");
   const list = s.servers || [];
   const up = list.filter((x) => x.alive).length;
-  const ok = s.connected && (s.mcpAlive || up > 0 || s.tools > 0);
+  const mcpOk = s.connected && (s.mcpAlive || up > 0 || s.tools > 0);
+  const studioOff = mcpOk && s.studio === false; // MCP up but no Studio attached
+  const ok = mcpOk && !studioOff;
   dot.className = "dot " + (s.connected ? (ok ? "on" : "warn") : "");
   state.textContent = s.connected
-    ? (ok ? "Connected · Roblox Studio ready" : "Bridge OK · open Roblox Studio")
+    ? (ok ? "Connected · Roblox Studio ready"
+        : studioOff ? "Studio not connected · enable the MCP server in Studio"
+        : "Bridge OK · open Roblox Studio")
     : "Bridge offline";
   tools.textContent = s.connected ? `${s.tools || 0} tools available` : "Run bridge.py";
   servers.textContent = s.connected

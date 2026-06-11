@@ -33,6 +33,15 @@ except ImportError:
     print("[bridge] Missing dependency. Run:  pip install websockets")
     sys.exit(1)
 
+# Windows consoles often default to a legacy codepage (cp1252): printing the
+# "→"/"←" arrows in tool logs then raises UnicodeEncodeError INSIDE the WS
+# handler, which kills the connection. Force UTF-8 (best effort).
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("ZS_BRIDGE_PORT", "17613"))
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -355,6 +364,40 @@ class MCPManager:
 mgr = MCPManager()
 clients = set()
 
+# ── Studio connectivity probe ──────────────────────────────────────────────
+# The MCP server process stays alive even when Roblox Studio is closed or its
+# MCP option is disabled - tool calls then return instantly with an "Unable to
+# find an active Studio instance" text. So "mcp_alive" alone is misleading.
+# list_roblox_studios is instant and side-effect-free: studios == [] means no
+# Studio is connected (closed, no place open, or MCP disabled in Studio).
+STUDIO_PROBE_TOOL = "list_roblox_studios"
+
+
+def probe_studio():
+    """True/False = Studio connected/not; None = unknown (probe unavailable/busy)."""
+    with mgr.index_lock:
+        entry = mgr.index.get(STUDIO_PROBE_TOOL)
+    if entry is None:
+        return None
+    holder, real_name = entry
+    # Never queue behind a long-running tool call (the probe is best-effort).
+    if not holder.call_lock.acquire(blocking=False):
+        return None
+    try:
+        if not holder.is_alive():
+            return None
+        msg = holder._request("tools/call", {"name": real_name, "arguments": {}}, timeout=8)
+        if not msg or msg.get("error"):
+            return None
+        content = msg.get("result", {}).get("content", [])
+        text = "\n".join(it.get("text", "") for it in content if it.get("type") == "text")
+        data = json.loads(text)
+        return bool(data.get("studios"))
+    except Exception:
+        return None
+    finally:
+        holder.call_lock.release()
+
 
 def safe_call(name, arguments, timeout):
     """Never raises. Always returns a dict the extension can feed back to DeepSeek."""
@@ -375,6 +418,7 @@ async def handler(ws):
         await ws.send(json.dumps({
             "type": "connected",
             "mcp_alive": mgr.any_alive(),
+            "studio": await asyncio.to_thread(probe_studio),
             "servers": mgr.health(),
             "tools": mgr.list_tools(),
             "port": PORT,
@@ -390,6 +434,13 @@ async def handler(ws):
             if mtype == "ping":
                 await ws.send(json.dumps({"type": "pong", "id": rid}))
 
+            elif mtype == "studio_status":
+                studio = await asyncio.to_thread(probe_studio)
+                await ws.send(json.dumps({
+                    "type": "studio_status", "id": rid,
+                    "studio": studio, "mcp_alive": mgr.any_alive(),
+                }))
+
             elif mtype == "list_tools":
                 try:
                     tools = await asyncio.to_thread(mgr.list_tools, True)
@@ -399,6 +450,7 @@ async def handler(ws):
                 await ws.send(json.dumps({
                     "type": "tools", "id": rid,
                     "tools": tools, "mcp_alive": mgr.any_alive(),
+                    "studio": await asyncio.to_thread(probe_studio),
                     "servers": mgr.health(),
                 }))
 
