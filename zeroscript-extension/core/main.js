@@ -156,8 +156,10 @@
     let preStartSilent = 0; // nothing produced AND not generating
     let curItem = null, sawContent = false, warmSince = 0; // per-turn "warming up"
     let reasonSince = 0; // reasoning written but no answer yet (loading phase)
+    let noTurnSince = 0; // finalize attempted before this send's reply turn exists
     const WARMUP_MS = T.WARMUP_MS;
     const REASON_NOREPLY_MS = T.REASON_NOREPLY_MS;
+    const NO_TURN_GRACE_MS = 30000;
 
     while (Date.now() - t0 < TIMEOUT) {
       if (A.stop) return { kind: "stopped" };
@@ -214,6 +216,21 @@
         continue;
       }
       if (stuckDone && gen) log("generating flag stuck - falling back to text stability");
+
+      // On providers whose turn counts are RELIABLE (semantic elements, no
+      // list virtualisation - Gemini), never finalize before the reply turn
+      // for THIS send exists. The generating flag can flicker off in the gap
+      // between the send and the new <model-response> node spawning, and the
+      // watcher used to finalize on the PREVIOUS turn's stable text - a
+      // premature loop.end rescued only by autoResume 30-45s later (diag
+      // showed `response kind:text` ~2.4s after loop.start with rp unchanged).
+      // Bounded so a genuinely dead send still ends the turn.
+      if (P.reliableCounts && !newReply) {
+        if (!noTurnSince) noTurnSince = Date.now();
+        if (Date.now() - noTurnSince < NO_TURN_GRACE_MS) { await sleep(200); continue; }
+      } else {
+        noTurnSince = 0;
+      }
 
       if (!doneSince) doneSince = Date.now();
       if (Date.now() - doneSince < 500) {  // 500ms settle – DOM is stable
@@ -662,6 +679,7 @@
     if (chip) chip.remove();
     item.classList.remove("zs-hidden");
     item.querySelectorAll(".zs-tool-hide").forEach((e) => e.classList.remove("zs-tool-hide"));
+    item.querySelectorAll(".zs-cmd-mask").forEach((e) => e.classList.remove("zs-cmd-mask"));
     delete item.dataset.zs;
     delete item.dataset.zsig;
     delete item.dataset.zphase;
@@ -841,6 +859,7 @@
           </div>
           <div id="zs-tip-menu" hidden></div>
           <div class="zs-row zs-sub"><span id="zs-state">Bridge: …</span></div>
+          ${P.unstableWarning ? `<div id="zs-unstable" title="">⚠ ${P.displayName} is unstable - may stop doing what it should</div>` : ""}
           <div id="zs-cta">
             <button id="zs-start">▶  Start session</button>
             <div id="zs-hint">Click <b>Start</b>, then type what you want to build - ${P.displayName} will drive Roblox Studio for you.</div>
@@ -862,6 +881,9 @@
       activeEl = root.querySelector("#zs-active");
       activeTxtEl = root.querySelector(".zs-active-txt");
       stateEl = root.querySelector("#zs-state");
+      // Permanent, non-intrusive instability notice (full text on hover).
+      const unstable = root.querySelector("#zs-unstable");
+      if (unstable) unstable.title = P.unstableWarning;
       startBtn.addEventListener("click", () => startSession());
       root.querySelector("#zs-new").addEventListener("click", newSessionClick);
       buildTipMenu();

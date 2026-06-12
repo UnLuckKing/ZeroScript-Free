@@ -272,9 +272,12 @@ const ZSProvider = (() => {
     range.selectNodeContents(ed);
     sel.removeAllRanges();
     sel.addRange(range);
-    // Replace selection (clears any leftover), then insert the new text. Two
-    // execCommands so an existing value is reliably overwritten, not appended.
-    document.execCommand("insertText", false, "");
+    // ONE insertText over the select-all: execCommand replaces the selection,
+    // so any leftover content is overwritten. Do NOT "clear first" with an
+    // empty insertText - validated live that it returns true but collapses
+    // the selection in a way that makes the following insertText FAIL
+    // (returns false, editor stays empty), which left the bootstrap stuck on
+    // "Starting Session..." forever.
     document.execCommand("insertText", false, text);
   }
 
@@ -451,6 +454,14 @@ const ZSProvider = (() => {
         if (cb.closest(".zs-chip")) return;
         if (CMD_SHAPE.test(cb.textContent || "")) {
           cb.classList.add("zs-tool-hide");
+          // Angular recreates <code-block> nodes (markdown settle at end of
+          // stream + again when the next turn is sent), stripping the class
+          // above and flashing the raw command until the next sweep. The
+          // <message-content> element KEEPS its identity through those
+          // re-renders (validated live), so also mark it: the overlay.css
+          // rule `message-content.zs-cmd-mask code-block` keeps every
+          // recreated block hidden with zero flash.
+          mc.classList.add("zs-cmd-mask");
           hidAny = hidAny || { parent: cb.parentElement, ref: cb };
         }
       });
@@ -475,6 +486,17 @@ const ZSProvider = (() => {
     // wiping any chip placed inside it. Tell the core to anchor chips at the
     // turn-element level instead, where they survive those re-renders.
     chipAtItemLevel: true,
+    // Gemini's turn elements are semantic and never virtualized away, so
+    // assistantCount() reliably increases for every new reply. The core's
+    // watcher uses this to refuse finalizing before this send's reply turn
+    // exists (fixes premature loop.end on the previous turn's stable text).
+    reliableCounts: true,
+    // Shown as a permanent, non-intrusive notice in the ZeroScript panel.
+    // Gemini drifts away from emitting tool blocks after a while in long
+    // sessions - observed live, model behavior, not something the prompt fixes.
+    unstableWarning:
+      "Gemini tends to stop using the Roblox tools after a while in long sessions (model behavior, not the extension). " +
+      "If it starts answering in plain text instead of acting, remind it to use the commands - or start a new session.",
     init({ diag: d } = {}) { if (d) diag = d; },
     // turns
     allItems, isUserItem, isAssistantItem, itemText, classifyText,

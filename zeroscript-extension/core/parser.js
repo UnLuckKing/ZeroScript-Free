@@ -111,6 +111,35 @@ const ZSParse = (() => {
     return -1;
   }
 
+  // JSON.parse with a fallback for RAW control characters inside string
+  // literals (tab/newline/CR). Models sometimes emit a literal TAB instead of
+  // \t inside a command's string value (seen live on Gemini in a big
+  // multi_edit); strict JSON rejects it, the parse failed silently and the
+  // command was never executed. The fallback walks the text string-aware and
+  // escapes those characters ONLY inside string literals, then re-parses.
+  function parseLoose(raw) {
+    try {
+      return JSON.parse(raw);
+    } catch (e0) {
+      let out = "", inStr = false, esc = false;
+      for (const c of raw) {
+        if (inStr) {
+          if (esc) { esc = false; out += c; continue; }
+          if (c === "\\") { esc = true; out += c; continue; }
+          if (c === '"') { inStr = false; out += c; continue; }
+          if (c === "\t") { out += "\\t"; continue; }
+          if (c === "\n") { out += "\\n"; continue; }
+          if (c === "\r") { out += "\\r"; continue; }
+          out += c;
+          continue;
+        }
+        if (c === '"') inStr = true;
+        out += c;
+      }
+      return JSON.parse(out); // may still throw - callers catch
+    }
+  }
+
   function extractJson(raw) {
     raw = raw.trim().replace(/^(?:json|JSON)\s*/, "");
     raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
@@ -119,7 +148,7 @@ const ZSParse = (() => {
     const e = matchBrace(raw, s);            // string-aware: not the last "}" in code
     if (e === -1) return null;
     try {
-      return JSON.parse(raw.slice(s, e + 1));
+      return parseLoose(raw.slice(s, e + 1));
     } catch {
       return null;
     }
@@ -136,7 +165,7 @@ const ZSParse = (() => {
         const end = matchBrace(text, start); // string-aware brace matching
         if (end === -1) { pos = s + 1; continue; }
         try {
-          const call = normalizeCall(JSON.parse(text.slice(start, end + 1)));
+          const call = normalizeCall(parseLoose(text.slice(start, end + 1)));
           if (call) return call;
         } catch {}
         pos = s + 1;

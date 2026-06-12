@@ -7,6 +7,7 @@
   "host_permissions": [
     "https://chat.deepseek.com/*",
     "https://deepseek.com/*",
+    "https://gemini.google.com/*",
     "http://127.0.0.1/*",
     "ws://127.0.0.1/*"
   ],
@@ -31,6 +32,12 @@
     {
       "matches": ["https://chat.deepseek.com/*"],
       "js": ["core/config.js", "core/parser.js", "providers/deepseek.js", "core/main.js"],
+      "css": ["overlay.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["core/config.js", "core/parser.js", "providers/gemini.js", "core/main.js"],
       "css": ["overlay.css"],
       "run_at": "document_idle"
     }
