@@ -2,6 +2,8 @@
 Compressed/
 Deprecated/
 ExtensionPresentation/
+presentation/
+docs/
 
 # Zip files
 *.zip

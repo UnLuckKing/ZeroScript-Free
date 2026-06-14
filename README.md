@@ -7,6 +7,8 @@
 **ZeroScript** is a free browser extension that turns DeepSeek into a Roblox Studio AI agent.
 Control Roblox Studio with AI directly from your browser - read/edit scripts, run Luau, generate assets, all from chat.deepseek.com. No terminal needed.
 
+> 🌐 **Website: [zeroscript-five.vercel.app](https://zeroscript-five.vercel.app)** the free Lemonade.gg / Luamotion alternative for building Roblox games with AI.
+
 Google Gemini (gemini.google.com) is also supported, but it is **unstable**: Gemini tends to stop using the Roblox tools after a while in long sessions. DeepSeek is the recommended provider.
 
 > 💬 **Stuck? Join the [Discord community](https://discord.gg/9aNyZsMWcb)** get help, share feedback, and follow updates.
