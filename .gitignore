@@ -8,6 +8,9 @@ docs/
 # Zip files
 *.zip
 
+# Local dev / diagnostic tools
+probe.py
+
 # System files
 .DS_Store
 Thumbs.db

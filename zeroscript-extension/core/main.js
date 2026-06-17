@@ -55,6 +55,12 @@
     { robux: 1000, id: 1865192973 },
   ];
   const passUrl = (id) => `https://www.roblox.com/game-pass/${id}`;
+  // AI chat sites ZeroScript works on. Keep in sync with manifest.json
+  // content_scripts and background.js PROVIDER_URLS when adding a provider.
+  const AI_SITES = [
+    { name: "DeepSeek", url: "https://chat.deepseek.com/", emoji: "🐋" },
+    { name: "Gemini", url: "https://gemini.google.com/app", emoji: "✦" },
+  ];
 
   const A = {
     running: false,
@@ -77,6 +83,10 @@
     toolArg: "",
     toolList: [],
     toolNames: new Set(),
+    // Successful tool calls since the last command-list reminder. DeepSeek (and
+    // others) can drift away from the exact command names over a long session,
+    // so we re-inject the list every REMIND_TOOLS_EVERY calls (see agentLoop).
+    toolCallsSinceReminder: 0,
     bridge: { connected: false, mcpAlive: false, tools: 0 },
   };
 
@@ -94,7 +104,7 @@
   // Snapshot the identity of the assistant turn present BEFORE we send. Paired
   // with waitForResponse, this lets "a new reply turn exists" be tested by node
   // identity rather than a raw count - the latter is unreliable on providers that
-  // virtualize the message list (ChatGPT), where the count stays flat as a new
+  // virtualize the message list, where the count stays flat as a new
   // turn appears and old ones detach. Captured at every send site (tool feedback,
   // user message, bootstrap). Providers without lastAssistantId fall back to count.
   function captureSendToken() {
@@ -208,8 +218,8 @@
       // A new reply turn exists. Prefer node IDENTITY (virtualization-proof) when
       // the provider exposes it: the last assistant turn's id differs from the one
       // captured at send time. Fall back to the count test otherwise. Without this,
-      // ChatGPT's list virtualisation kept assistantCount() <= base for a fresh
-      // reply, so the reliableCounts gate below waited out the full NO_TURN_GRACE
+      // a provider's list virtualisation can keep assistantCount() <= base for a
+      // fresh reply, so the reliableCounts gate below waits out the full NO_TURN_GRACE
       // (~30s) before finalising a multi_edit - the "input box stuck until I scroll
       // up" symptom (scrolling re-attached old turns and bumped the count).
       const curTok = P.lastAssistantId ? P.lastAssistantId() : undefined;
@@ -345,6 +355,22 @@
         // ask the model to rewrite it instead of silently ending the turn.
         if (ZSParse.hasOpenToolBlock(r)) return { kind: "parse_error", raw: r };
       }
+      // Malformed execute_luau: the model wrote the ###END_LUA### closer but
+      // FORGOT the ###LUA### opener, so hasToolSignature missed it and the block
+      // never ran (seen on Gemini). Don't silently treat it as a final answer -
+      // nudge a rewrite instead of leaving the user stuck on a dead turn.
+      if (ZSParse.LUA_END_RE.test(r) && !ZSParse.LUA_START_RE.test(r) && !r.includes(ZSParse.START_M)) {
+        return { kind: "parse_error", raw: r };
+      }
+      // Malformed command: the model emitted a tool's RAW ARGUMENTS as a bare JSON
+      // object (e.g. {"datamodel_type":...,"edits":[...],"file_path":...}) instead of
+      // the required {"command":...,"params":...} envelope - it treated the tool as a
+      // real callable function (seen on Gemini). Those argument keys never appear in a
+      // normal prose answer, so nudge a rewrite rather than ending the turn silently.
+      if (/"(?:datamodel_type|edits|old_string|new_string|file_path|target_file)"\s*:/.test(r) &&
+          !/"command"\s*:/.test(r)) {
+        return { kind: "parse_error", raw: r };
+      }
       if (r.length < 400 && P.isBusyMsg(r)) return { kind: "busy" };
       // The site caps output length and shows a native "Continue" button when it
       // truncates. We try clicking it directly (same turn) in the loop.
@@ -414,7 +440,10 @@
         const params = Object.entries(props)
           .map(([k, v]) => `    ${k}${req.has(k) ? "" : "?"}: ${v.type || "any"}${v.description ? " - " + v.description : ""}`)
           .join("\n");
-        return `${t.name}: ${(t.description || "").split("\n")[0]}${params ? "\n" + params : ""}`;
+        // Append our tested usage notes for the error-prone commands.
+        const note = ZS.TOOL_NOTES[bareToolName(t.name)];
+        const noteStr = note ? `\n    ⚠ HOW TO USE (tested): ${note}` : "";
+        return `${t.name}: ${(t.description || "").split("\n")[0]}${params ? "\n" + params : ""}${noteStr}`;
       });
       return `Output of '${name}':\nAvailable commands (${A.toolList.length}):\n\n${lines.join("\n\n")}`;
     }
@@ -523,6 +552,9 @@
     A.stop = false;
     let truncCount = 0;
     const MAX_TRUNC = 6;
+    // Re-send the command list after this many successful tool calls. Kept high
+    // so the reminder does not bloat the context too often.
+    const REMIND_TOOLS_EVERY = 20;
     ui.showStop(true);
     P.setInputLock(true); // prevent user from typing while the agent is active
     diag("loop.start", { base });
@@ -612,7 +644,22 @@
           const isErr = feedback.startsWith("ERROR");
           decorate.toolBox(res.item, call.tool, isErr ? "err" : "done", outSummary(feedback),
             true, feedback.replace(/^Output of '[^']*':\n?/, ""), category);
-          base = await submitAndGetBase(feedback);
+
+          // Re-inject the command list every REMIND_TOOLS_EVERY successful calls.
+          // Appended UNDER the tool result and clearly marked as a reminder, so a
+          // model that has drifted from the exact command names gets re-anchored
+          // without it looking like a new result to act on. Errors don't count
+          // (they already restate what's wrong) and list_commands is redundant.
+          let toSend = feedback;
+          if (!isErr && call.tool !== "list_commands" && A.toolList.length) {
+            A.toolCallsSinceReminder++;
+            if (A.toolCallsSinceReminder >= REMIND_TOOLS_EVERY) {
+              A.toolCallsSinceReminder = 0;
+              toSend += ZS.toolsReminder(A.toolList) + "\n" + ZS.memoryNudge();
+              diag("tools.reminder", { after: REMIND_TOOLS_EVERY });
+            }
+          }
+          base = await submitAndGetBase(toSend);
         }
       }
     } catch (e) {
@@ -650,6 +697,7 @@
     }
     A.userStopped = false;
     A.starting = true;
+    A.toolCallsSinceReminder = 0; // fresh reminder cadence for the new session
     ui.setStarting(true);
     ui.updateStartGate(); // reveal the composer + send the panel back to the corner
     P.setInputLock(true); // block user input during bootstrap
@@ -666,12 +714,12 @@
           `Could not switch ${P.displayName} to the required mode. Start a new chat or reload the page, then try again.`);
         return;
       }
-      const prompt = ZS.buildSystemPrompt(A.toolList, { siteName: P.displayName, profile: P.promptProfile });
+      const prompt = ZS.buildSystemPrompt(A.toolList, { siteName: P.displayName, customPrompt: ui.getCustomPrompt() });
       const base = await submitAndGetBase(prompt);
       decorate.sweep(); // show the animated "Starting Up" chip immediately
       let startRes = await waitForResponse(base);
 
-      // Cautious models (ChatGPT especially) often refuse the FIRST turn with a
+      // Cautious models often refuse the FIRST turn with a
       // plain-text "I don't have access to Studio / this extension" instead of
       // emitting list_commands - validated live. A single "just try it" nudge
       // reliably unblocks them (the same thing a user does by hand). So if the
@@ -779,24 +827,36 @@
     chip(item, opts) {
       const { label, detail = "", body = "", category = "tool", phase, cls, whole } = opts;
       let chip = item.querySelector(".zs-chip");
-      if (!chip) chip = document.createElement("div");
-      chip.className = `zs-chip cat-${category} ${cls || ""}`;
       const hasBody = !!body;
-      chip.innerHTML =
-        `<div class="zs-chip-head">` +
-          `<span class="zs-chip-ic">${iconFor(category, phase)}</span>` +
-          `<span class="zs-chip-tx"></span>` +
-          `<span class="zs-chip-dt"></span>` +
-          (hasBody ? `<span class="zs-chip-cv">${SVG('<polyline points="6 9 12 15 18 9"/>')}</span>` : "") +
-        `</div>` +
-        (hasBody ? `<div class="zs-chip-body"><pre></pre></div>` : "");
-      chip.querySelector(".zs-chip-tx").textContent = label;
-      if (detail) chip.querySelector(".zs-chip-dt").textContent = detail;
-      if (hasBody) {
-        chip.querySelector(".zs-chip-body pre").textContent = body;
-        const head = chip.querySelector(".zs-chip-head");
-        head.style.cursor = "pointer";
-        head.onclick = () => chip.classList.toggle("open");
+      // While a command streams, the site re-renders the raw block on every token
+      // and we get called on nearly every sweep. If what we'd draw is identical,
+      // we must NOT rebuild the chip's innerHTML: doing so re-creates the
+      // <span class="zs-spin"> and restarts its CSS animation each time, so the
+      // spinner looks frozen / stutters ("retry en rafale"). Rebuild the inner
+      // markup ONLY when the rendered content actually changes; otherwise reuse
+      // the existing element (and keep its expand/collapse state) so the spinner
+      // keeps spinning smoothly. Re-anchoring + masking below still run each pass.
+      const sig = `${category}|${phase}|${cls || ""}|${whole ? 1 : 0}|${label}|${detail}|${hasBody ? body.length : 0}`;
+      if (!chip) chip = document.createElement("div");
+      if (chip.dataset.csig !== sig) {
+        chip.dataset.csig = sig;
+        chip.className = `zs-chip cat-${category} ${cls || ""}`;
+        chip.innerHTML =
+          `<div class="zs-chip-head">` +
+            `<span class="zs-chip-ic">${iconFor(category, phase)}</span>` +
+            `<span class="zs-chip-tx"></span>` +
+            `<span class="zs-chip-dt"></span>` +
+            (hasBody ? `<span class="zs-chip-cv">${SVG('<polyline points="6 9 12 15 18 9"/>')}</span>` : "") +
+          `</div>` +
+          (hasBody ? `<div class="zs-chip-body"><pre></pre></div>` : "");
+        chip.querySelector(".zs-chip-tx").textContent = label;
+        if (detail) chip.querySelector(".zs-chip-dt").textContent = detail;
+        if (hasBody) {
+          chip.querySelector(".zs-chip-body pre").textContent = body;
+          const head = chip.querySelector(".zs-chip-head");
+          head.style.cursor = "pointer";
+          head.onclick = () => chip.classList.toggle("open");
+        }
       }
 
       if (whole) {
@@ -943,9 +1003,21 @@
           <div class="zs-row">
             <span id="zs-dot" class="off"></span>
             <span id="zs-title">ZeroScript <span class="zs-free">Free</span></span>
+            <button id="zs-sites" title="Other AI sites you can use ZeroScript on">🌐</button>
+            <button id="zs-gear" title="Custom prompt settings">⚙</button>
             <button id="zs-kofi" title="Support ZeroScript ♥">♥ Tip</button>
           </div>
+          <div id="zs-sites-menu" hidden></div>
           <div id="zs-tip-menu" hidden></div>
+          <div id="zs-settings" hidden>
+            <div class="zs-set-h">Your custom prompt</div>
+            <div class="zs-set-sub">Extra instructions added <b>below</b> the system prompt on every new session. The built-in prompt can't be edited.</div>
+            <textarea id="zs-set-text" rows="6" placeholder="e.g. Always comment your Luau code. Prefer small modular scripts. Ask before deleting anything."></textarea>
+            <div class="zs-set-row">
+              <button id="zs-set-save">Save</button>
+              <span id="zs-set-status"></span>
+            </div>
+          </div>
           <div class="zs-row zs-sub"><span id="zs-state">Bridge: …</span></div>
           ${P.unstableWarning ? `<div id="zs-unstable" title="">⚠ ${P.displayName} is unstable - may stop doing what it should</div>` : ""}
           <div id="zs-cta">
@@ -975,8 +1047,81 @@
       startBtn.addEventListener("click", () => startSession());
       root.querySelector("#zs-new").addEventListener("click", newSessionClick);
       buildTipMenu();
+      buildSitesMenu();
+      buildSettings();
       stopBtn.addEventListener("click", stopLoop);
     }
+
+    // "Other AI sites" menu: lists every chat site ZeroScript runs on, with a
+    // link to open each in a new tab. The current site is marked, not linked.
+    function buildSitesMenu() {
+      const menu = root.querySelector("#zs-sites-menu");
+      const btn = root.querySelector("#zs-sites");
+      const here = (P.displayName || "").toLowerCase();
+      let html = `<div class="zs-sites-h">Use ZeroScript on these AI sites</div>`;
+      for (const s of AI_SITES) {
+        const current = s.name.toLowerCase() === here;
+        html += current
+          ? `<div class="zs-site-opt zs-site-here"><span>${s.emoji} ${s.name}</span><span class="zs-site-badge">you're here</span></div>`
+          : `<button class="zs-site-opt" data-u="${s.url}">${s.emoji} ${s.name}<span class="zs-site-go">Open ↗</span></button>`;
+      }
+      menu.innerHTML = html;
+      menu.querySelectorAll("button.zs-site-opt").forEach((b) =>
+        b.addEventListener("click", () => {
+          try { window.open(b.dataset.u, "_blank", "noopener"); } catch {}
+          menu.hidden = true;
+        }));
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        menu.hidden = !menu.hidden;
+      });
+      document.addEventListener("click", (e) => {
+        if (menu.hidden) return;
+        if (!menu.contains(e.target) && e.target !== btn) menu.hidden = true;
+      }, true);
+    }
+
+    // ── Custom-prompt settings (gear) ───────────────────────────────────────
+    // The user's extra instructions, persisted in chrome.storage.local and
+    // appended UNDER the system prompt at session start. Cached here so
+    // startSession can read it synchronously.
+    let customPrompt = "";
+    try {
+      chrome.storage.local.get("zsCustomPrompt", (r) => {
+        if (r && typeof r.zsCustomPrompt === "string") {
+          customPrompt = r.zsCustomPrompt;
+          const ta = root && root.querySelector("#zs-set-text");
+          if (ta && document.activeElement !== ta) ta.value = customPrompt;
+        }
+      });
+    } catch {}
+
+    function buildSettings() {
+      const panelEl = root.querySelector("#zs-settings");
+      const gear = root.querySelector("#zs-gear");
+      const ta = root.querySelector("#zs-set-text");
+      const saveBtn = root.querySelector("#zs-set-save");
+      const status = root.querySelector("#zs-set-status");
+      ta.value = customPrompt;
+      gear.addEventListener("click", (e) => {
+        e.stopPropagation();
+        panelEl.hidden = !panelEl.hidden;
+        if (!panelEl.hidden) { ta.value = customPrompt; ta.focus(); }
+      });
+      saveBtn.addEventListener("click", () => {
+        customPrompt = ta.value;
+        try { chrome.storage.local.set({ zsCustomPrompt: customPrompt }); } catch {}
+        status.textContent = "Saved ✓";
+        setTimeout(() => { status.textContent = ""; }, 1600);
+      });
+      // Close when clicking outside the panel/gear.
+      document.addEventListener("click", (e) => {
+        if (panelEl.hidden) return;
+        if (!panelEl.contains(e.target) && e.target !== gear) panelEl.hidden = true;
+      }, true);
+    }
+
+    function getCustomPrompt() { return customPrompt; }
 
     // Support menu: Ko-fi + Roblox Game Pass "tips" (native currency).
     function buildTipMenu() {
@@ -1305,7 +1450,7 @@
     }
 
     build();
-    return { setStatus, setStarted, setStarting, showStop, inputCover, toast, banner, showImages, nudgeStart, updateStartGate, refreshSetup };
+    return { setStatus, setStarted, setStarting, showStop, inputCover, toast, banner, showImages, nudgeStart, updateStartGate, refreshSetup, getCustomPrompt };
   })();
 
   // ── Live token + timer, shown ONLY on a tool call's chip detail. The

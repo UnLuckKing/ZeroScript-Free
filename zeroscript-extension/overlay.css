@@ -79,6 +79,73 @@
   display: flex; justify-content: space-between; align-items: center;
 }
 
+/* other-AI-sites button */
+#zs-sites {
+  background: rgba(255, 255, 255, 0.06); color: #c7d2fe;
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 8px;
+  padding: 3px 8px; font-size: 13px; line-height: 1; cursor: pointer;
+  transition: filter 0.15s ease, background 0.15s ease;
+}
+#zs-sites:hover { background: rgba(255, 255, 255, 0.13); filter: brightness(1.1); }
+
+/* other-AI-sites menu */
+#zs-sites-menu {
+  margin-top: 10px; padding: 10px;
+  background: rgba(12, 12, 18, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px;
+}
+.zs-sites-h { font-size: 11px; font-weight: 700; opacity: 0.85; margin-bottom: 8px; }
+.zs-site-opt {
+  width: 100%; margin: 4px 0; padding: 8px 10px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px;
+  background: rgba(129, 140, 248, 0.12); color: #c7d2fe;
+  font-size: 12px; font-weight: 600; cursor: pointer; text-align: left;
+  transition: filter 0.15s ease, background 0.15s ease;
+}
+button.zs-site-opt:hover { background: rgba(129, 140, 248, 0.24); filter: brightness(1.1); }
+.zs-site-go { font-size: 10px; font-weight: 700; opacity: 0.7; }
+.zs-site-here { background: rgba(255, 255, 255, 0.05); color: #9ca3af; cursor: default; }
+.zs-site-badge {
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+  color: #34d399; background: rgba(52, 211, 153, 0.14);
+  border: 1px solid rgba(52, 211, 153, 0.35); padding: 1px 5px; border-radius: 5px;
+}
+
+/* settings (gear) button */
+#zs-gear {
+  background: rgba(255, 255, 255, 0.06); color: #c7d2fe;
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 8px;
+  padding: 3px 8px; font-size: 13px; line-height: 1; cursor: pointer;
+  transition: filter 0.15s ease, background 0.15s ease;
+}
+#zs-gear:hover { background: rgba(255, 255, 255, 0.13); filter: brightness(1.1); }
+
+/* custom-prompt settings panel */
+#zs-settings {
+  margin-top: 10px; padding: 10px;
+  background: rgba(12, 12, 18, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px;
+}
+.zs-set-h { font-size: 12px; font-weight: 700; opacity: 0.9; margin-bottom: 4px; }
+.zs-set-sub { font-size: 10px; opacity: 0.55; line-height: 1.4; margin-bottom: 8px; }
+#zs-set-text {
+  width: 100%; box-sizing: border-box; resize: vertical; min-height: 70px;
+  background: rgba(0, 0, 0, 0.35); color: #e5e7eb;
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 8px;
+  padding: 7px 9px; font-size: 12px; font-family: inherit; line-height: 1.4;
+}
+#zs-set-text:focus { outline: none; border-color: rgba(129, 140, 248, 0.6); }
+.zs-set-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+#zs-set-save {
+  background: rgba(129, 140, 248, 0.18); color: #c7d2fe;
+  border: 1px solid rgba(129, 140, 248, 0.4); border-radius: 8px;
+  padding: 5px 14px; font-size: 12px; font-weight: 700; cursor: pointer;
+  transition: filter 0.15s ease, background 0.15s ease;
+}
+#zs-set-save:hover { background: rgba(129, 140, 248, 0.3); filter: brightness(1.1); }
+#zs-set-status { font-size: 11px; color: #34d399; font-weight: 600; }
+
 /* ── onboarding CTA ────────────────────────────────────────── */
 #zs-cta { margin-top: 12px; }
 #zs-start {
@@ -234,11 +301,6 @@ div[contenteditable='true'].zs-typing { caret-color: transparent !important; }
    .zs-cmd-mask and this rule keeps every recreated code-block hidden with no
    flash. Inert on DeepSeek (no such elements). */
 message-content.zs-cmd-mask code-block { display: none !important; }
-/* ChatGPT: React re-creates the <pre> code blocks inside a reply on every
-   token, wiping any per-element .zs-tool-hide class. The provider marks the
-   .markdown container with .zs-cmd-mask (it keeps its identity), and this rule
-   keeps every recreated <pre> hidden with no flash. Inert on other sites. */
-.markdown.zs-cmd-mask pre { display: none !important; }
 
 /* category accent colour (left stripe + icon tint) */
 .zs-chip.cat-roblox   { --cat: #818cf8; }
