@@ -70,6 +70,14 @@ Go to https://chat.deepseek.com (recommended) or https://gemini.google.com and o
 - Generate meshes, materials, and models
 - Browse and insert from the Creator Store
 - Control play-testing
+- **Remember your project across sessions** persistent project memory saved inside your place
+
+## New in 1.2.0
+
+- **Project memory** the agent keeps durable notes about your place (architecture, conventions, decisions, your preferences) and reuses them in later sessions, so it actually remembers your project.
+- **Custom prompt** (⚙ in the panel) add your own instructions, appended under the system prompt and saved between sessions.
+- **Other AI sites button** (🌐 in the panel) quickly open any chat site ZeroScript supports.
+- Better, tested command guidance and a more robust agent loop that recovers from malformed commands instead of stalling.
 
 ## Panel status
 
