@@ -4,23 +4,23 @@
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 
-**ZeroScript** is a free browser extension that turns DeepSeek into a Roblox Studio AI agent.
-Control Roblox Studio with AI directly from your browser - read/edit scripts, run Luau, generate assets, all from chat.deepseek.com. No terminal needed.
+**ZeroScript** is a free browser extension that turns DeepSeek, Gemini, Kimi or GLM into a Roblox Studio AI agent.
+Control Roblox Studio with AI directly from your browser - read/edit scripts, run Luau, generate assets, all from a normal AI chat. No API key, no terminal, no coding needed.
 
 > 🌐 **Website: [zeroscript-five.vercel.app](https://zeroscript-five.vercel.app)** the free Lemonade.gg / Luamotion alternative for building Roblox games with AI.
 
-Google Gemini (gemini.google.com) is also supported, but it is **unstable**: Gemini tends to stop using the Roblox tools after a while in long sessions. DeepSeek is the recommended provider.
+Four AI providers are supported: **DeepSeek** (chat.deepseek.com, recommended), **Google Gemini** (gemini.google.com), **Kimi** (kimi.com, Moonshot AI) and **GLM** (chat.z.ai, Z.ai). Gemini and Kimi can be unstable: Gemini tends to stop using the Roblox tools in long sessions, and Kimi sometimes uses its own native tools instead of the Roblox commands. DeepSeek is the recommended provider.
 
 > 💬 **Stuck? Join the [Discord community](https://discord.gg/9aNyZsMWcb)** get help, share feedback, and follow updates.
 
-> *Also known as: ZeroScript Roblox, ZeroScript free download, Roblox DeepSeek agent, Roblox Studio AI automation, Luau AI, MCP Roblox, lemonade alternative free, lemonade.gg alternative, free Roblox AI agent, free lemonade roblox alternative*
+> *Also known as: ZeroScript Roblox, ZeroScript free download, Roblox DeepSeek agent, Roblox Gemini agent, Roblox Kimi agent, Roblox GLM agent, Roblox Studio AI automation, Luau AI, MCP Roblox, lemonade alternative free, lemonade.gg alternative, free Roblox AI agent, free lemonade roblox alternative*
 ## How it works
 
 ```
-DeepSeek or Gemini (browser) -> ZeroScript Extension -> Bridge (your PC) -> Roblox Studio
+AI chat (DeepSeek / Gemini / Kimi / GLM, in your browser) -> ZeroScript Extension -> Bridge (your PC) -> Roblox Studio
 ```
 
-The extension runs inside the chat page (DeepSeek or Gemini). When you type a request, it sends commands to the Bridge running on your PC, which drives Roblox Studio through the built-in MCP server.
+The extension runs inside the chat page (DeepSeek, Gemini, Kimi or GLM). When you type a request, it sends commands to the Bridge running on your PC, which drives Roblox Studio through the built-in MCP server.
 
 ## Setup
 
@@ -54,10 +54,10 @@ Double-click `start.bat` inside the extracted folder. A small window opens, that
 
 ### 4. Start a session
 
-Go to https://chat.deepseek.com (recommended) or https://gemini.google.com and open a new chat. The ZeroScript panel appears at the bottom right. Click **Start session**. Type what you want to build.
+Go to https://chat.deepseek.com (recommended), https://gemini.google.com, https://www.kimi.com or https://chat.z.ai and open a new chat. The ZeroScript panel appears at the bottom right. Click **Start session**. Type what you want to build.
 
-> Only works on chat.deepseek.com and gemini.google.com - it will not work on any other site.
-> Gemini support is unstable: it can stop using the Roblox tools after a while (model behavior, not the extension). If it starts answering in plain text instead of acting, remind it to use the commands or start a new session.
+> Only works on chat.deepseek.com, gemini.google.com, kimi.com and chat.z.ai - it will not work on any other site.
+> Gemini and Kimi can be unstable (model behavior, not the extension): Gemini may stop using the Roblox tools after a while, and Kimi may use its own native tools instead. If the AI starts answering in plain text instead of acting, remind it to use the commands or start a new session.
 ### 5. Watch the setup tutorial
 
 [Watch the setup tutorial on YouTube](https://youtu.be/QaViHSqzy5Q)
@@ -71,6 +71,13 @@ Go to https://chat.deepseek.com (recommended) or https://gemini.google.com and o
 - Browse and insert from the Creator Store
 - Control play-testing
 - **Remember your project across sessions** persistent project memory saved inside your place
+
+## New in 1.3.0
+
+- **Two new AI providers: Kimi** (kimi.com, Moonshot AI) and **GLM** (chat.z.ai, Z.ai) join DeepSeek and Gemini.
+- **Native tools locked down** the AI is now told to use *only* the ZeroScript Roblox commands, never its own built-in tools (code sandbox, web search, connectors).
+- **Smoother control panel** dragging is more fluid and no longer snaps back after a session starts.
+- Various UI fixes (Kimi input gate, "AI sites" menu) and a more robust command parser.
 
 ## New in 1.2.0
 
