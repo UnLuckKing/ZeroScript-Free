@@ -96,7 +96,7 @@
 }
 .zs-sites-h { font-size: 11px; font-weight: 700; opacity: 0.85; margin-bottom: 8px; }
 .zs-site-opt {
-  width: 100%; margin: 4px 0; padding: 8px 10px;
+  width: 100%; box-sizing: border-box; margin: 4px 0; padding: 8px 10px;
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px;
   background: rgba(129, 140, 248, 0.12); color: #c7d2fe;
@@ -249,6 +249,33 @@ button.zs-site-opt:hover { background: rgba(129, 140, 248, 0.24); filter: bright
 #zs-root.zs-gate-on #zs-cta { margin-top: 14px; }
 #zs-root.zs-gate-on #zs-hint { font-size: 12px; opacity: 0.9; }
 
+/* Start gate (new, default): the composer stays visible and the panel stays in
+   its corner; this thin cover sits over the composer to block typing until the
+   session is started (position/size set inline at runtime). Clicking it nudges
+   the Start button. */
+#zs-gate-cover {
+  position: fixed;
+  z-index: 2147483590;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-radius: 12px;
+  background: rgba(20, 20, 28, 0.55);
+  backdrop-filter: blur(2px);
+  border: 1.5px dashed rgba(129, 140, 248, 0.6);
+  color: #c7d2fe;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+html.zs-light #zs-gate-cover {
+  background: rgba(245, 245, 250, 0.6);
+  color: #4f46e5;
+  border-color: rgba(99, 102, 241, 0.55);
+}
+
 /* Start button attention flash (triggered when the user tries to send early) */
 #zs-start.zs-flash { animation: zs-flash 0.4s ease-in-out 3; }
 @keyframes zs-flash {
@@ -301,6 +328,19 @@ div[contenteditable='true'].zs-typing { caret-color: transparent !important; }
    .zs-cmd-mask and this rule keeps every recreated code-block hidden with no
    flash. Inert on DeepSeek (no such elements). */
 message-content.zs-cmd-mask code-block { display: none !important; }
+/* GLM / Z.ai (Svelte): the reply's markdown subtree is recreated on stream
+   updates and on the next send, wiping any per-element .zs-tool-hide class. The
+   reply root (.chat-assistant) keeps its identity, so the provider marks IT with
+   .zs-cmd-mask and this rule keeps every recreated code-block wrapper (a
+   rounded-xl box carrying a copy-code button) hidden with no flash. Inert
+   elsewhere. */
+.chat-assistant.zs-cmd-mask div[class*="rounded-xl"]:has(.copy-code-button) { display: none !important; }
+/* Kimi (Vue): the reply's markdown subtree is recreated on stream updates,
+   wiping any per-element .zs-tool-hide class. The assistant turn
+   (.segment-assistant) keeps its identity, so the provider marks IT with
+   .zs-cmd-mask and this rule keeps every recreated fenced-code wrapper
+   (.segment-code) hidden with no flash. Inert elsewhere. */
+.segment-assistant.zs-cmd-mask .segment-code { display: none !important; }
 
 /* category accent colour (left stripe + icon tint) */
 .zs-chip.cat-roblox   { --cat: #818cf8; }
@@ -491,3 +531,86 @@ message-content.zs-cmd-mask code-block { display: none !important; }
 }
 .zs-img-hdr button:hover { color: #e8e8ec; }
 .zs-img { display: block; width: 100%; padding: 8px 12px 0; box-sizing: border-box; border-radius: 8px; }
+
+/* ── drag-to-move ──────────────────────────────────────────────
+   The control panel can be dragged by its header to any of the four
+   screen corners (snapped + persisted by core/main.js). The title row
+   is the grab handle; interactive controls inside it keep their own
+   pointer. While dragging we kill transitions for a 1:1 follow. */
+#zs-title { cursor: move; }
+/* touch-action:none keeps the browser from claiming the pointer for a
+   scroll/gesture mid-drag (which would fire pointercancel and drop the drag). */
+#zs-panel { touch-action: none; }
+#zs-root.zs-dragging #zs-panel { transition: none; cursor: grabbing; backdrop-filter: none; will-change: left, top; }
+
+/* ══════════════════════════════════════════════════════════════
+   LIGHT MODE
+   Toggled by core/main.js adding `.zs-light` to <html> when the host
+   page's effective background is light. Dark mode (the default) is
+   untouched. The in-conversation chips are the critical fix: their
+   light text on a near-transparent tint is invisible on a white page.
+   ══════════════════════════════════════════════════════════════ */
+/* in-conversation tool/result/sys chips */
+html.zs-light .zs-chip {
+  color: #1e2430;
+  background: color-mix(in srgb, var(--cat) 15%, #ffffff);
+  border-color: color-mix(in srgb, var(--cat) 45%, #ffffff);
+}
+html.zs-light .zs-chip:hover { background: color-mix(in srgb, var(--cat) 24%, #ffffff); }
+html.zs-light .zs-chip-body pre { color: #2b313d; }
+html.zs-light .zs-chip-body { border-top-color: color-mix(in srgb, var(--cat) 30%, #ffffff); }
+html.zs-light .zs-chip.err { color: #7f1d1d; }
+html.zs-light .zs-chip.run {
+  background-image: linear-gradient(90deg,
+    transparent, color-mix(in srgb, var(--cat) 30%, #ffffff), transparent);
+}
+html.zs-light .zs-spin { border-color: rgba(0, 0, 0, 0.15); border-top-color: #6366f1; }
+
+/* control panel + setup card */
+html.zs-light #zs-panel,
+html.zs-light #zs-setup {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.97), rgba(244, 245, 250, 0.97));
+  color: #1f2430;
+  border-color: rgba(99, 102, 241, 0.38);
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.03) inset;
+}
+html.zs-light #zs-title { color: #1f2430; }
+html.zs-light .zs-sub,
+html.zs-light #zs-hint { color: #4b5563; }
+html.zs-light #zs-hint b { color: #4f46e5; }
+
+/* header pill buttons (sites / gear) */
+html.zs-light #zs-sites,
+html.zs-light #zs-gear {
+  background: rgba(99, 102, 241, 0.10); color: #4f46e5;
+  border-color: rgba(99, 102, 241, 0.30);
+}
+html.zs-light #zs-sites:hover,
+html.zs-light #zs-gear:hover { background: rgba(99, 102, 241, 0.18); }
+
+/* dropdown menus + settings */
+html.zs-light #zs-tip-menu,
+html.zs-light #zs-sites-menu,
+html.zs-light #zs-settings {
+  background: rgba(249, 250, 253, 0.98);
+  border-color: rgba(0, 0, 0, 0.10);
+}
+html.zs-light #zs-set-text {
+  background: #ffffff; color: #1f2430; border-color: rgba(0, 0, 0, 0.16);
+}
+html.zs-light .zs-set-sub { color: #6b7280; }
+
+/* session-active row + "New session" button */
+html.zs-light .zs-active-txt { color: #059669; }
+html.zs-light .zs-active-txt:has(.zs-live-dot.idle) { color: #4b5563; }
+html.zs-light #zs-new {
+  background: rgba(0, 0, 0, 0.05); color: #374151; border-color: rgba(0, 0, 0, 0.10);
+}
+html.zs-light #zs-new:hover { background: rgba(0, 0, 0, 0.10); }
+
+/* setup card body */
+html.zs-light #zs-setup-sub,
+html.zs-light #zs-setup-steps { color: #4b5563; }
+html.zs-light #zs-setup-steps { background: rgba(0, 0, 0, 0.04); border-color: rgba(0, 0, 0, 0.07); }
+html.zs-light #zs-setup-dismiss { background: rgba(0, 0, 0, 0.05); color: #374151; }
+html.zs-light #zs-setup-dismiss:hover { background: rgba(0, 0, 0, 0.10); }

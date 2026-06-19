@@ -209,6 +209,16 @@ const ZSParse = (() => {
       }
       from = em + END_M.length;
     }
+    // Prefer a JSON command envelope when one is present: a model may wrap
+    // execute_luau as {"command":"execute_luau","params":{"code":"###LUA###…"}},
+    // and the bare-marker fallback below would slice the still-ESCAPED JSON
+    // source (literal \n, \") instead of the decoded code. extractToolAnywhere
+    // JSON-decodes it; cleanLuaCall (applied at the end) then strips the markers.
+    if (out.length === 0) {
+      const f = extractToolAnywhere(r);
+      if (f) out.push(f);
+    }
+    // Bare ###LUA### … ###END_LUA### block with no JSON envelope at all.
     if (out.length === 0) {
       const { pos: ls, len: luaLen, dm } = findLuaStart(r);
       const le = findLuaEnd(r, ls === -1 ? 0 : ls + luaLen);
@@ -216,11 +226,26 @@ const ZSParse = (() => {
         out.push({ tool: "execute_luau", arguments: { code: r.slice(ls + luaLen, le).trim(), datamodel_type: dm } });
       }
     }
-    if (out.length === 0) {
-      const f = extractToolAnywhere(r);
-      if (f) out.push(f);
-    }
-    return out;
+    return out.map(cleanLuaCall);
+  }
+
+  // Some models (seen live on GLM) wrap execute_luau in the JSON envelope AND
+  // keep the ###LUA### / ###END_LUA### markers INSIDE the code string, e.g.
+  //   {"command":"execute_luau","params":{"code":"###LUA###\n<lua>\n###END_LUA###"}}
+  // Once JSON-decoded the code still starts with the literal markers, which the
+  // MCP rejects ("Failed to parse command code"). Strip a leading start marker
+  // and a trailing end marker from execute_luau's code, and adopt the marker's
+  // datamodel when none was given. No-op for a clean code string.
+  function cleanLuaCall(call) {
+    if (!call || call.tool !== "execute_luau") return call;
+    const code = call.arguments && call.arguments.code;
+    if (typeof code !== "string") return call;
+    const s = findLuaStart(code);
+    if (s.pos === -1) return call;
+    const e = findLuaEnd(code, s.pos + s.len);
+    call.arguments.code = code.slice(s.pos + s.len, e === -1 ? code.length : e).trim();
+    if (!call.arguments.datamodel_type) call.arguments.datamodel_type = s.dm;
+    return call;
   }
 
   function toolNameFromText(txt) {

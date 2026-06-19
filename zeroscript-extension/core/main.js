@@ -60,6 +60,10 @@
   const AI_SITES = [
     { name: "DeepSeek", url: "https://chat.deepseek.com/", emoji: "🐋" },
     { name: "Gemini", url: "https://gemini.google.com/app", emoji: "✦" },
+    { name: "Kimi", url: "https://www.kimi.com/", emoji: "🌙" },
+    // GLM (chat.z.ai) is implemented but DISABLED for the final client; re-add
+    // it here + in manifest.json + background.js PROVIDER_URLS to re-enable.
+    // { name: "GLM", url: "https://chat.z.ai/", emoji: "🅩" },
   ];
 
   const A = {
@@ -170,7 +174,13 @@
   // ════════════════════════════════════════════════════════════════════════
   async function waitForResponse(base) {
     const t0 = Date.now();
+    // INACTIVITY timeout (not total-elapsed): the loop only gives up after this
+    // long with NO streaming AND no text change. lastActiveAt is refreshed every
+    // tick the model is generating or the reply text grows, so an arbitrarily
+    // LONG but still-active response never trips it (the old total-elapsed cap
+    // wrongly fired "No response" while the model was still writing past 300s).
     const TIMEOUT = T.RESPONSE_TIMEOUT_MS;
+    let lastActiveAt = Date.now();
     const STABLE_MS = T.STABLE_MS; // generating-flag stuck ON but text frozen → done
     let started = false, doneSince = 0, lastLimitScan = 0;
     let lastText = null, lastChangeAt = Date.now(), genFalseSince = 0;
@@ -208,9 +218,10 @@
     // never reached.
     const GEN_STOP_GRACE_MS = 2500;
 
-    while (Date.now() - t0 < TIMEOUT) {
+    while (Date.now() - lastActiveAt < TIMEOUT) {
       if (A.stop) return { kind: "stopped" };
       const gen = P.isGenerating();
+      if (gen) lastActiveAt = Date.now(); // actively generating ⇒ never time out
       const d = P.readAssistant();
       // Sites virtualize their lists, so the absolute assistant count can DROP
       // even as a new reply is added. A count increase still proves a new turn
@@ -256,7 +267,7 @@
       // big multi_edit blocks ~30s (stuckDone never fired); this can only ever
       // reduce false changes, so short replies / other providers are unaffected.
       const replyNorm = (d.reply || "").replace(/\s+/g, " ").trim();
-      if (replyNorm !== lastText) { lastText = replyNorm; lastChangeAt = Date.now(); }
+      if (replyNorm !== lastText) { lastText = replyNorm; lastChangeAt = Date.now(); lastActiveAt = Date.now(); }
       // How long the generating flag has been OFF. A mid-stream flicker resets
       // this the instant growth resumes and gen flips back on.
       if (gen) genFalseSince = 0; else if (!genFalseSince) genFalseSince = Date.now();
@@ -717,23 +728,7 @@
       const prompt = ZS.buildSystemPrompt(A.toolList, { siteName: P.displayName, customPrompt: ui.getCustomPrompt() });
       const base = await submitAndGetBase(prompt);
       decorate.sweep(); // show the animated "Starting Up" chip immediately
-      let startRes = await waitForResponse(base);
-
-      // Cautious models often refuse the FIRST turn with a
-      // plain-text "I don't have access to Studio / this extension" instead of
-      // emitting list_commands - validated live. A single "just try it" nudge
-      // reliably unblocks them (the same thing a user does by hand). So if the
-      // bootstrap reply is NOT a command, auto-nudge and re-wait, a couple of
-      // times, before giving up. We only nudge on non-tool replies; a model that
-      // jumped straight to a (different) command is left to the normal flow.
-      let bootstrapNudges = 0;
-      while (startRes.kind !== "tool" && bootstrapNudges < 3 && !A.stop) {
-        bootstrapNudges++;
-        diag("bootstrap.nudge", { kind: startRes.kind, n: bootstrapNudges });
-        const nudgeBase = await submitAndGetBase(ZS.FEEDBACK.bootstrapNudge);
-        decorate.sweep();
-        startRes = await waitForResponse(nudgeBase);
-      }
+      const startRes = await waitForResponse(base);
 
       // If the model calls list_commands as instructed, run it and wait for the "ready" reply.
       const firstName = startRes.calls && startRes.calls[0] && startRes.calls[0].tool;
@@ -873,7 +868,13 @@
           // wipes any chip placed INSIDE it. Anchor the chip at the turn-element
           // level instead, where it survives those re-renders; the hide classes
           // (re-applied by the sweep) handle masking the raw block.
-          if (chip.parentElement !== item) item.insertBefore(chip, item.firstChild);
+          // A provider may supply chipAnchor(item) to redirect the chip into a
+          // descendant (e.g. Kimi's turn is a flex ROW [avatar | content];
+          // inserting at item.firstChild would make the chip the avatar's flex
+          // sibling and shove the layout sideways, so it anchors in the content
+          // column instead). Default: the turn root.
+          const anchor = (P.chipAnchor && P.chipAnchor(item)) || item;
+          if (chip.parentElement !== anchor) anchor.insertBefore(chip, anchor.firstChild);
         } else if (spot) {
           spot.parent.insertBefore(chip, spot.ref);
         } else if (!chip.parentElement) {
@@ -991,7 +992,7 @@
   //  UI  (control panel, onboarding, stop button, banners, toast, input cover)
   // ════════════════════════════════════════════════════════════════════════
   const ui = (() => {
-    let root, dot, stopBtn, cover, coverRaf, startBtn, hintEl, ctaEl, activeEl, activeTxtEl, stateEl;
+    let root, dot, stopBtn, cover, coverRaf, gateCover, startBtn, hintEl, ctaEl, activeEl, activeTxtEl, stateEl;
     let panel, gateRaf, bridgeOk = false, studioDown = false;
     let wasConnected = false, bridgeBannerEl = null;
 
@@ -1050,6 +1051,11 @@
       buildSitesMenu();
       buildSettings();
       stopBtn.addEventListener("click", stopLoop);
+      // Position (saved corner), theme auto-detection, and drag-to-move.
+      loadCorner();
+      installDrag();
+      applyTheme();
+      setInterval(applyTheme, 2000); // follow the host page toggling its theme
     }
 
     // "Other AI sites" menu: lists every chat site ZeroScript runs on, with a
@@ -1323,40 +1329,180 @@
       setTimeout(() => startBtn.classList.remove("zs-flash"), 1200);
     }
 
-    // Restore the control panel to its normal bottom-right corner.
+    // Restore the control panel to its user-chosen corner (default top-right).
     function ungate() {
       document.querySelectorAll(".zs-frame-hidden").forEach((e) => e.classList.remove("zs-frame-hidden"));
-      if (root) root.classList.remove("zs-gate-on", "zs-gate-starting");
-      if (panel) { panel.style.left = panel.style.top = panel.style.width = panel.style.minHeight = ""; }
+      if (root) root.classList.remove("zs-gate-on", "zs-gate-starting", "zs-gate-block");
+      if (gateCover) gateCover.style.display = "none";
+      if (panel) { panel.style.width = panel.style.minHeight = ""; applyCorner(corner); }
       cancelAnimationFrame(gateRaf);
     }
 
-    // Input gate: on a BLANK, not-yet-started conversation we hide the ENTIRE
-    // composer frame and bring the control panel up OVER it, enlarged, so a
-    // non-technical user can't miss the mandatory "Start session" step. The
-    // extension still types/sends programmatically (visibility:hidden doesn't
-    // block scripted value-setting or .click()).
+    // ── Theme auto-detection (light / dark) ─────────────────────────────────
+    // The panel and the in-conversation chips are dark-themed by default. On a
+    // LIGHT host page the chips' light text on a near-transparent tint becomes
+    // invisible, so we detect the page's effective background luminance and add
+    // `.zs-light` to <html>; overlay.css then flips to readable light colours.
+    // Most chat sites declare their theme EXPLICITLY (a `dark`/`light` class on
+    // <html>/<body>, a data-theme attribute, or CSS color-scheme) - far more
+    // reliable than luminance, since many (e.g. z.ai) leave <html>/<body> with a
+    // transparent background and paint the theme on a deeper container. Returns
+    // "light" | "dark" | null (no explicit signal).
+    function pageThemeHint() {
+      const de = document.documentElement, b = document.body;
+      const cls = (de.className + " " + (b ? b.className : "")).toLowerCase();
+      if (/\bdark\b/.test(cls)) return "dark";
+      if (/\blight\b/.test(cls)) return "light";
+      const attr = (de.getAttribute("data-theme") || de.getAttribute("data-color-mode") ||
+                    de.getAttribute("data-color-scheme") || "").toLowerCase();
+      if (/dark/.test(attr)) return "dark";
+      if (/light/.test(attr)) return "light";
+      const cs = (getComputedStyle(de).colorScheme || "").toLowerCase();
+      if (/dark/.test(cs) && !/light/.test(cs)) return "dark";
+      if (/light/.test(cs) && !/dark/.test(cs)) return "light";
+      return null;
+    }
+    // Fallback only: luminance of the first opaque background up the tree.
+    function effectiveBg() {
+      let n = document.body;
+      while (n && n !== document.documentElement) {
+        const c = getComputedStyle(n).backgroundColor;
+        if (c && !/(transparent)/.test(c) && !/,\s*0\s*\)$/.test(c)) return c;
+        n = n.parentElement;
+      }
+      return getComputedStyle(document.documentElement).backgroundColor || "rgb(255,255,255)";
+    }
+    function applyTheme() {
+      let light;
+      const hint = pageThemeHint();
+      if (hint) {
+        light = hint === "light";
+      } else {
+        const m = (effectiveBg().match(/\d+(?:\.\d+)?/g) || []).map(Number);
+        if (m.length < 3) return;
+        light = 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2] > 140;
+      }
+      document.documentElement.classList.toggle("zs-light", light);
+    }
+
+    // ── Drag-to-move (snap the panel to any of the four corners) ─────────────
+    // corner is one of "tr" | "tl" | "br" | "bl" (top/bottom + left/right).
+    let corner = "tr";
+    // Lifted out of installDrag so ungate()/applyCorner can see it: the sweep
+    // calls updateStartGate()→ungate()→applyCorner() ~every 1.5s, which would
+    // otherwise yank the panel back to its corner mid-drag (the "stops following
+    // the mouse after starting" bug). While dragging we own the position.
+    let dragging = false;
+    const CORNER_MARGIN = "18px";
+    function applyCorner(c) {
+      corner = c;
+      if (!panel || dragging) return;
+      // Explicit `auto` (not "") so we override the base CSS right/top defaults.
+      panel.style.left = c.includes("l") ? CORNER_MARGIN : "auto";
+      panel.style.right = c.includes("r") ? CORNER_MARGIN : "auto";
+      panel.style.top = c.includes("t") ? CORNER_MARGIN : "auto";
+      panel.style.bottom = c.includes("b") ? CORNER_MARGIN : "auto";
+    }
+    function loadCorner() {
+      applyCorner(corner); // immediate default so position is never undefined
+      try {
+        chrome.storage.local.get("zsCorner", (r) => {
+          if (r && /^(tr|tl|br|bl)$/.test(r.zsCorner)) applyCorner(r.zsCorner);
+        });
+      } catch {}
+    }
+    function nearestCorner() {
+      const r = panel.getBoundingClientRect();
+      const right = r.left + r.width / 2 > window.innerWidth / 2;
+      const bottom = r.top + r.height / 2 > window.innerHeight / 2;
+      return (bottom ? "b" : "t") + (right ? "r" : "l");
+    }
+    // Drag with the Pointer Events API + setPointerCapture: the panel keeps
+    // receiving pointermove/up even when the cursor outruns it or leaves the
+    // window, so it follows 1:1 with no "decoupling" glitch. Width/height are
+    // cached at grab time (no per-move layout reads), and overlay.css kills the
+    // panel's backdrop-filter while dragging so each frame is cheap to paint.
+    function installDrag() {
+      let sx = 0, sy = 0, ox = 0, oy = 0, pw = 0, ph = 0;
+      let tx = 0, ty = 0, raf = 0; // latest target + the pending rAF id
+      // Coalesce pointermove into one style write per frame so the panel tracks
+      // the cursor smoothly even when moves fire faster than paint.
+      const paint = () => {
+        raf = 0;
+        if (!dragging) return;
+        panel.style.left = tx + "px"; panel.style.top = ty + "px";
+      };
+      const onDown = (e) => {
+        if (e.button !== 0) return;
+        // Don't start a drag from an interactive control or an open menu.
+        if (e.target.closest("button, input, textarea, a, #zs-settings, #zs-tip-menu, #zs-sites-menu")) return;
+        const r = panel.getBoundingClientRect();
+        dragging = true;
+        sx = e.clientX; sy = e.clientY; ox = r.left; oy = r.top; pw = r.width; ph = r.height;
+        tx = r.left; ty = r.top;
+        panel.style.right = panel.style.bottom = "auto";
+        panel.style.left = r.left + "px"; panel.style.top = r.top + "px";
+        root.classList.add("zs-dragging");
+        try { panel.setPointerCapture(e.pointerId); } catch {}
+        e.preventDefault();
+      };
+      const onMove = (e) => {
+        if (!dragging) return;
+        let nx = ox + (e.clientX - sx), ny = oy + (e.clientY - sy);
+        tx = Math.max(4, Math.min(nx, window.innerWidth - pw - 4));
+        ty = Math.max(4, Math.min(ny, window.innerHeight - ph - 4));
+        if (!raf) raf = requestAnimationFrame(paint);
+        e.preventDefault();
+      };
+      const onUp = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
+        panel.style.left = tx + "px"; panel.style.top = ty + "px"; // flush final pos
+        root.classList.remove("zs-dragging");
+        try { panel.releasePointerCapture(e.pointerId); } catch {}
+        const c = nearestCorner();
+        applyCorner(c);                                  // snap to the nearest of the 4 corners
+        try { chrome.storage.local.set({ zsCorner: c }); } catch {}
+      };
+      panel.addEventListener("pointerdown", onDown);
+      panel.addEventListener("pointermove", onMove);
+      panel.addEventListener("pointerup", onUp);
+      panel.addEventListener("pointercancel", onUp);
+    }
+
+    // Input gate: on a BLANK, not-yet-started conversation the composer stays
+    // visible in its normal place and the control panel stays in its corner; we
+    // just lay a thin cover OVER the composer that blocks typing/focus and points
+    // the user at the mandatory "Start session" step. (Hiding the whole bar
+    // looked bad on some sites.) The extension still types/sends programmatically
+    // - the cover only intercepts real pointer/focus, not scripted .click().
     function updateStartGate() {
       syncPanel();
       refreshStart();
-      const frame = P.composerFrame();
+      const gateEl = () => (P.gateTarget && P.gateTarget()) || P.composerFrame();
+      const frame = gateEl();
       const show = !A.started && !A.starting && P.isFreshChat() && !!frame && !!panel;
       if (!show) { ungate(); return; }
-      document.querySelectorAll(".zs-frame-hidden").forEach((e) => {
-        if (e !== frame) e.classList.remove("zs-frame-hidden");
-      });
-      frame.classList.add("zs-frame-hidden");
-      root.classList.add("zs-gate-on");
+      root.classList.add("zs-gate-block");
+      if (!gateCover) {
+        gateCover = document.createElement("div");
+        gateCover.id = "zs-gate-cover";
+        gateCover.innerHTML = `<span>▶ Click “Start session” first</span>`;
+        // Swallow clicks/focus on the composer and nudge the Start button.
+        gateCover.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); nudgeStart(); });
+        document.documentElement.appendChild(gateCover);
+      }
+      gateCover.style.display = "flex";
       const place = () => {
-        if (!root.classList.contains("zs-gate-on")) return;
-        const f = P.composerFrame();
-        if (!f) return;
+        if (!root.classList.contains("zs-gate-block")) return;
+        const f = gateEl();
+        if (!f) { gateRaf = requestAnimationFrame(place); return; }
         const r = f.getBoundingClientRect();
-        // Sit the panel exactly over the composer box so it visually replaces it.
-        panel.style.left = r.left + "px";
-        panel.style.top = r.top + "px";
-        panel.style.width = r.width + "px";
-        panel.style.minHeight = Math.max(r.height, 120) + "px";
+        gateCover.style.left = r.left + "px";
+        gateCover.style.top = r.top + "px";
+        gateCover.style.width = r.width + "px";
+        gateCover.style.height = Math.max(r.height, 36) + "px";
         gateRaf = requestAnimationFrame(place);
       };
       place();

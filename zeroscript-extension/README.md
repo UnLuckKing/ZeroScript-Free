@@ -2,7 +2,7 @@
 
 Control Roblox Studio with AI directly from DeepSeek. Just describe what you want to build, the agent does the rest.
 
-Google Gemini is also supported but unstable: it tends to stop using the Roblox tools after a while in long sessions. DeepSeek is the recommended provider.
+Google Gemini and Kimi (Moonshot AI) are also supported. Both can be unstable: Gemini tends to stop using the Roblox tools after a while in long sessions, and Kimi sometimes reaches for its own native tools instead of the Roblox commands. DeepSeek is the recommended provider.
 
 ## Setup
 
@@ -18,7 +18,7 @@ Google Gemini is also supported but unstable: it tends to stop using the Roblox 
 2. **Open Roblox Studio** and load a Place
 3. **Enable the MCP server in Roblox Studio** (first time only): click **Assistant AI** in the top bar, then **...** > **Manage MCP Servers** > **Enable Studio as MCP Server**
 4. **Run start.bat** - a small window opens, the Bridge is running
-5. **Go to https://chat.deepseek.com** (recommended) or https://gemini.google.com, open a new chat (only works on these exact addresses)
+5. **Go to https://chat.deepseek.com** (recommended), https://gemini.google.com, or https://www.kimi.com, open a new chat (only works on these exact addresses)
 6. Click **Start session** in the ZeroScript panel
 7. Type what you want to build
 
@@ -36,6 +36,8 @@ providers/deepseek.js everything DeepSeek-specific: DOM selectors, generation
                       detection, send mechanics, composer modes…       (global ZSProvider)
 providers/gemini.js   same interface for Google Gemini (Angular DOM, Quill
                       composer, code-block masking)                    (global ZSProvider)
+providers/kimi.js     same interface for Kimi / Moonshot AI (Vue DOM, Lexical
+                      composer, segment-code masking)                  (global ZSProvider)
 background.js         WebSocket to the local bridge (provider-agnostic)
 ```
 
