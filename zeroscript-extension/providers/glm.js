@@ -304,8 +304,27 @@ const ZSProvider = (() => {
     if (!editor) throw new Error("GLM input box not found");
     editor.focus();
     setTextareaValue(editor, text);
-    // Wait for Svelte to re-enable the send button (proof it registered the text).
-    await waitFor(() => { const b = sendButton(); return b && !b.disabled; }, 1500);
+    // Wait for Svelte to re-enable the send button (proof it registered the text),
+    // then click the instant it's clickable. In a LONG conversation the message
+    // list is heavy, so Svelte's reactivity to the input event can take well over
+    // a second - the old 1500ms cap expired with the button still `disabled`, the
+    // click no-opped, and only the core's retry loop eventually landed it (the
+    // user's "message sits in the input then sends after a long time"). We now wait
+    // up to 8s AND re-dispatch the input event every ~700ms so a slow/queued Svelte
+    // cycle keeps getting nudged until it re-enables the button.
+    let lastNudge = Date.now();
+    const enabled = await waitFor(() => {
+      const b = sendButton();
+      if (b && !b.disabled) return true;
+      if (Date.now() - lastNudge > 700) {
+        lastNudge = Date.now();
+        // Re-assert the value (a heavy re-render can drop it) and re-fire input.
+        if (editorText() !== text) setTextareaValue(editor, text);
+        else editor.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      return false;
+    }, 8000);
+    diag("glm.send", { enabled, busy: isBusyNow() });
     if (!clickSendButton() && !isBusyNow()) {
       const o = { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true };
       editor.dispatchEvent(new KeyboardEvent("keydown", o));

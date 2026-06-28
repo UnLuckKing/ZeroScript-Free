@@ -355,6 +355,18 @@ message-content.zs-cmd-mask code-block { display: none !important; }
    .zs-cmd-mask and this rule keeps every recreated fenced-code wrapper
    (.segment-code) hidden with no flash. Inert elsewhere. */
 .segment-assistant.zs-cmd-mask .segment-code { display: none !important; }
+/* Qwen (React + Ant Design): the reply markdown subtree is recreated on stream
+   updates. The assistant turn (.qwen-chat-message-assistant) keeps its identity,
+   so the provider marks IT with .zs-cmd-mask and this rule re-hides recreated
+   Monaco code blocks (pre.qwen-markdown-code) with no flash. Inert elsewhere. */
+.qwen-chat-message-assistant.zs-cmd-mask pre.qwen-markdown-code { display: none !important; }
+
+/* Qwen (Ant Design) renders its model / thinking-mode select popups at z-index
+   1150 - far below #zs-root (2147483600) - so the ZeroScript bar covered the open
+   menu (the "Fast / Auto / Think" dropdown vanished behind the bar). The popup is
+   portalled to <body>, so raising its z-index above the bar lifts it back on top.
+   Inert when the menu is closed (Ant adds .ant-select-dropdown-hidden ⇒ display:none). */
+.qwen-select-dropdown { z-index: 2147483646 !important; }
 
 /* category accent colour (left stripe + icon tint) */
 .zs-chip.cat-roblox   { --cat: #818cf8; }

@@ -62,6 +62,7 @@
     { name: "Gemini", url: "https://gemini.google.com/app", emoji: "✦" },
     { name: "Kimi", url: "https://www.kimi.com/", emoji: "🌙" },
     { name: "GLM", url: "https://chat.z.ai/", emoji: "🅩" },
+    { name: "Qwen", url: "https://chat.qwen.ai/", emoji: "🔮" },
   ];
 
   const A = {
@@ -93,6 +94,13 @@
     // chat via the site's own button, syncSessionState abandons the loop so the
     // fresh chat shows "Start", not a stale "Agent active".
     loopKey: null,
+    // Identity of the assistant turn ALREADY present when the current session
+    // started. A page reload can RESTORE an in-progress generation (e.g. an
+    // execute_luau that was mid-stream in an A/B turn); that restored turn looks
+    // like a fresh live tool finish to the auto-resume watchdog, which then ran it
+    // into the NEW conversation the user had just opened (validated live, 2026-06).
+    // autoResume never resumes the turn whose id matches this baseline.
+    bootBaselineId: null,
     injecting: false,
     toolRunning: false,
     toolStart: 0,
@@ -779,6 +787,11 @@
     }
     A.userStopped = false;
     A.stop = false;               // clear any halt left by a prior aborted bootstrap
+    // Snapshot any turn already on screen at session start (normally none on a
+    // clean new chat; on a reload-restored generation it's the stray turn). The
+    // auto-resume watchdog refuses to run a tool from this baseline turn so a
+    // restored execute_luau can't leak into the freshly started conversation.
+    A.bootBaselineId = P.lastAssistantId ? P.lastAssistantId() : null;
     A.starting = true;
     const myGen = ++A.startGen;   // identity of THIS bootstrap
     A.startingKey = null;          // unknown until the conversation gets an id
@@ -1783,12 +1796,34 @@
     return (Date.now() - t0) / 1000;
   }
 
+  let _prevGen = null;
   setInterval(() => {
     const gen = P.isGenerating(); // growth-tolerant: used for the live token meter
     // Watchdog freshness clock. Growth-tolerant (not just the hard stop-button
     // signal): a SHORT command after a long reasoning phase shows its stop
     // square for only a frame or two - too briefly for this 200ms sampler.
     if (gen) A.lastGenAt = Date.now();
+
+    // Regenerate-as-resume: after a manual stop (A.userStopped) the agent stays
+    // dormant until fresh user intent. Typing a message or the native Continue
+    // clears the latch, but clicking the site's "regenerate ↻" does not - and on
+    // Qwen that control is unlabeled and indistinguishable from copy/like, so we
+    // can't hook the button reliably. Detect the EFFECT instead: a brand-new
+    // generation (gen false→true) while we are stopped and otherwise idle can only
+    // come from a user action (there is no spontaneous generation). Treat it as
+    // resume - clear the stop latch and drop the turn's stopped/no-resume markers
+    // so the auto-resume watchdog can pick the regenerated reply's tool back up.
+    if (A.started && A.userStopped && !A.running && !A.injecting && !A.stopping &&
+        gen && _prevGen === false) {
+      A.userStopped = false;
+      const it = P.lastAssistant();
+      if (it) {
+        delete it.dataset.zStopped; delete it.dataset.zResume;
+        delete it.dataset.zResumeLen; delete it.dataset.zloop;
+      }
+      diag("regenResume");
+    }
+    _prevGen = gen;
     // Our "■ Stop" button stays visible for the WHOLE active turn (generation,
     // reasoning, or a tool/wait running on the bridge). It is complete on its own
     // - stopLoop both halts our loop AND clicks the site's native stop - and the
@@ -2025,6 +2060,10 @@
     if (Date.now() - A.lastGenAt > RESUME_FRESH_MS) return; // not a fresh live turn
     const item = P.lastAssistant();
     if (!item || item.dataset.zloop) return;
+    // Never resume the turn that already existed when this session started - it is
+    // a reload-restored generation, not a reply to one of our sends (see
+    // A.bootBaselineId). Guards the "execute_luau leaked into the new chat" bug.
+    if (A.bootBaselineId && P.lastAssistantId && P.lastAssistantId() === A.bootBaselineId) return;
     if (P.turnHalted(item)) return;                     // this turn was stopped → leave it
     const txt = P.itemText(item);
     if (!ZSParse.hasToolSignature(txt)) return;
