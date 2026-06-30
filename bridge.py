@@ -699,10 +699,16 @@ async def main():
     # actually connected" signal is the list_roblox_studios probe. So we probe
     # FIRST and only show the green "ready" line when Studio is really attached;
     # otherwise we show just the corrective step (no misleading green success).
-    _st = await asyncio.to_thread(probe_studio) if total > 0 else {"app": None}
-    if total > 0 and _st["app"] is False:
+    # Probe even when total == 0: StudioMCP advertises an EMPTY catalogue when
+    # Studio's MCP server toggle is off (or no place is open), so 0 tools is the
+    # most common "needs a corrective step" state, not a success.
+    _st = await asyncio.to_thread(probe_studio)
+    if total == 0 or _st["app"] is False:
         log("    -------------------------------------------------------------", "yl")
-        log(f"    {total} tools loaded, but NO Roblox Studio is connected yet.", "yl")
+        if total == 0:
+            log("    0 tools loaded - Roblox Studio is not exposing its tools yet.", "yl")
+        else:
+            log(f"    {total} tools loaded, but NO Roblox Studio is connected yet.", "yl")
         if killed_squatter:
             # A squatter was holding the port; Studio could not bind and may have
             # given up. It must reclaim the port now -> toggle is the reliable fix.

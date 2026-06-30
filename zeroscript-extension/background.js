@@ -16,8 +16,12 @@ const URL = `ws://127.0.0.1:${PORT}`;
 const PROVIDER_URLS = ["https://chat.deepseek.com/*", "https://gemini.google.com/*", "https://www.kimi.com/*", "https://kimi.com/*", "https://chat.z.ai/*", "https://chat.qwen.ai/*", "https://arena.ai/*"];
 
 const RECONNECT_MIN = 1000;
-const RECONNECT_MAX = 15000;
+const RECONNECT_MAX = 5000;
 const HEARTBEAT_MS = 10000;
+// If no message (incl. pong) arrives within this window while we believe we're
+// connected, the socket is half-open: force a reconnect instead of letting
+// pending requests slowly time out.
+const STALE_SOCKET_MS = 25000;
 const REQUEST_TIMEOUT_DEFAULT = 130000; // a bit above the 120s tool timeout
 
 let ws = null;
@@ -25,6 +29,7 @@ let connected = false;
 let reconnectDelay = RECONNECT_MIN;
 let reconnectTimer = null;
 let heartbeatTimer = null;
+let lastMessageAt = 0; // timestamp of the last frame received from the bridge
 let nextId = 1;
 const pending = new Map(); // id -> {resolve, timer}
 let toolsCache = [];
@@ -60,12 +65,14 @@ function connect() {
   ws.onopen = () => {
     connected = true;
     reconnectDelay = RECONNECT_MIN;
+    lastMessageAt = Date.now();
     log("connected to bridge");
     startHeartbeat();
     broadcastStatus();
   };
 
   ws.onmessage = (ev) => {
+    lastMessageAt = Date.now();
     let msg;
     try {
       msg = JSON.parse(ev.data);
@@ -103,6 +110,14 @@ function startHeartbeat() {
   stopHeartbeat();
   heartbeatTimer = setInterval(() => {
     if (connected) {
+      // Half-open socket: the WS still reports OPEN but nothing comes through.
+      // The pong (and every other frame) refreshes lastMessageAt; if it has
+      // gone stale, drop the dead socket so onclose triggers a reconnect.
+      if (lastMessageAt && Date.now() - lastMessageAt > STALE_SOCKET_MS) {
+        log("socket stale, forcing reconnect");
+        try { ws.close(); } catch {}
+        return;
+      }
       // Keeps the MV3 service worker alive AND detects a half-open socket.
       send({ type: "ping" }).catch(() => {});
       refreshStudioStatus();
