@@ -384,7 +384,7 @@ const ZSProvider = (() => {
     if (!text || text.length <= SEND_CAP) return text;
     const omitted = text.length - SEND_MAX;
     const marker =
-      `\n\n[…ZeroScript: result truncated to fit Arena's input limit — ` +
+      `\n\n[…ZeroScript: result truncated to fit Arena's input limit - ` +
       `${omitted} of ${text.length} characters omitted…]\n\n`;
     const budget = SEND_MAX - marker.length;
     const headLen = Math.floor(budget * 0.85);
@@ -475,11 +475,65 @@ const ZSProvider = (() => {
     }
     return null; // unknown
   }
-  // True unless we POSITIVELY detect an unsupported mode (Battle / Side by Side).
+  // ── Build Apps (Code) mode gate ────────────────────────────────────────────
+  // The composer's "Code" button toggles Arena's app-building mode: it switches
+  // the whole app from the plain chat route (/text/*) to the code route (/code/*),
+  // where a turn no longer produces a normal .prose chat reply but an app-build
+  // surface. Every DOM/stream assumption in this provider breaks there and the
+  // loop wedges, so we gate it exactly like an unsupported chat mode. Primary
+  // signal is the /code/ route (set the instant the button is pressed); the button's
+  // active background is a fallback in case Arena ever toggles it without a route
+  // change. Detection fails CLOSED for safety only on a positive match.
+  function buildAppsActive() {
+    if (/^\/code\//.test(location.pathname)) return true;
+    for (const b of document.querySelectorAll('button[aria-label="Code"]')) {
+      if (b.offsetParent === null) continue;
+      if (b.getAttribute("aria-pressed") === "true") return true;
+      if (/bg-surface-tertiary|bg-surface-raised-alt/.test(b.className)) return true;
+    }
+    return false;
+  }
+
+  // True unless we POSITIVELY detect an unsupported mode (Battle / Side by Side)
+  // or the Build Apps (Code) mode.
   const isSupportedMode = () => {
+    if (buildAppsActive()) return false;
     const m = currentMode();
     return m === null || SUPPORTED_MODES.has(m);
   };
+
+  // ── One-shot: restore Direct on page load ──────────────────────────────────
+  // Arena sometimes reloads into Battle mode (e.g. after a login/OAuth round-trip
+  // bounces the tab), which ZeroScript can't drive. We nudge the mode dropdown
+  // back to Direct ONCE per page load - never on a sweep, so a user who later
+  // deliberately picks another mode is not fought (the mode guard/warning still
+  // covers that case). We only touch the plain chat route and only when the
+  // dropdown is on a non-Direct mode. Runs from init() with a retry window long
+  // enough for the composer to mount after a post-login redirect.
+  // The option label is glued to its description ("DirectChat with 1 model at a
+  // time"), so a trailing \b after "direct" never matches - anchor on the prefix.
+  function pickDirectOption() {
+    for (const o of document.querySelectorAll('[role="option"]')) {
+      if (o.offsetParent === null) continue;
+      if (/^\s*direct/i.test(o.textContent || "")) { try { o.click(); } catch {} return true; }
+    }
+    return false;
+  }
+  async function restoreDirectOnce() {
+    if (/^\/code\//.test(location.pathname)) return; // Build Apps route - leave alone
+    let combo = null;
+    for (let i = 0; i < 60 && !combo; i++) { // up to ~15s for post-login load
+      combo = [...document.querySelectorAll('button[role="combobox"]')].find((x) => x.offsetParent !== null) || null;
+      if (!combo) await sleep(250);
+    }
+    if (!combo || /direct/i.test(combo.textContent || "")) return; // gone or already Direct
+    // Open the dropdown only if it is closed - clicking an already-open combobox
+    // would toggle it shut and there would be no option to pick.
+    if (combo.getAttribute("aria-expanded") !== "true") { try { combo.click(); } catch {} }
+    const ok = await waitFor(pickDirectOption, 2000);  // click the Direct option when it renders
+    diag("arena.restore_direct", { ok, was: (combo.textContent || "").trim().slice(0, 24) });
+    if (!ok && combo.getAttribute("aria-expanded") === "true") { try { combo.click(); } catch {} } // reclose on failure
+  }
 
   // Visible mode guard for the ZeroScript bar (core renderBar reads this every
   // sweep). Returns a warning string while an unsupported mode (Battle / Side by
@@ -487,10 +541,14 @@ const ZSProvider = (() => {
   // DOM reskin never nags on the supported default). The core turns this into a
   // red warning state and disables Start until the user switches to Direct.
   function modeWarning() {
+    if (buildAppsActive())
+      return `Turn off <b>Build Apps</b> (the <b>Code</b> button in the composer) - ` +
+        `ZeroScript only works in plain chat. App-building mode uses a different ` +
+        `output surface and breaks the agent loop.`;
     if (isSupportedMode()) return "";
     const m = currentMode();
     const name = m ? m.charAt(0).toUpperCase() + m.slice(1) : "another mode";
-    return `Switch the mode dropdown to <b>Direct</b> — ZeroScript only works in ` +
+    return `Switch the mode dropdown to <b>Direct</b> - ZeroScript only works in ` +
       `Direct mode (current: <b>${name}</b>).`;
   }
 
@@ -705,7 +763,7 @@ const ZSProvider = (() => {
     // increases for every new reply - the core's watcher uses this to refuse
     // finalizing before this send's reply turn exists.
     reliableCounts: true,
-    init({ diag: d } = {}) { if (d) diag = d; },
+    init({ diag: d } = {}) { if (d) diag = d; try { restoreDirectOnce(); } catch {} },
     // turns
     allItems, isUserItem, isAssistantItem, itemText, classifyText,
     assistantCount, userCount, lastAssistant, lastAssistantId, readAssistant,

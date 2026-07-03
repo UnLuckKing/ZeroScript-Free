@@ -577,6 +577,22 @@ def safe_call(name, arguments, timeout):
         return {"ok": False, "error": str(e), "kind": type(e).__name__}
 
 
+async def run_tool_task(ws, name, args, timeout, rid):
+    """Execute one tool off the socket read loop and send its result back.
+
+    Kept as a standalone task (not awaited inline in handler) so a long tool
+    never starves the connection's ability to answer app-level pings - see the
+    call_tool branch in handler() for the full rationale."""
+    res = await asyncio.to_thread(safe_call, name, args, timeout)
+    tag = "gr" if res.get("ok") else "rd"
+    summary = (res.get("text") or res.get("error") or "")[:80].replace("\n", " ")
+    log(f"<- {name}: {summary}", tag)
+    try:
+        await ws.send(json.dumps({"type": "tool_result", "id": rid, **res}))
+    except websockets.ConnectionClosed:
+        pass
+
+
 async def handler(ws):
     peer = getattr(ws, "remote_address", ("?",))[0]
     clients.add(ws)
@@ -629,11 +645,17 @@ async def handler(ws):
                 args = msg.get("arguments") or {}
                 timeout = float(msg.get("timeout", 120000)) / 1000.0
                 log(f"-> tool  {name}({', '.join(args.keys())})", "cy")
-                res = await asyncio.to_thread(safe_call, name, args, timeout)
-                tag = "gr" if res.get("ok") else "rd"
-                summary = (res.get("text") or res.get("error") or "")[:80].replace("\n", " ")
-                log(f"<- {name}: {summary}", tag)
-                await ws.send(json.dumps({"type": "tool_result", "id": rid, **res}))
+                # Run the tool as a BACKGROUND task instead of awaiting it here.
+                # Awaiting inline parks this read loop for the WHOLE tool call, so
+                # a long tool (e.g. wait_job_finished > 25s) means the client's
+                # app-level pings are never read/answered - its half-open-socket
+                # watchdog then force-closes the connection and the in-flight call
+                # is dropped as "bridge unreachable" (reported live). As a task,
+                # the loop stays free to answer pings/status while the tool runs.
+                # The extension only ever has ONE call_tool in flight (its agent
+                # loop awaits each result before sending the next), so this never
+                # overlaps tool executions.
+                asyncio.create_task(run_tool_task(ws, name, args, timeout, rid))
 
             elif mtype == "restart_mcp":
                 sid = msg.get("server")

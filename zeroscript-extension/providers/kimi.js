@@ -39,6 +39,14 @@ const ZSProvider = (() => {
     // fenced code in separate `.segment-code` wrappers (NOT inside the prose
     // container), so reading only `.markdown-container` MISSES code/tool calls.
     reply: ".segment-content-box",
+    // K2.6 Thinking renders its reasoning in a `.thinking-container` (a
+    // `.toolcall-container`) that sits INSIDE `.segment-content-box`, as a
+    // SIBLING of the answer's `.markdown-container` (validated live). Without
+    // excluding it, the reasoning text is read as part of the reply - so a
+    // command the model merely DRAFTS while thinking would be detected and
+    // executed, and its quoted command JSON keeps the chip flapping. All reply
+    // reads (itemText/classifyText/readAssistant) and the camouflage exclude it.
+    thinking: ".thinking-container",
     editor: ".chat-input-editor",
     composer: ".chat-box",
     sendBtn: ".send-button-container",
@@ -97,18 +105,21 @@ const ZSProvider = (() => {
   const bodyEl = (item) =>
     item ? item.querySelector(S.reply) || item.querySelector(".segment-content") || item : null;
 
+  // Combine the reasoning-area exclusion with any caller-supplied selector.
+  const notThink = (excludeSel) => S.thinking + (excludeSel ? ", " + excludeSel : "");
+
   function itemText(item) {
     if (!item) return "";
     if (isAssistantItem(item)) {
       const md = bodyEl(item);
-      return md ? textWithout(md) : "";
+      return md ? textWithout(md, S.thinking) : "";
     }
     return textWithout(item);
   }
   function classifyText(item, excludeSel) {
     if (isAssistantItem(item)) {
       const md = bodyEl(item);
-      return md ? textWithout(md, excludeSel) : "";
+      return md ? textWithout(md, notThink(excludeSel)) : "";
     }
     return textWithout(item, excludeSel);
   }
@@ -201,6 +212,9 @@ const ZSProvider = (() => {
   // of which (recreated) node is current.
   const LOCK_MSG = "⏳ Agent working… please wait";
   let _locked = false, _phTimer = null, _phObs = null, _origPlaceholder = null;
+  // Set true only for the brief window typeAndSend re-enables the editor to
+  // inject text - so the self-healing lock below doesn't fight the injection.
+  let _injecting = false;
   const placeholderEl = () => {
     const ed = getEditor();
     const cont = ed && (ed.closest(".chat-input-editor-container") || ed.parentElement);
@@ -212,6 +226,16 @@ const ZSProvider = (() => {
   };
   function applyLockedPlaceholder() {
     if (!_locked) return;
+    // Self-heal the input lock: Vue re-renders the editor subtree (this observer
+    // fires on exactly those mutations) and can reset contenteditable back to
+    // true, letting the user type mid-run. Re-assert it - except while injecting,
+    // when typeAndSend deliberately re-enables it.
+    if (!_injecting) {
+      const ed = getEditor();
+      if (ed && ed.getAttribute("contenteditable") !== "false") {
+        ed.setAttribute("contenteditable", "false");
+      }
+    }
     const ph = placeholderEl();
     if (!ph) return;
     const cur = ph.textContent || "";
@@ -301,8 +325,13 @@ const ZSProvider = (() => {
 
   function snapshot() {
     try {
-      const md = bodyEl(lastAssistant());
-      return { th: 0, rp: md ? (md.textContent || "").length : 0 };
+      const item = lastAssistant();
+      const md = bodyEl(item);
+      const think = item && item.querySelector(S.thinking);
+      return {
+        th: think ? (think.textContent || "").trim().length : 0,
+        rp: md ? textWithout(md, S.thinking).length : 0,
+      };
     } catch { return {}; }
   }
 
@@ -310,10 +339,11 @@ const ZSProvider = (() => {
     const item = lastAssistant();
     if (!item) return { present: false, reply: "", thinking: "", item: null };
     const md = bodyEl(item);
+    const think = item.querySelector(S.thinking);
     return {
       present: true,
-      reply: md ? textWithout(md, ".zs-chip").trim() : "",
-      thinking: "",
+      reply: md ? textWithout(md, notThink()).trim() : "",
+      thinking: think ? (think.textContent || "").trim() : "",
       item,
     };
   }
@@ -345,7 +375,7 @@ const ZSProvider = (() => {
     const ed = getEditor();
     if (!ed) throw new Error("Kimi input box not found");
     const relock = _locked;
-    if (relock) ed.setAttribute("contenteditable", "true"); // injection needs it editable
+    if (relock) { _injecting = true; ed.setAttribute("contenteditable", "true"); } // injection needs it editable
     try {
       setEditorText(ed, text);
       // Wait for the send control to enable (proof Lexical registered the text).
@@ -357,7 +387,7 @@ const ZSProvider = (() => {
       ed.dispatchEvent(new KeyboardEvent("keydown", o));
       ed.dispatchEvent(new KeyboardEvent("keyup", o));
     } finally {
-      if (relock) { const e2 = getEditor(); if (e2) e2.setAttribute("contenteditable", "false"); }
+      if (relock) { const e2 = getEditor(); if (e2) e2.setAttribute("contenteditable", "false"); _injecting = false; }
     }
   }
 
@@ -483,7 +513,7 @@ const ZSProvider = (() => {
     if (!md) return null;
     let hidAny = null;
     md.querySelectorAll(S.codeWrap).forEach((cw) => {
-      if (cw.closest(".zs-chip")) return;
+      if (cw.closest(".zs-chip") || cw.closest(S.thinking)) return; // never a drafted-in-reasoning block
       if (CMD_SHAPE.test(cw.textContent || "")) {
         cw.classList.add("zs-tool-hide");
         item.classList.add("zs-cmd-mask");
@@ -492,6 +522,7 @@ const ZSProvider = (() => {
     });
     [...md.children].forEach((el) => {
       if (el.classList.contains("zs-chip") || el.closest(S.codeWrap) ||
+          el.matches(S.thinking) || el.querySelector(S.thinking) ||
           el.querySelector(S.codeWrap)) return;
       const t = el.textContent || "";
       if (t.length < 600 && CMD_SHAPE.test(t)) {
@@ -506,6 +537,11 @@ const ZSProvider = (() => {
     id: "kimi",
     displayName: "Kimi",
     timings,
+    // Reasoning-area selector, exported so the CORE's raw-command-visible probes
+    // exclude it (same fix as DeepSeek/Gemini): K2.6 Thinking quotes the command
+    // JSON in its reasoning, which the camouflage never hides - without this the
+    // core reads it as "raw block still visible" forever and the chip flaps.
+    thinkingSel: S.thinking,
     // Vue re-renders the reply's markdown subtree on every update, wiping any
     // chip placed inside it. Anchor chips at the turn-element level instead
     // (redirected into the content column by chipAnchor).

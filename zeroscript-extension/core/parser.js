@@ -44,6 +44,7 @@ const ZSParse = (() => {
   // `"tool":"…"` shape instead - a string-valued key, which prose almost never
   // contains - so paramless calls are detected without false-positiving on text.
   const CMD_KEY_RE = /"(?:command|tool)"\s*:\s*"/;
+
   function hasToolSignature(r) {
     return (
       r.includes(START_M) ||

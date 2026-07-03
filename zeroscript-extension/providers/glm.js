@@ -487,6 +487,12 @@ const ZSProvider = (() => {
     id: "glm",
     displayName: "GLM",
     timings,
+    // Reasoning-area selector, exported so the CORE's raw-command-visible probes
+    // exclude it (same fix as DeepSeek/Gemini/Kimi): GLM's "Thought Process"
+    // renders in .thinking-chain-container and quotes the command JSON, which the
+    // camouflage never hides - without this the core reads it as "raw block still
+    // visible" forever and the chip flaps done→run→done.
+    thinkingSel: S.thinking,
     // Shown as a permanent, non-intrusive "⚠ unstable" notice in the bar. The
     // z.ai free endpoint is frequently at capacity: its backend returns an HTML
     // error page instead of JSON, so the reply shows "No response, please try
