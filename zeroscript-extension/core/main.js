@@ -547,6 +547,16 @@
     if (r.ok && r.text && /^[\w .'"-]{0,60}\bis (required|not available|invalid)\b[\w .'"-]{0,80}$/i.test(r.text.trim())) {
       return `ERROR calling '${name}': ${r.text.trim()}.\nA required or invalid parameter - check the command's parameters with list_commands, fix the call and retry.`;
     }
+    // The Roblox MCP also reports Luau PARSE/RUNTIME errors as a SUCCESS whose
+    // text is the executor's own stack trace ("…ExecuteLuauTool:139: …
+    // CommandExecution:54: <real error>" - validated live). Genuine script
+    // output never contains those internal paths. Re-shape into a real ERROR so
+    // the model gets the fix-it hints below and the chip settles red, not ✓
+    // green - and strip the internal frames so only the useful part remains.
+    if (r.ok && bareName === "execute_luau" && r.text &&
+        /\b(?:ExecuteLuauTool|CommandExecution):\d+:/.test(r.text)) {
+      r = { ok: false, error: r.text.replace(/^(?:\S*(?:ExecuteLuauTool|CommandExecution):\d+:\s*)+/, "").trim() || r.text };
+    }
     if (r.ok) {
       if (r.images && r.images.length) {
         ui.showImages(r.images, name);
@@ -704,6 +714,7 @@
 
           // Loading chip with the real args (loop owns this item from here).
           decorate.toolBox(res.item, call.tool, "run", argSummary(call), true, callBody(call), category);
+          A.toolSettle = null; // a fresh call: no settled outcome yet
           A.toolRunning = true;
           A.toolStart = Date.now();
           A.toolName = call.tool;
@@ -718,13 +729,23 @@
             // stuck loading forever, and MARK the turn so the sweep classifier
             // never repaints it ✓ done once generation ends (the real cause of a
             // stopped call still going green a moment later).
-            if (res.item) res.item.dataset.zStopped = "1";
+            if (res.item) { res.item.dataset.zStopped = "1"; rememberHalted(res.item); }
             decorate.toolBox(res.item, call.tool, "err", "stopped", true, "", category);
             break;
           }
           const isErr = feedback.startsWith("ERROR");
+          const outBody = feedback.replace(/^Output of '[^']*':\n?/, "");
           decorate.toolBox(res.item, call.tool, isErr ? "err" : "done", outSummary(feedback),
-            true, feedback.replace(/^Output of '[^']*':\n?/, ""), category);
+            true, outBody, category);
+          // Snapshot the settled outcome. If the site swaps this turn's DOM node
+          // while we wait for the model's next turn (wiping the chip AND the
+          // zloop ownership dataset), the sweep re-owns the fresh node with this
+          // outcome instead of letting branch-3 classification re-spin a "run"
+          // chip on an already-executed call.
+          A.toolSettle = {
+            phase: isErr ? "err" : "done", detail: outSummary(feedback),
+            body: outBody, category, count: P.assistantCount(),
+          };
 
           // Re-inject the command list every REMIND_TOOLS_EVERY successful calls.
           // Appended UNDER the tool result and clearly marked as a reminder, so a
@@ -749,8 +770,18 @@
     } finally {
       A.running = false;
       A.stop = false;
-      A.stopping = false;
+      // Keep the "Stopping…" state while the site's stream is still draining
+      // after a user stop: the loop often ends BEFORE the native stop takes
+      // effect (loop.end fires with gen still true - seen live on DeepSeek),
+      // and clearing the flag here let the next sweep restore a clickable
+      // "■ Stop" for the last beat of the dying stream (the Stopping… → Stop →
+      // gone bounce). The sweep's self-heal clears it - and retries the native
+      // stop - once the site is actually quiet.
+      const draining = A.stopping && A.started && P.isHardGenerating();
+      if (A.stopping && draining) diag("stop.drain", { keptStopping: true });
+      A.stopping = draining;
       A.toolRunning = false;
+      A.toolSettle = null;
       A.loopKey = null;
       ui.showStop(false);
       ui.inputCover(false); // lift the "Agent is working" cover when the loop ends
@@ -762,9 +793,48 @@
   // Mark the current assistant turn as user-halted so the sweep classifier shows
   // its command chip as "stopped" instead of repainting it ✓ done when
   // generation ends. Cleared on a deliberate resume (native Continue).
+  //
+  // The dataset marker alone is NOT enough: sites re-render the whole history
+  // when the next user message lands (seen live on DeepSeek), replacing the
+  // halted turn's node and wiping dataset.zStopped - and since a fresh user
+  // message also clears the A.userStopped latch by design, nothing said
+  // "stopped" anymore and the chip went ✓ green. So halted turns are ALSO
+  // remembered here, keyed independently of the DOM node (conversation +
+  // position among assistant turns + a text prefix), and the sweep re-stamps
+  // the marker whenever the node was swapped.
+  const halted = new Map(); // "conv|assistantIdx" → text prefix at halt time
+  const assistantIdx = (item) => P.allItems().filter(P.isAssistantItem).indexOf(item);
+  function rememberHalted(item) {
+    try {
+      const idx = assistantIdx(item);
+      if (idx < 0) return;
+      const pref = (P.itemText(item) || "").slice(0, 60);
+      // A stop during the REASONING phase leaves the answer text EMPTY - an
+      // empty/short prefix would then startsWith-match ANY later turn at this
+      // index (seen live: a fresh streaming command went red "stopped" on the
+      // spot). Too little text to identify → rely on the dataset marker only.
+      if (pref.trim().length < 12) return;
+      halted.set(`${P.conversationKey()}|${idx}`, pref);
+    } catch {}
+  }
+  function forgetHalted(item) {
+    if (!item || !halted.size) return;
+    try { halted.delete(`${P.conversationKey()}|${assistantIdx(item)}`); } catch {}
+  }
+  // The halt was recorded MID-stream, so the stored text is a PREFIX of the
+  // turn's final text - match on startsWith, never equality.
+  function isRememberedHalted(item, txt) {
+    if (!halted.size) return false;
+    try {
+      const pref = halted.get(`${P.conversationKey()}|${assistantIdx(item)}`);
+      return pref != null && (txt || "").startsWith(pref);
+    } catch { return false; }
+  }
   function markStoppedTurn() {
     const it = P.lastAssistant();
-    if (it) it.dataset.zStopped = "1";
+    if (!it) return;
+    it.dataset.zStopped = "1";
+    rememberHalted(it);
   }
 
   function stopLoop() {
@@ -772,6 +842,7 @@
     diag("stopLoop");
     A.stop = true;
     A.stopping = true;
+    A.stopAt = Date.now(); // grace anchor for the regenerate-as-resume gates
     A.userStopped = true; // suppress auto-resume until the next user message
     markStoppedTurn();
     // A tool's loading chip is only settled AFTER its `await runTool()` resolves
@@ -781,6 +852,7 @@
     // now; the loop's own settle on resolve is idempotent.
     if (A.toolRunning && A.toolItem) {
       A.toolItem.dataset.zStopped = "1";
+      rememberHalted(A.toolItem);
       decorate.toolBox(A.toolItem, A.toolName, "err", "stopped", true, "", ZS.toolCategory(A.toolName));
     }
     ui.markStopping();    // instant feedback: button → "⏳ Stopping…", disabled
@@ -1002,16 +1074,33 @@
       const chipGone = !item.querySelector(".zs-chip");
       let rawVisible = false;
       if (!opts.whole) {
+        // NOTE the thinking exclusion: reasoning models QUOTE the command
+        // JSON/###LUA### in their think area, which the camouflage never hides
+        // (by design) - counting those as "raw block visible" made this
+        // rebuild fire on EVERY sweep forever (60Hz spam, seen live).
         rawVisible = [...item.querySelectorAll("pre, p, [class*='code']")].some(
           (e) => !e.closest(".zs-tool-hide") && !e.closest(".zs-chip") &&
+                 !(P.thinkingSel && e.closest(P.thinkingSel)) &&
                  ZSParse.hasCommandShape(e.textContent || ""));
       }
-      if (chipGone || rawVisible) this.chip(item, opts);
+      if (chipGone || rawVisible) {
+        // Tracker: the site wiped a loop-owned chip (re-render/node churn).
+        diag("chip.rebuild", { name: opts.label, phase: opts.phase, chipGone, rawVisible });
+        this.chip(item, opts);
+      }
     },
 
     // owned=true → the agentic loop manages this item; the observer backs off.
     toolBox(item, name, phase, detail, owned, body, category) {
       if (!item) return;
+      // Tracker: every phase TRANSITION of a command chip, with who drove it.
+      // "loop" = the agentic loop (authoritative), "sweep" = DOM classification.
+      if (item.dataset.zphase !== phase) {
+        diag("chip.phase", {
+          name, from: item.dataset.zphase || "(new)", to: phase,
+          by: owned ? "loop" : "sweep", detail: detail || "",
+        });
+      }
       const cls = phase === "run" ? "run" : phase === "err" ? "err" : "done";
       this.chip(item, {
         label: name, detail: detail || "", body: body || "",
@@ -1021,7 +1110,7 @@
       if (owned) item.dataset.zloop = "1";
     },
 
-    classify(item) {
+    classify(item, next) {
       if (item.dataset.zloop) { this.ensureOwnedChip(item); return; } // loop owns it
       const txt = P.classifyText(item, ".zs-chip"); // excludes thinking AND our chip
 
@@ -1072,17 +1161,89 @@
         // resume, so a settled turn is never falsely frozen later.
         const stopped =
           item.dataset.zStopped === "1" ||
-          (A.userStopped && item === P.lastAssistant());
-        const live = !stopped && item === P.lastAssistant() && (P.isGenerating() || A.running);
-        const phase = stopped ? "err" : (live ? "run" : "done");
-        const detail = stopped ? "stopped" : "";
+          (A.userStopped && item === P.lastAssistant()) ||
+          isRememberedHalted(item, txt);
+        // Self-heal: a site re-render that swapped this turn's node wiped the
+        // dataset marker - re-stamp it so the stop survives the next wipe of
+        // the A.userStopped latch (a fresh user message clears it by design).
+        if (stopped && item.dataset.zStopped !== "1") {
+          item.dataset.zStopped = "1";
+          diag("chip.rehalt", { name: ZSParse.toolNameFromText(txt) });
+        }
+        // The loop already SETTLED this very call (tool finished, we're waiting
+        // for the model's next turn) but the site swapped the turn's DOM node,
+        // wiping the chip, the zloop ownership AND the __zsChip opts. Without
+        // this, the fresh node re-classifies as a spinning "run" chip (A.running
+        // is still true) on an already-executed call. Re-own it with the settled
+        // outcome. The count guard skips this once the model's NEXT turn exists,
+        // so a follow-up call to the same tool still classifies live.
+        if (!stopped && A.running && !A.toolRunning && A.toolSettle &&
+            A.toolSettle.count === P.assistantCount() &&
+            item === P.lastAssistant() &&
+            ZSParse.toolNameFromText(txt) === A.toolName) {
+          diag("chip.reown", { name: A.toolName, phase: A.toolSettle.phase });
+          this.toolBox(item, A.toolName, A.toolSettle.phase, A.toolSettle.detail,
+            true, A.toolSettle.body, A.toolSettle.category);
+          return;
+        }
+        // Is this command turn the IN-FLIGHT call - the one a running loop or the
+        // bootstrap is about to own? The tell: it has NO injected result turn after
+        // it yet. Every ALREADY-EXECUTED command turn is followed by its injected
+        // result (a user turn matching isInjectedFeedback), so keying off that,
+        // rather than item === lastAssistant(), robustly separates the in-flight
+        // turn from settled history. This gives us the best of both:
+        //  - The Kimi/bootstrap flash fix: while a loop/bootstrap is active, the
+        //    in-flight turn stays "run" in the window between generation ending and
+        //    the loop painting its own chip, WITHOUT depending on the flickery
+        //    lastAssistant() (Kimi's Vue swaps the node) - no premature green flash.
+        //  - No re-spin on REVISIT: when a started chat is re-opened and the loop
+        //    or bootstrap runs again, every PAST command turn already has its result
+        //    below it, so it settles to "done" instead of every old chip re-loading
+        //    to a blue spinner (the Arena "all chips restarted loading" report).
+        const resultAfter = next && P.isUserItem(next) &&
+          ZSParse.isInjectedFeedback(P.classifyText(next, ".zs-chip"));
+        const inFlight = (A.running || A.starting) && !resultAfter;
+        const live = !stopped && (
+          inFlight || (item === P.lastAssistant() && P.isGenerating())
+        );
+        let phase = stopped ? "err" : (live ? "run" : "done");
+        let detail = stopped ? "stopped" : "";
+        // Error-aware settle: a command whose injected result RIGHT BELOW is an
+        // ERROR must never wear a green ✓. The loop paints this correctly while
+        // it owns the turn, but a revisited conversation (or a node swap that
+        // dropped ownership) re-derives the phase here - from the conversation
+        // itself, so it stays correct without any loop state.
+        if (phase === "done" && next && P.isUserItem(next)) {
+          const nt = P.classifyText(next, ".zs-chip");
+          if (ZSParse.isInjectedFeedback(nt) && /^\s*ERROR\b/.test(nt)) {
+            phase = "err"; detail = "error";
+            if (item.dataset.zphase !== "err") diag("chip.errSettle", { name: ZSParse.toolNameFromText(txt) });
+          }
+        }
         // A command block that is VISIBLE right now (its hide classes live on
         // child nodes that sites like Gemini re-create on every update, and the
         // block may render only AFTER the chip was first placed mid-stream).
+        // Excludes the reasoning area (P.thinkingSel) like ensureOwnedChip:
+        // thinking-quoted commands otherwise keep this true forever, and the
+        // forced repaint recomputes `live` each sweep - the chip then FLAPS
+        // done→run→done with the generation flicker (seen live as a settled
+        // green chip blinking back to a blue spinner).
         const rawVisible = [...item.querySelectorAll("pre, p, [class*='code']")].some(
           (e) => !e.classList.contains("zs-tool-hide") && !e.closest(".zs-tool-hide") &&
-                 !e.closest(".zs-chip") && ZSParse.hasCommandShape(e.textContent || ""));
+                 !e.closest(".zs-chip") && !(P.thinkingSel && e.closest(P.thinkingSel)) &&
+                 ZSParse.hasCommandShape(e.textContent || ""));
         if (item.dataset.zphase !== phase || chipGone || rawVisible) {
+          // Tracker: WHY the sweep chose this phase (only when it changes -
+          // chipGone/rawVisible repaints of the same phase stay silent).
+          if (item.dataset.zphase !== phase) {
+            diag("chip.why", {
+              name: ZSParse.toolNameFromText(txt), to: phase,
+              stopped, live, isLast: item === P.lastAssistant(),
+              gen: P.isGenerating(), run: A.running,
+              zStopped: item.dataset.zStopped === "1",
+              remembered: isRememberedHalted(item, txt),
+            });
+          }
           this.toolBox(item, ZSParse.toolNameFromText(txt), phase, detail, false);
         }
         return;
@@ -1114,12 +1275,20 @@
       // 4. Plain text turn. If this node still wears decoration (a recycled
       //    virtualized node), strip it so we never hide genuine content.
       if (item.dataset.zs || item.dataset.zphase || item.querySelector(".zs-chip")) {
+        // Tracker: a decorated node re-classified as PLAIN TEXT (virtualized
+        // node recycled, or the turn's command text vanished) - its decoration
+        // (chip + zStopped marker) is stripped here. If a chip "un-settles"
+        // mysteriously, this is the smoking gun to look for.
+        diag("chip.reset", { was: item.dataset.zphase || item.dataset.zs || "chip-only" });
         resetDecoration(item);
       }
     },
 
     sweep() {
-      for (const it of P.allItems()) this.classify(it);
+      // Pass each turn's FOLLOWING turn too: a command chip needs it to know
+      // whether its injected result was an ERROR (error-aware settle above).
+      const items = P.allItems();
+      for (let i = 0; i < items.length; i++) this.classify(items[i], items[i + 1] || null);
       // Safety net for stopped turns whose chip lives OUTSIDE the enumerated
       // message list. On Arena an A/B comparison renders each candidate as a
       // slide in the carousel's OWN nested <ol>, not the main flex-col-reverse
@@ -1787,6 +1956,11 @@
         if (!cover || cover.dataset.on !== "1") return;
         const e = P.getEditor();
         if (!e) { coverRaf = requestAnimationFrame(place); return; }
+        // Re-assert the typing mask on the CURRENT editor node: sites that
+        // recreate the editor on each inject/clear (Kimi's Vue) drop the class,
+        // which would un-hide the raw text and un-cap its height. Cheap idempotent
+        // add every frame keeps the mask + height cap glued to the live node.
+        if (!e.classList.contains("zs-typing")) e.classList.add("zs-typing");
         // While a blocking modal (login / consent) or bot-check is up, hide the
         // cover so it doesn't sit on top of the modal; it reappears once the
         // overlay clears (the loop keeps running).
@@ -1799,7 +1973,25 @@
           return;
         }
         cover.style.display = "flex";
-        const r = e.getBoundingClientRect();
+        let r = e.getBoundingClientRect();
+        // Clip the cover to the composer's VISIBLE band. Some composers grow the
+        // inner editor node past a scrolling ancestor that clips it (Kimi's Vue
+        // RECREATES .chat-input-editor on every inject/clear, dropping the
+        // .zs-typing height cap, so the editor balloons to ~1500px while its
+        // .chat-input-editor-container caps the visible box via overflow:auto).
+        // Measuring the raw editor then centres the cover on the giant editor's
+        // midpoint - far below the visible input - so it "vanishes" off the box.
+        // Intersect with the nearest clipping ancestor to track what's on screen.
+        for (let a = e.parentElement, i = 0; a && a !== document.body && i < 8; a = a.parentElement, i++) {
+          const ov = getComputedStyle(a).overflowY;
+          if (ov === "auto" || ov === "scroll" || ov === "hidden") {
+            const ar = a.getBoundingClientRect();
+            const top = Math.max(r.top, ar.top);
+            const bottom = Math.min(r.bottom, ar.bottom);
+            if (bottom > top) r = new DOMRect(r.left, top, r.width, bottom - top);
+            break;
+          }
+        }
         // Optionally overshoot the editor box by PAD px on every side. Some
         // composers (Gemini's Quill) keep typed text near rounded corners, so a
         // cover sized EXACTLY to the editor leaves slivers of text peeking; those
@@ -1811,10 +2003,25 @@
         // editor rect that sits a few px below the visual input box centre, so
         // the centred "Agent is working…" text looks low. A provider can shift it.
         const OFFY = P.coverOffsetY || 0;
+        // Height is at least MIN_H so the label is readable even over a
+        // single-line composer. CENTER the cover on the editor's vertical middle
+        // rather than anchoring its TOP to the editor top: a short (e.g. 20px)
+        // textarea bumped to 36px would otherwise grow only DOWNWARD, leaving the
+        // "Agent is working…" label sitting high in the composer's input band
+        // (seen on Cloudflare's 1-line textarea). For a composer already taller
+        // than MIN_H the maths reduces to the old `r.top - PAD`, so DeepSeek/Gemini
+        // are unchanged.
+        // Hard ceiling: even though .zs-typing caps the editor's visual height
+        // (see overlay.css), belt-and-suspenders clamp the cover so a composer
+        // whose growing element escapes that CSS cap on some provider can never
+        // turn the "Agent is working…" cover into a full-page white slab.
+        const MAXH = P.coverMaxH || 200;
+        const h = Math.min(Math.max(r.height + PAD * 2, 36), MAXH);
+        const centerY = r.top + r.height / 2 + OFFY;
         cover.style.left = (r.left - PAD) + "px";
-        cover.style.top = (r.top - PAD + OFFY) + "px";
+        cover.style.top = (centerY - h / 2) + "px";
         cover.style.width = (r.width + PAD * 2) + "px";
-        cover.style.height = (Math.max(r.height, 36) + PAD * 2) + "px";
+        cover.style.height = h + "px";
         cover.style.background = opaqueBg(e);
         coverRaf = requestAnimationFrame(place);
       };
@@ -1892,13 +2099,26 @@
     return (Date.now() - t0) / 1000;
   }
 
-  let _prevGen = null;
+  // Timestamp of the user's last REAL click on the site (trusted event, outside
+  // ZeroScript's own UI). A genuine "regenerate ↻" is always such a click;
+  // DeepSeek's post-stop phantom generations and stop-button re-mount flickers
+  // never are - this is what tells them apart (seen live: two false regenResume
+  // fired 8s/2s after a Stop with no user action, un-stopping the halted turn).
+  let _userClickAt = 0;
+  document.addEventListener("click", (e) => {
+    if (e.isTrusted && !(e.target && e.target.closest && e.target.closest("#zs-root"))) {
+      _userClickAt = Date.now();
+    }
+  }, true);
+
+  let _prevHardGen = null, _prevSoftGen = null;
   setInterval(() => {
     const gen = P.isGenerating(); // growth-tolerant: used for the live token meter
     // Watchdog freshness clock. Growth-tolerant (not just the hard stop-button
     // signal): a SHORT command after a long reasoning phase shows its stop
     // square for only a frame or two - too briefly for this 200ms sampler.
     if (gen) A.lastGenAt = Date.now();
+    const hardGen = A.started && P.isHardGenerating();
 
     // Regenerate-as-resume: after a manual stop (A.userStopped) the agent stays
     // dormant until fresh user intent. Typing a message or the native Continue
@@ -1909,17 +2129,50 @@
     // come from a user action (there is no spontaneous generation). Treat it as
     // resume - clear the stop latch and drop the turn's stopped/no-resume markers
     // so the auto-resume watchdog can pick the regenerated reply's tool back up.
+    // Providers with NO native "regenerate" control (e.g. ReidChat) can opt out
+    // via hasRegenerate:false - for them a gen false→true blip while stopped is
+    // only abort/caret churn, never a real regenerate, so honouring it would
+    // spuriously clear the manual-stop latch and auto-resume against the user.
+    // HARD edge only: the growth-tolerant `gen` blips false→true when the site
+    // re-renders the HALTED turn after a stop (adding its "Stopped" marker grows
+    // streamText, which counts as growth for 800ms) - that blip falsely cleared
+    // the latch, repainted the stopped chip ✓ green and re-armed auto-resume. A
+    // real regenerate always raises the site's stop control, so require it; on
+    // DeepSeek (no stop control during reasoning) this merely delays the resume
+    // to the answer phase, after which the watchdog acts anyway.
+    // Tracker: a soft (growth-only) blip in the stopped-idle state - exactly the
+    // false trigger the hard-edge gate above filters out. Log it so live tests
+    // can SEE the old bug firing and being ignored.
     if (A.started && A.userStopped && !A.running && !A.injecting && !A.stopping &&
-        gen && _prevGen === false) {
-      A.userStopped = false;
-      const it = P.lastAssistant();
-      if (it) {
-        delete it.dataset.zStopped; delete it.dataset.zResume;
-        delete it.dataset.zResumeLen; delete it.dataset.zloop;
-      }
-      diag("regenResume");
+        gen && _prevSoftGen === false && !hardGen) {
+      diag("regenBlip.ignored");
     }
-    _prevGen = gen;
+    if (P.hasRegenerate !== false &&
+        A.started && A.userStopped && !A.running && !A.injecting && !A.stopping &&
+        hardGen && _prevHardGen === false) {
+      // Gate on ACTUAL user intent: a real regenerate is always a trusted click
+      // moments before the new generation, and never right after the Stop (the
+      // stop click itself is trusted - the 3s grace keeps it from qualifying).
+      // Without these gates DeepSeek's own post-stop behaviour (aborted
+      // reasoning restarting as an answer phase, stop-button re-mount flicker)
+      // raised this edge with no user action and un-stopped the halted turn.
+      const clickAge = Date.now() - _userClickAt;
+      const stopAge = Date.now() - (A.stopAt || 0);
+      if (clickAge < 2500 && stopAge > 3000) {
+        A.userStopped = false;
+        const it = P.lastAssistant();
+        if (it) {
+          delete it.dataset.zStopped; delete it.dataset.zResume;
+          delete it.dataset.zResumeLen; delete it.dataset.zloop;
+          forgetHalted(it);
+        }
+        diag("regenResume", { clickAge, stopAge });
+      } else {
+        diag("regenEdge.ignored", { clickAge, stopAge });
+      }
+    }
+    _prevHardGen = hardGen;
+    _prevSoftGen = gen;
     // Our "■ Stop" button stays visible for the WHOLE active turn (generation,
     // reasoning, or a tool/wait running on the bridge). It is complete on its own
     // - stopLoop both halts our loop AND clicks the site's native stop - and the
@@ -1931,9 +2184,21 @@
     // Self-heal a stuck "Stopping…": if we flagged stopping but nothing is
     // actually busy anymore (the loop's finally never ran because the Stop landed
     // before a loop started, or a pending start was cancelled), release it so the
-    // button doesn't freeze on "Stopping…".
-    if (A.stopping && !A.running && !A.toolRunning && !(A.started && P.isHardGenerating())) {
-      A.stopping = false;
+    // button doesn't freeze on "Stopping…". While the site is STILL streaming,
+    // re-click its native stop (throttled) instead of releasing: the first click
+    // sometimes gets swallowed by a re-render, and handing back a clickable
+    // "■ Stop" the user has to press again is exactly the bounce we're killing.
+    if (A.stopping && !A.running && !A.toolRunning) {
+      if (A.started && P.isHardGenerating()) {
+        if (Date.now() - (A.stopRetryAt || 0) > 800) {
+          A.stopRetryAt = Date.now();
+          try { P.stopGeneration(); } catch {}
+          diag("stop.retry");
+        }
+      } else {
+        A.stopping = false;
+        diag("stop.quiet"); // drain over: site quiet, Stopping… released
+      }
     }
     ui.showStop(A.running || A.toolRunning || A.stopping || (A.started && P.isHardGenerating()));
 
@@ -2030,6 +2295,13 @@
         A.startingKey = null;
         P.setInputLock(false);
         ui.setStarting(false);
+        // CRITICAL: startSession's own finally is gated on `alive()` (this abandon
+        // just invalidated it via startGen++), so it will NEVER run and never
+        // lift the "Agent is working…" cover. Without this line the cover was
+        // stuck forever on the fresh chat whenever the user opened a new,
+        // empty conversation WHILE the bootstrap's tool call (list_commands) was
+        // still in flight - validated live 2026-07 on Cloudflare AI Playground.
+        ui.inputCover(false);
       }
     }
     // Same idea for a RUNNING loop: if the user opens a NEW, empty conversation
@@ -2121,6 +2393,7 @@
       // auto-resume.
       A.userStopped = true;
       A.stop = true;
+      A.stopAt = Date.now(); // grace anchor for the regenerate-as-resume gates
       // If our loop is live, mirror the same "Stopping…" feedback as our own
       // Stop button so the bar reflects the wind-down instead of flickering.
       if (A.running && !A.stopping) { A.stopping = true; ui.markStopping(); }
@@ -2134,7 +2407,7 @@
       A.userStopped = false;
       A.stop = false;
       const it = P.lastAssistant();   // a real resume → drop the stopped marker
-      if (it) delete it.dataset.zStopped;
+      if (it) { delete it.dataset.zStopped; forgetHalted(it); }
       diag("nativeContinue");
     },
   });

@@ -1,4 +1,3 @@
-
 # ZeroScript - Free AI Agent for Roblox Studio
 
 ![GitHub stars](https://img.shields.io/github/stars/sebattfg/ZeroScript-Free?style=social)

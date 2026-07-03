@@ -301,7 +301,13 @@ button.zs-site-opt:hover { background: rgba(129, 140, 248, 0.24); filter: bright
   color: rgba(140, 140, 150, 0.9);
   font-size: 12px; font-family: ui-sans-serif, "Segoe UI", sans-serif;
   white-space: nowrap; overflow: hidden;
-  pointer-events: none;
+  /* Capture pointer events: the cover sits over the composer while the agent
+     works, so eating clicks/focus stops the user from clicking THROUGH it into
+     the input box and typing (contenteditable=false alone leaks - Vue/Angular
+     re-renders can reset it). The place() loop hides the cover whenever a modal
+     or captcha is up, so this never traps clicks the user actually needs. */
+  pointer-events: auto;
+  cursor: default;
 }
 
 /* belt-and-suspenders: the typed text itself is rendered invisible
@@ -311,6 +317,22 @@ div[contenteditable='true'].zs-typing,
 div[contenteditable='true'].zs-typing * { color: transparent !important; }
 textarea.zs-typing,
 div[contenteditable='true'].zs-typing { caret-color: transparent !important; }
+
+/* Keep the composer from ballooning while the extension injects the (large)
+   system prompt or a big tool output. The typed text is transparent and hidden
+   under #zs-input-cover anyway, so there is nothing to see - but without a cap
+   the editor grows to fit every line (e.g. Kimi's inner .chat-input-editor hit
+   ~1500px), which then makes the cover (sized to the editor rect) a giant white
+   slab over the page, and on composers with no clipping ancestor (DeepSeek's
+   textarea, Gemini's Quill) balloons the visible box itself. Clipping the height
+   only affects DISPLAY; the full value/content is intact and still sent. The
+   class is present only during agent injection, never while the user types, so
+   this never clips real typing. */
+textarea.zs-typing,
+div[contenteditable='true'].zs-typing {
+  max-height: 140px !important;
+  overflow-y: hidden !important;
+}
 
 /* ── spinner element ───────────────────────────────────────── */
 .zs-spin {
@@ -367,6 +389,29 @@ message-content.zs-cmd-mask code-block { display: none !important; }
    portalled to <body>, so raising its z-index above the bar lifts it back on top.
    Inert when the menu is closed (Ant adds .ant-select-dropdown-hidden ⇒ display:none). */
 .qwen-select-dropdown { z-index: 2147483646 !important; }
+
+/* Kimi (Naive UI) portals its model-picker popover (K2.6 Instant / Thinking /
+   Agent / Swarm) into a .v-binder-follower-container at z-index ~2001 - far below
+   #zs-root (2147483600) - so the ZeroScript bar covered the open menu. Lift the
+   container above the bar. :has scopes this to the MODEL popover specifically so
+   other Naive tooltips/popovers on the page keep their normal stacking. */
+.v-binder-follower-container:has(.models-popover) { z-index: 2147483646 !important; }
+
+/* GLM / Z.ai (bits-ui floating library) portals its composer-toolbar popovers -
+   the Search / Advanced Search hover card, and similar tooltips/dropdowns - into
+   a [data-bits-floating-content-wrapper] at z-index ~9999, far below #zs-root
+   (2147483600), so the ZeroScript bar sat in front of them (the popover appeared
+   "behind" the bar on hover). The wrapper is the positioned/stacking element, so
+   lifting it above the bar fixes every bits-ui popover anchored near the bar. */
+[data-bits-floating-content-wrapper] { z-index: 2147483646 !important; }
+
+/* Arena (Radix UI) portals its header dropdowns - the model picker and the
+   conversation-mode select - into a [data-radix-popper-content-wrapper] at
+   z-index ~50, far below #zs-root (2147483600). The model list is tall enough to
+   reach down into the anchored bar's band, so its lower entries sat behind the
+   bar. Lift every Radix popper above the bar. (Radix DIALOGS are handled
+   separately: arena.js overlayBlocking() hides the bar while one is open.) */
+[data-radix-popper-content-wrapper] { z-index: 2147483646 !important; }
 
 /* category accent colour (left stripe + icon tint) */
 .zs-chip.cat-roblox   { --cat: #818cf8; }

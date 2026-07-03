@@ -740,6 +740,15 @@ const ZSProvider = (() => {
     id: "qwen",
     displayName: "Qwen",
     timings,
+    // Reasoning-area selector, exported so the CORE's raw-command-visible probes
+    // exclude it (parity with DeepSeek/Gemini/Kimi/GLM). Qwen's thinking renders
+    // in a `.qwen-chat-thinking-tool-status-card-wraper` (their spelling) that sits
+    // OUTSIDE `.response-message-content`, so all of THIS provider's reads already
+    // skip it via bodyEl(phase-answer). The core probe, though, walks the whole
+    // turn - and while Qwen keeps the card COLLAPSED by default (reasoning not in
+    // the DOM, so the flap can't happen normally), excluding it also covers the
+    // case where the user EXPANDS the card and its quoted command becomes visible.
+    thinkingSel: ".qwen-chat-thinking-tool-status-card-wraper",
     // React re-renders the reply markdown subtree on every stream update,
     // wiping any chip placed inside it. Anchor chips at the turn-element level
     // (redirected into the reply column by chipAnchor).

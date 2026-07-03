@@ -712,6 +712,12 @@ const ZSProvider = (() => {
     id: "deepseek",
     displayName: "DeepSeek",
     timings,
+    // Reasoning-area selector, exported so the CORE's raw-command-visible
+    // probes can exclude it: DeepSeek QUOTES the command JSON/###LUA### inside
+    // its thinking, which the camouflage never hides (by design) - without
+    // this exclusion those quotes read as "raw block still visible" forever
+    // (seen live: 60Hz chip rebuild spam + done→run→done chip flapping).
+    thinkingSel: S.thinking,
     init({ diag: d } = {}) { if (d) diag = d; },
     // turns
     allItems, isUserItem, isAssistantItem, itemText, classifyText,

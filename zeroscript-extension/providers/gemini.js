@@ -495,6 +495,13 @@ const ZSProvider = (() => {
     id: "gemini",
     displayName: "Gemini",
     timings,
+    // Reasoning-area selector, exported so the CORE's raw-command-visible probes
+    // exclude it (same fix as DeepSeek): Gemini's thinking models (2.5 Pro/Flash)
+    // render their reasoning in <model-thoughts> and often QUOTE the command
+    // JSON/###LUA### there. The camouflage never hides that quote (by design), so
+    // without this exclusion the core reads it as "raw block still visible"
+    // forever - the chip then FLAPS done→run→done and rebuilds on every sweep.
+    thinkingSel: S.thinking,
     // Gemini (Angular) re-renders a turn's content subtree on every update,
     // wiping any chip placed inside it. Tell the core to anchor chips at the
     // turn-element level instead, where they survive those re-renders.
