@@ -73,6 +73,12 @@ Go to https://chat.deepseek.com (recommended), https://gemini.google.com, https:
 - Control play-testing
 - **Remember your project across sessions** persistent project memory saved inside your place
 
+## New in 1.3.9
+
+- **More reliable bridge:** a Roblox process left running in the background after a restart no longer fights the next launch, and a dropped internal connection now retries silently instead of failing a command with a confusing error.
+- **Clearer status bar:** when the agent is active but Studio, the place, or the bridge is not actually usable, the bar now says exactly what to do (open a place, enable the MCP server, or restart the bridge) instead of showing a falsely healthy tool count.
+- **Cross-provider UI fixes:** DeepSeek, Gemini, Kimi and Qwen menus/tooltips no longer render clipped behind ZeroScript's bar, and several Gemini/Kimi/Arena session and chip glitches are fixed.
+
 ## New in 1.3.5
 
 - **New AI provider: Arena** (arena.ai): a sixth free provider, and the first multi-model playground. Pick any model Arena offers and drive Roblox Studio with it. Use **Direct** mode: ZeroScript blocks Start in Battle / Side-by-Side / Agent modes and auto-commits any A/B comparison to candidate A so the agent always reads a single reply.

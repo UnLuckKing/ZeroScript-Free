@@ -2,6 +2,46 @@
 
 All notable changes to ZeroScript Free are documented here.
 
+## [1.3.9] - 2026-07-04
+
+### Fixed
+- Bridge: kill the full process tree on restart instead of just the wrapper
+  process, which used to leave orphaned StudioMCP.exe instances behind that
+  fought the next launch and caused seemingly random "Studio looks connected
+  but nothing responds" failures.
+- Bridge: a dead MCP server is now auto-restarted by a background watchdog
+  instead of waiting for the next tool call to notice.
+- Bridge: a tool call that hits one of Studio's own brief connection blips now
+  retries once instead of surfacing a spurious "Studio not connected" error.
+- Extension: the status bar no longer shows a falsely healthy "N tools" label
+  when the agent is active but Studio, the place, or the bridge itself isn't
+  actually usable, it now names the real blocker (open a place / enable the
+  MCP server / bridge offline).
+- Cross-provider: DeepSeek, Gemini, Kimi and Qwen composer menus, model
+  pickers and tooltips no longer render clipped or hidden behind ZeroScript's
+  own bar/pill/cover.
+- DeepSeek: the raw system-prompt turn no longer flashes for a frame before
+  being hidden.
+- Gemini: "New chat" no longer gets stuck on "Agent active" from a reused
+  previous conversation URL.
+- Kimi: a thinking model quoting command JSON in its reasoning no longer
+  causes the tool chip to flap between done/run/done; input can no longer be
+  typed mid-run after Vue recreates the editor node.
+- Arena: unsupported-mode gate now also covers Web Search and Generate Image,
+  and chip alignment is fixed when a command turn renders as an A/B
+  model-comparison carousel.
+- Bridge: a long-running tool call no longer starves the connection's ping
+  handling and trips the half-open-socket watchdog.
+
+### Changed
+- Bridge and installer logs moved to `logs/bridge_debug.log` and
+  `logs/start.log`; the console now only shows what a user actually needs to
+  read, full detail still lands in the log files.
+- `start.bat` now detects and explains a double launch instead of silently
+  replacing the previous instance, and warns clearly if port 17613 stays held
+  after trying to free it.
+- Removed remaining em dashes from user-visible strings.
+
 ## [1.3.3] - 2026-06-24
 
 ### Fixed
