@@ -10,6 +10,7 @@ docs/
 
 # Local dev / diagnostic tools
 probe.py
+logs/
 
 # System files
 .DS_Store

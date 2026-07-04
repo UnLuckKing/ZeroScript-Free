@@ -77,10 +77,32 @@ else:
     # Console can't do ANSI: drop colors entirely rather than print raw escapes.
     C = {k: "" for k in ("reset", "dim", "gr", "yl", "rd", "cy")}
 
+# Every run appends here (never truncated), so a whole test session - across
+# multiple restarts - stays in one file the user can just send us. Each
+# process start writes a banner (see main()) so restarts are easy to spot.
+LOGS_DIR = os.path.join(HERE, "logs")
+os.makedirs(LOGS_DIR, exist_ok=True)
+LOG_PATH = os.path.join(LOGS_DIR, "bridge_debug.log")
+try:
+    _log_file = open(LOG_PATH, "a", encoding="utf-8", errors="replace")
+except Exception:
+    _log_file = None
 
-def log(msg, color="dim"):
-    ts = time.strftime("%H:%M:%S")
-    print(f"{C['dim']}{ts}{C['reset']} {C.get(color,'')}{msg}{C['reset']}", flush=True)
+
+def log(msg, color="dim", terminal=True):
+    """terminal=False: written to bridge_debug.log only, not the console. Use
+    for noisy/technical detail (raw stderr from child MCP servers, per-call
+    traces) that would bury the handful of lines a non-technical user actually
+    needs to read. Nothing is ever lost - it all still lands in the file."""
+    if terminal:
+        ts = time.strftime("%H:%M:%S")
+        print(f"{C['dim']}{ts}{C['reset']} {C.get(color,'')}{msg}{C['reset']}", flush=True)
+    if _log_file:
+        try:
+            _log_file.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
+            _log_file.flush()
+        except Exception:
+            pass
 
 
 # Roblox Studio exposes its built-in MCP server on this loopback port. StudioMCP
@@ -163,6 +185,17 @@ def check_studio_port():
     else:
         log("left it running. Close it yourself, then restart the bridge.", "yl")
     return False
+
+
+_TRANSIENT_STUDIO_MARKERS = (
+    "no roblox studio instance", "no active studio", "studio instance is connect",
+    "studio instance connected", "not connected to", "no studio instance",
+)
+
+
+def _looks_like_transient_studio_drop(text):
+    low = (text or "").lower()
+    return any(m in low for m in _TRANSIENT_STUDIO_MARKERS)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -271,8 +304,20 @@ class MCPClient:
                     pass
             self.pending.clear()
         if self.proc:
+            # proc.terminate() (TerminateProcess on Windows) only kills THIS
+            # pid. Our command is often a wrapper (e.g. launch_studio_mcp.py)
+            # that Popen()s a real child (StudioMCP.exe) to own the stdio
+            # pipes - terminate() would leave that child orphaned, still bound
+            # to Studio's MCP port, fighting the next restart's fresh instance.
+            # taskkill /T kills the whole tree.
             try:
-                self.proc.terminate()
+                if sys.platform == "win32":
+                    subprocess.run(
+                        ["taskkill", "/F", "/T", "/PID", str(self.proc.pid)],
+                        capture_output=True, timeout=8,
+                    )
+                else:
+                    self.proc.terminate()
             except Exception:
                 pass
         self.proc = None
@@ -304,7 +349,8 @@ class MCPClient:
                     q.put_nowait(msg)
                 except Exception:
                     pass
-        log(f"[{self.id}] stdout closed (process ended)", "rd")
+        code = proc.poll()
+        log(f"[{self.id}] stdout closed (process ended, exit code {code})", "rd")
         with self.pend_lock:
             for q in self.pending.values():
                 try:
@@ -313,9 +359,14 @@ class MCPClient:
                     pass
 
     def _stderr_drain(self, proc):
+        # Surface the child's stderr instead of silently discarding it - this
+        # is often the ONLY clue why a server died (crash trace, port bind
+        # failure, missing Studio, etc).
         try:
-            for _ in iter(proc.stderr.readline, ""):
-                pass
+            for line in iter(proc.stderr.readline, ""):
+                line = line.rstrip()
+                if line:
+                    log(f"[{self.id}] stderr: {line}", "yl", terminal=False)
         except Exception:
             pass
 
@@ -362,28 +413,46 @@ class MCPClient:
     def call_tool(self, name, arguments, timeout):
         """Returns {"text":..., "images":[...]}. Raises on error/timeout."""
         with self.call_lock:
-            if not self.is_alive():
-                self.restart()
-            msg = self._request("tools/call",
-                                {"name": name, "arguments": arguments}, timeout)
-            if msg is None:
+            for attempt in (1, 2):
                 if not self.is_alive():
                     self.restart()
-                    msg = self._request("tools/call",
-                                        {"name": name, "arguments": arguments}, timeout)
+                msg = self._request("tools/call",
+                                    {"name": name, "arguments": arguments}, timeout)
                 if msg is None:
-                    raise TimeoutError(
-                        f"No response from server '{self.id}' after {timeout}s.")
-            if msg.get("error"):
-                err = msg["error"]
-                raise RuntimeError(err.get("message", json.dumps(err)))
-            content = msg.get("result", {}).get("content", [])
-            text = "\n".join(it.get("text", "") for it in content if it.get("type") == "text")
-            images = [{"data": it["data"], "mimeType": it.get("mimeType", "image/jpeg")}
-                      for it in content if it.get("type") == "image" and it.get("data")]
-            if not text and not images and content:
-                text = json.dumps(content)[:4000]
-            return {"text": text, "images": images}
+                    if not self.is_alive():
+                        self.restart()
+                        msg = self._request("tools/call",
+                                            {"name": name, "arguments": arguments}, timeout)
+                    if msg is None:
+                        raise TimeoutError(
+                            f"No response from server '{self.id}' after {timeout}s.")
+                if msg.get("error"):
+                    err = msg["error"]
+                    err_text = err.get("message", json.dumps(err))
+                    if attempt == 1 and _looks_like_transient_studio_drop(err_text):
+                        log(f"[{self.id}] {name}: transient Studio drop, retrying once...", "yl")
+                        time.sleep(1.5)
+                        continue
+                    raise RuntimeError(err_text)
+                content = msg.get("result", {}).get("content", [])
+                text = "\n".join(it.get("text", "") for it in content if it.get("type") == "text")
+                images = [{"data": it["data"], "mimeType": it.get("mimeType", "image/jpeg")}
+                          for it in content if it.get("type") == "image" and it.get("data")]
+                if not text and not images and content:
+                    text = json.dumps(content)[:4000]
+                # Studio's own MCP proxy briefly loses its binding to the Studio
+                # app every few seconds on some machines (seen live: repeated
+                # "Bound studio ... disconnected for proxy ..." stderr, self-
+                # healing within ~1-4s). A tool call landing in that window
+                # fails with a "no Studio instance connected" style message
+                # even though Studio is genuinely open - confirmed live via
+                # start_stop_play. One short retry rides through it instead of
+                # surfacing a spurious error to the user.
+                if attempt == 1 and _looks_like_transient_studio_drop(text):
+                    log(f"[{self.id}] {name}: transient Studio drop, retrying once...", "yl")
+                    time.sleep(1.5)
+                    continue
+                return {"text": text, "images": images}
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -583,10 +652,16 @@ async def run_tool_task(ws, name, args, timeout, rid):
     Kept as a standalone task (not awaited inline in handler) so a long tool
     never starves the connection's ability to answer app-level pings - see the
     call_tool branch in handler() for the full rationale."""
+    t0 = time.monotonic()
     res = await asyncio.to_thread(safe_call, name, args, timeout)
+    elapsed = time.monotonic() - t0
     tag = "gr" if res.get("ok") else "rd"
     summary = (res.get("text") or res.get("error") or "")[:80].replace("\n", " ")
-    log(f"<- {name}: {summary}", tag)
+    slow = "  [SLOW]" if elapsed > 5 else ""
+    # Routine per-call traces are technical noise for a non-dev user watching
+    # the console; they still land in bridge_debug.log. A failed/slow call
+    # DOES surface on the terminal - that's the signal a user should notice.
+    log(f"<- {name} ({elapsed:.1f}s){slow}: {summary}", tag, terminal=not res.get("ok") or elapsed > 5)
     try:
         await ws.send(json.dumps({"type": "tool_result", "id": rid, **res}))
     except websockets.ConnectionClosed:
@@ -644,7 +719,7 @@ async def handler(ws):
                 name = msg.get("name", "")
                 args = msg.get("arguments") or {}
                 timeout = float(msg.get("timeout", 120000)) / 1000.0
-                log(f"-> tool  {name}({', '.join(args.keys())})", "cy")
+                log(f"-> tool  {name}({', '.join(args.keys())})", "cy", terminal=False)
                 # Run the tool as a BACKGROUND task instead of awaiting it here.
                 # Awaiting inline parks this read loop for the WHOLE tool call, so
                 # a long tool (e.g. wait_job_finished > 25s) means the client's
@@ -684,29 +759,69 @@ async def handler(ws):
         log(f"extension disconnected  [{len(clients)} client(s)]", "yl")
 
 
-async def studio_watch(initial_app):
+async def server_watch():
+    """Poll every MCP server and restart any that died unexpectedly (e.g. the
+    StudioMCP proxy crashing on its own - see stop()'s taskkill /T fix and the
+    stderr logging above for why this used to happen silently). Without this,
+    a dead server only got noticed on the NEXT real tool call, which is what
+    made "Studio looks connected but nothing responds" possible."""
+    while True:
+        await asyncio.sleep(5)
+        for sid, client in list(mgr.clients.items()):
+            try:
+                if not client.is_alive():
+                    log(f"[{sid}] found dead - auto-restarting...", "yl")
+                    await asyncio.to_thread(client.start)
+                    mgr.rebuild_index()
+            except Exception as e:
+                log(f"[{sid}] auto-restart failed: {e}", "rd")
+
+
+async def studio_watch(initial_app, initial_place=None):
     """Poll Studio attachment and log transitions, so the terminal confirms in
     GREEN the moment Studio attaches (e.g. after the user toggles its MCP server)
     and warns again if it later drops. Best-effort; never raises."""
-    prev = initial_app
+    prev_app = initial_app
+    prev_place = initial_place
     while True:
         await asyncio.sleep(4)
         try:
-            app = (await asyncio.to_thread(probe_studio))["app"]
+            st = await asyncio.to_thread(probe_studio)
         except Exception:
             continue
-        if app is None or app == prev:
-            continue
-        if app is True:
-            total = len(mgr.list_tools())
-            log(f"Roblox Studio connected - {total} tools ready.", "gr")
-        else:  # app is False
-            log("Roblox Studio disconnected - re-enable its MCP server (toggle off/on).", "yl")
-        prev = app
+        app, place = st["app"], st["place"]
+        if app is not None and app != prev_app:
+            if app is True:
+                total = len(mgr.list_tools())
+                log(f"Roblox Studio connected - {total} tools ready.", "gr")
+            else:
+                log("Roblox Studio disconnected - re-enable its MCP server (toggle off/on).", "yl")
+            prev_app = app
+        if place is not None and place != prev_place:
+            # Debounce: StudioMCP's binding to Studio blips every few seconds
+            # on some machines (self-healing in ~1-4s - seen live as "Bound
+            # studio ... disconnected" stderr). A probe landing in that window
+            # can misread EITHER direction - most confusingly, reporting
+            # "place loaded" from a stale cached response while the place is
+            # actually still closed (seen live). Recheck once before trusting
+            # a transition, in either direction.
+            await asyncio.sleep(1.2)
+            try:
+                confirm = (await asyncio.to_thread(probe_studio))["place"]
+            except Exception:
+                confirm = None
+            if confirm is None or confirm != place:
+                continue  # didn't hold up on recheck - treat as noise, not a real change
+            if place is True:
+                log("Place loaded in Studio.", "gr")
+            else:
+                log("Place closed (Studio app still connected).", "yl")
+            prev_place = place
 
 
 async def main():
     print(f"\n{C['cy']}  ZeroScript Bridge{C['reset']}  {C['dim']}- Roblox Studio - ws://{HOST}:{PORT}{C['reset']}\n")
+    log(f"===== BRIDGE START  pid={os.getpid()}  log={LOG_PATH} =====", "cy")
     killed_squatter = await asyncio.to_thread(check_studio_port)
     mgr.load_config()
     try:
@@ -725,6 +840,19 @@ async def main():
     # Studio's MCP server toggle is off (or no place is open), so 0 tools is the
     # most common "needs a corrective step" state, not a success.
     _st = await asyncio.to_thread(probe_studio)
+    # Even when Studio (and its place) were ALREADY open before the bridge
+    # started, the freshly-launched StudioMCP proxy needs a moment to (re)bind
+    # to Studio's own MCP port - so an instant probe right after launch often
+    # reads app=False for a beat before flipping True a few seconds later
+    # (studio_watch would catch it, but only after printing a scary yellow
+    # "not connected" block first). Give it the same grace period the tools
+    # probe already gets before deciding it is a real problem.
+    if _st["app"] is False:
+        for _ in range(8):
+            await asyncio.sleep(1)
+            _st = await asyncio.to_thread(probe_studio)
+            if _st["app"] is not False:
+                break
     if total == 0 or _st["app"] is False:
         log("    -------------------------------------------------------------", "yl")
         if total == 0:
@@ -751,7 +879,8 @@ async def main():
 
     async with websockets.serve(handler, HOST, PORT, ping_interval=20, ping_timeout=20, max_size=16 * 1024 * 1024):
         log(f"listening on ws://{HOST}:{PORT}  - load the extension and open a supported AI chat", "cy")
-        asyncio.create_task(studio_watch(_st["app"]))
+        asyncio.create_task(studio_watch(_st["app"], _st["place"]))
+        asyncio.create_task(server_watch())
         await asyncio.Future()  # run forever
 
 
@@ -762,3 +891,5 @@ if __name__ == "__main__":
         log("shutting down...", "yl")
         for c in mgr.clients.values():
             c.stop()
+    finally:
+        log("===== BRIDGE STOP =====", "cy")

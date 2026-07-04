@@ -1617,11 +1617,32 @@
         msg = `Starting the Roblox agent…`;
         label = "Starting…"; kind = "starting"; disabled = true;
       } else if (A.started) {
-        toneClass = "active";
         const tools = (A.bridge && A.bridge.tools) || A.toolList.length || 0;
-        // No inline dot here: the leading status dot already shows green, two dots
-        // side by side looked cluttered. The green "Agent active" text carries it.
-        msg = `<b>Agent active</b>${tools ? ` · ${tools} tools` : ""}`;
+        // "N tools" only means StudioMCP itself is up - it advertises its full
+        // catalogue even with no Studio/place attached (see probe_studio() in
+        // bridge.py), so showing it while Studio/place isn't actually usable
+        // reads as "everything's fine" when tool calls will just fail. Surface
+        // the real blocker instead in that case.
+        if (A.bridge && A.bridge.connected === false) {
+          // placeDown/appDown/studioDown are all false in this case (they're
+          // only computed when the bridge IS connected - see setStatus), so
+          // without this check the bridge dropping fell through to the
+          // stale "N tools" text below, reading as if nothing was wrong.
+          toneClass = "warn"; warn = true;
+          msg = `<b>Agent active</b> · bridge offline, run the ZeroScript bridge`;
+        } else if (placeDown) {
+          toneClass = "warn"; warn = true;
+          msg = `<b>Agent active</b> · open a place in Roblox Studio`;
+        } else if (appDown || studioDown) {
+          toneClass = "warn"; warn = true;
+          msg = `<b>Agent active</b> · open Roblox Studio & enable its MCP server`;
+        } else {
+          toneClass = "active";
+          // No inline dot here: the leading status dot already shows green, two
+          // dots side by side looked cluttered. The green "Agent active" text
+          // carries it.
+          msg = `<b>Agent active</b>${tools ? ` · ${tools} tools` : ""}`;
+        }
       } else if (P.isFreshChat() || P.chatIsEmpty()) {
         // Treat ANY empty chat (no turns yet) as the standby/start case - not just
         // the strict fresh-chat match. isFreshChat() also requires an exact root
