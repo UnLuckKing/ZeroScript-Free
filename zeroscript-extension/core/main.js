@@ -58,12 +58,12 @@
   // AI chat sites ZeroScript works on. Keep in sync with manifest.json
   // content_scripts and background.js PROVIDER_URLS when adding a provider.
   const AI_SITES = [
-    { name: "DeepSeek", url: "https://chat.deepseek.com/", emoji: "🐋" },
-    { name: "Gemini", url: "https://gemini.google.com/app", emoji: "✦" },
-    { name: "Kimi", url: "https://www.kimi.com/", emoji: "🌙" },
-    { name: "GLM", url: "https://chat.z.ai/", emoji: "🅩" },
-    { name: "Qwen", url: "https://chat.qwen.ai/", emoji: "🔮" },
-    { name: "Arena", url: "https://arena.ai/text/direct", emoji: "🏟️" },
+    { name: "DeepSeek", url: "https://chat.deepseek.com/" },
+    { name: "Gemini", url: "https://gemini.google.com/app" },
+    { name: "Kimi", url: "https://www.kimi.com/" },
+    { name: "GLM", url: "https://chat.z.ai/" },
+    { name: "Qwen", url: "https://chat.qwen.ai/" },
+    { name: "Arena", url: "https://arena.ai/text/direct" },
   ];
 
   const A = {
@@ -1051,7 +1051,22 @@
           // sibling and shove the layout sideways, so it anchors in the content
           // column instead). Default: the turn root.
           const anchor = (P.chipAnchor && P.chipAnchor(item)) || item;
-          if (chip.parentElement !== anchor) anchor.insertBefore(chip, anchor.firstChild);
+          // Default: pin the chip as the FIRST child - simple and immune to the
+          // site re-appending fresh content later. A provider may opt into
+          // `chipAppend` to place it LAST instead (reads in the model's actual
+          // order: narration, then the tool call it wrote at the end of the
+          // turn). `chipTrailRef(item)` lets it name a fixed trailing sibling
+          // (e.g. Qwen's action-buttons row) the chip must stay BEFORE even
+          // when "last" - see ensureOwnedChip's drift check for why this needs
+          // upkeep that firstChild pinning never did.
+          const wantLast = !!P.chipAppend;
+          const trailRef = wantLast && P.chipTrailRef ? P.chipTrailRef(item) : null;
+          const inPlace = chip.parentElement === anchor &&
+            (wantLast ? chip.nextElementSibling === trailRef : anchor.firstElementChild === chip);
+          if (!inPlace) {
+            if (wantLast) anchor.insertBefore(chip, trailRef); // trailRef=null -> append
+            else anchor.insertBefore(chip, anchor.firstChild);
+          }
         } else if (spot) {
           spot.parent.insertBefore(chip, spot.ref);
         } else if (!chip.parentElement) {
@@ -1071,7 +1086,8 @@
     ensureOwnedChip(item) {
       const opts = item.__zsChip;
       if (!opts) return;
-      const chipGone = !item.querySelector(".zs-chip");
+      const chipEl = item.querySelector(".zs-chip");
+      const chipGone = !chipEl;
       let rawVisible = false;
       if (!opts.whole) {
         // NOTE the thinking exclusion: reasoning models QUOTE the command
@@ -1083,9 +1099,21 @@
                  !(P.thinkingSel && e.closest(P.thinkingSel)) &&
                  ZSParse.hasCommandShape(e.textContent || ""));
       }
-      if (chipGone || rawVisible) {
+      // A provider opted into `chipAppend` (chip trails the reply text instead
+      // of pinning first) has no equivalent of firstChild's immunity to churn:
+      // a site re-render can re-append fresh reply content AFTER our chip,
+      // silently shoving it back above the text it was meant to trail. Catch
+      // that drift too, not just an outright wipe - it's cheap (one property
+      // read) and only applies to opted-in providers (Qwen).
+      let drifted = false;
+      if (!opts.whole && !chipGone && P.chipAtItemLevel && P.chipAppend) {
+        const anchor = (P.chipAnchor && P.chipAnchor(item)) || item;
+        const trailRef = P.chipTrailRef ? P.chipTrailRef(item) : null;
+        drifted = chipEl.parentElement === anchor && chipEl.nextElementSibling !== trailRef;
+      }
+      if (chipGone || rawVisible || drifted) {
         // Tracker: the site wiped a loop-owned chip (re-render/node churn).
-        diag("chip.rebuild", { name: opts.label, phase: opts.phase, chipGone, rawVisible });
+        diag("chip.rebuild", { name: opts.label, phase: opts.phase, chipGone, rawVisible, drifted });
         this.chip(item, opts);
       }
     },
@@ -1147,6 +1175,29 @@
           item.dataset.zsig = sig;
         }
         return;
+      }
+
+      // 2b. FALLBACK for a command turn whose raw tool-call text is no longer
+      // readable (e.g. Qwen disposes/never fully renders an off-screen Monaco
+      // code block on a COLD page load - the dataset.zsCode cache only helps
+      // WITHIN a session, since it needs to observe the block live to capture
+      // it before disposal; reported live: every past tool-call chip vanished
+      // after a page reload, leaving only its "· result" box). The turn's own
+      // text no longer "looks like" a command, but the VERY NEXT turn being
+      // our injected result (`Output of 'name'`) is definitive proof it WAS
+      // one - settle it from that evidence instead of leaving the chip gone.
+      if (P.isAssistantItem(item) && !ZSParse.hasCommandShape(txt) &&
+          next && P.isUserItem(next)) {
+        const nt = P.classifyText(next, ".zs-chip");
+        const m = nt.match(/^\s*Output of '([^']+)'/);
+        if (m) {
+          const isErr = /^\s*ERROR\b/.test(nt);
+          const phase = isErr ? "err" : "done";
+          if (item.dataset.zphase !== phase || chipGone) {
+            this.toolBox(item, m[1], phase, "", false);
+          }
+          return;
+        }
       }
 
       // 3. Assistant command turns → live loading while streaming, ✓ when done.
@@ -1311,7 +1362,7 @@
   //  UI  (control panel, onboarding, stop button, banners, toast, input cover)
   // ════════════════════════════════════════════════════════════════════════
   const ui = (() => {
-    let root, bar, dot, brandEl, stateEl, actionBtn, stopBtn, moreBtn, menuEl;
+    let root, bar, dot, brandEl, stateEl, actionBtn, stopBtn, switchBtn, supportBtn, menuEl, unstableEl;
     let cover, coverRaf, barRaf;
     let bridgeOk = false, studioDown = false, placeDown = false, appDown = false;
     let wasConnected = false, bridgeBannerEl = null;
@@ -1328,14 +1379,15 @@
         <div id="zs-bar">
           <span id="zs-dot" class="off" title=""></span>
           <span id="zs-brand">ZeroScript <span class="zs-free">Free</span></span>
-          ${P.unstableWarning ? `<button id="zs-unstable">⚠ unstable</button>` : ""}
           <span id="zs-state"></span>
           <button id="zs-action"></button>
           <button id="zs-stop" hidden>■ Stop</button>
           <a id="zs-discord" href="https://discord.gg/D5G2HAzX8z" target="_blank" rel="noopener" title="Need help? Join our Discord"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg></a>
-          <button id="zs-more" aria-label="More options" title="More options">⋯</button>
+          <button id="zs-switch" aria-label="Switch AI and options" title="Switch AI, custom prompt, support"><span id="zs-switch-name"></span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
+          <button id="zs-support" aria-label="Support ZeroScript" title="Support ZeroScript"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg></button>
         </div>
         <div id="zs-menu" hidden></div>
+        ${P.unstableWarning ? `<button id="zs-unstable" aria-label="Provider may be unstable" hidden>⚠ unstable</button>` : ""}
       `;
       document.documentElement.appendChild(root);
       bar = root.querySelector("#zs-bar");
@@ -1344,29 +1396,49 @@
       stateEl = root.querySelector("#zs-state");
       actionBtn = root.querySelector("#zs-action");
       stopBtn = root.querySelector("#zs-stop");
-      moreBtn = root.querySelector("#zs-more");
+      switchBtn = root.querySelector("#zs-switch");
+      supportBtn = root.querySelector("#zs-support");
+      const swName = root.querySelector("#zs-switch-name");
+      if (swName) swName.textContent = P.displayName || P.id;
       menuEl = root.querySelector("#zs-menu");
       bar.classList.add(`zs-prov-${P.id}`); // lets CSS tune per-site (e.g. font)
 
       actionBtn.addEventListener("click", onActionClick);
       stopBtn.addEventListener("click", stopLoop);
-      const unstableBtn = root.querySelector("#zs-unstable");
-      if (unstableBtn) {
+      unstableEl = root.querySelector("#zs-unstable");
+      if (unstableEl) {
         // Set the native tooltip via PROPERTY, not the HTML template: the warning
         // text may contain double quotes (e.g. GLM's "No response…"), which would
         // terminate a title="..." attribute early and truncate the tooltip.
-        unstableBtn.title = P.unstableWarning;
-        unstableBtn.addEventListener("click", (e) => { e.stopPropagation(); toast(P.unstableWarning); });
+        unstableEl.title = P.unstableWarning;
+        unstableEl.addEventListener("click", (e) => { e.stopPropagation(); toast(P.unstableWarning); });
       }
       buildMenu();
-      moreBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
+      // Both bar controls open the same panel; the heart lands on the Support
+      // section (last), the model button opens at the top with Switch AI.
+      const toggleMenu = (toSupport) => {
         menuEl.hidden = !menuEl.hidden;
-        if (!menuEl.hidden) syncMenuPrompt();
-      });
+        if (!menuEl.hidden) {
+          syncMenuPrompt();
+          // On a FRESH open, menuEl has no max-height yet - that's only applied by
+          // placeBar()'s positioning pass, which runs on the next rAF tick (it's a
+          // separate loop, not synchronous with this click). Without it the panel
+          // has no overflow yet, so scrollHeight === clientHeight and setting
+          // scrollTop here is a no-op - the "jump to Support" silently failed on
+          // the very first open (reported live on Arena). Deferring one frame lets
+          // placeBar's already-queued tick clip the box first, so there's real
+          // scroll room by the time we set scrollTop.
+          requestAnimationFrame(() => {
+            if (!menuEl.hidden) menuEl.scrollTop = toSupport ? menuEl.scrollHeight : 0;
+          });
+        }
+      };
+      switchBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleMenu(false); });
+      supportBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleMenu(true); });
       document.addEventListener("click", (e) => {
         if (menuEl.hidden) return;
-        if (!menuEl.contains(e.target) && e.target !== moreBtn) menuEl.hidden = true;
+        if (!menuEl.contains(e.target) && !switchBtn.contains(e.target) && !supportBtn.contains(e.target))
+          menuEl.hidden = true;
       }, true);
 
       applyTheme();
@@ -1407,34 +1479,38 @@
     // prompt, and support (Ko-fi + Robux). Opens above the bar.
     function buildMenu() {
       const here = (P.displayName || "").toLowerCase();
+      const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
       let sites = "";
       for (const s of AI_SITES) {
         const current = s.name.toLowerCase() === here;
+        const label = `<span class="zs-site-name"><span>${s.name}</span><span class="zs-site-host">${hostOf(s.url)}</span></span>`;
         sites += current
-          ? `<div class="zs-site-opt zs-site-here"><span>${s.emoji} ${s.name}</span><span class="zs-site-badge">you're here</span></div>`
-          : `<button class="zs-site-opt" data-u="${s.url}">${s.emoji} ${s.name}<span class="zs-site-go">Open ↗</span></button>`;
+          ? `<div class="zs-site-opt zs-site-here">${label}<span class="zs-site-badge">active</span></div>`
+          : `<button class="zs-site-opt" data-u="${s.url}">${label}<span class="zs-site-go">&rarr;</span></button>`;
       }
       let passes = "";
       for (const p of ROBUX_PASSES) {
-        passes += `<button class="zs-tip-opt zs-tip-rbx" data-u="${passUrl(p.id)}">⬡ ${p.robux} Robux</button>`;
+        passes += `<button class="zs-tip-opt zs-tip-rbx" data-u="${passUrl(p.id)}"><span class="zs-rbx-cur">R$</span>${p.robux}</button>`;
       }
       menuEl.innerHTML =
-        `<div class="zs-menu-sec">
-           <div class="zs-menu-h">Use ZeroScript on other AI sites</div>
+        `<div class="zs-menu-head"><span class="zs-menu-logo">ZeroScript</span><span class="zs-menu-tag">Free</span></div>
+         <section class="zs-menu-sec">
+           <div class="zs-sec-label"><span>Switch AI</span></div>
            ${sites}
-         </div>
-         <div class="zs-menu-sec">
-           <div class="zs-menu-h">Your custom prompt</div>
+         </section>
+         <section class="zs-menu-sec">
+           <div class="zs-sec-label"><span>Custom prompt</span></div>
            <div class="zs-menu-note">Added below the system prompt on every new session. The built-in prompt can't be edited.</div>
            <textarea id="zs-set-text" rows="4" placeholder="e.g. Always comment your Luau code. Prefer small modular scripts."></textarea>
            <div class="zs-set-row"><button id="zs-set-save">Save</button><span id="zs-set-status"></span></div>
-         </div>
-         <div class="zs-menu-sec">
-           <div class="zs-menu-h">Support ZeroScript ♥</div>
-           <button class="zs-tip-opt zs-tip-kofi" data-u="${KOFI_URL}">☕ Ko-fi, any amount</button>
+         </section>
+         <section class="zs-menu-sec">
+           <div class="zs-sec-label"><span>Support</span></div>
+           <button class="zs-tip-opt zs-tip-star" data-u="${GITHUB_URL}"><span>Star on GitHub</span><span class="zs-tip-sub">free, helps a lot</span></button>
+           <button class="zs-tip-opt zs-tip-kofi" data-u="${KOFI_URL}"><span>Tip on Ko-fi</span><span class="zs-tip-sub">any amount</span></button>
            <div class="zs-tip-sep">or tip in Robux</div>
-           ${passes}
-         </div>`;
+           <div class="zs-rbx-grid">${passes}</div>
+         </section>`;
       const open = (url) => { try { window.open(url, "_blank", "noopener"); } catch {} menuEl.hidden = true; };
       menuEl.querySelectorAll("button.zs-site-opt, .zs-tip-opt").forEach((b) =>
         b.addEventListener("click", () => open(b.dataset.u)));
@@ -1466,15 +1542,19 @@
         ? `<a id="zs-setup-video" href="${VIDEO_URL}" target="_blank" rel="noopener">▶ Watch tutorial</a>`
         : "";
       setupCard.innerHTML =
-        `<div id="zs-setup-title">👋 Welcome to ZeroScript!</div>` +
-        `<div id="zs-setup-sub">You need the <b>Bridge</b> to connect to Roblox Studio. Download it from GitHub:</div>` +
-        videoBtn +
+        `<div id="zs-setup-head"><span id="zs-setup-logo">ZeroScript</span><span id="zs-setup-tag">Setup</span></div>` +
+        `<div id="zs-setup-sub">The <b>Bridge</b> is what connects this chat to Roblox Studio. Three steps and you're running.</div>` +
+        `<ol id="zs-setup-steps">` +
+          `<li>Download the Bridge from GitHub</li>` +
+          `<li>Run <code>start.bat</code></li>` +
+          `<li>Back here, click <b>Start Roblox agent</b></li>` +
+        `</ol>` +
         `<div class="zs-setup-copy-row">` +
           `<input type="text" id="zs-setup-link" readonly value="${GITHUB_URL}">` +
           `<button id="zs-setup-copy">Copy</button>` +
         `</div>` +
-        `<div id="zs-setup-steps">1. Download the Bridge &amp; start.bat<br>2. Run start.bat<br>3. Come back here and click <b>Start Roblox agent</b></div>` +
-        `<button id="zs-setup-dismiss">Got it ✓</button>`;
+        videoBtn +
+        `<button id="zs-setup-dismiss">Got it</button>`;
       document.documentElement.appendChild(setupCard);
 
       setupCard.querySelector("#zs-setup-copy").addEventListener("click", () => {
@@ -1801,6 +1881,19 @@
       if (anchorPadEl) { try { anchorPadEl.style.paddingTop = ""; } catch {} anchorPadEl = null; }
     }
 
+    // Position the floating "⚠ unstable" pill just above the bar's left edge.
+    function placeUnstable() {
+      const u = unstableEl;
+      if (!u) return;
+      if (!bar || bar.style.display === "none") { if (!u.hidden) u.hidden = true; return; }
+      const br = bar.getBoundingClientRect();
+      if (!br.width) { if (!u.hidden) u.hidden = true; return; }
+      if (u.hidden) u.hidden = false;
+      const uh = u.offsetHeight || 20;
+      u.style.left = Math.round(br.left) + "px";
+      u.style.top = Math.round(Math.max(4, br.top - uh - 5)) + "px";
+    }
+
     function placeBar() {
       barRaf = requestAnimationFrame(placeBar);
       if (!bar) return;
@@ -1814,6 +1907,12 @@
       if (root && !root.isConnected) {
         try { document.documentElement.appendChild(root); } catch {}
       }
+
+      // The instability warning floats just ABOVE the bar (not inside it), so it
+      // never crowds the row on narrow composers like Gemini. Positioned from the
+      // bar's current rect every frame - works in all bar modes since it only
+      // reads where the bar ended up. One frame of lag is imperceptible.
+      placeUnstable();
 
       // While a bot-check challenge OR a blocking modal (login / consent) is on
       // screen, get fully out of the way: the (often transparent) anchored bar is
@@ -2079,6 +2178,22 @@
   //    timer survives re-renders / conversation switches. ────────────────────
   const TOKEN_CHARS = 4;
 
+  // 0-999 as-is; 1000+ compacted to 1k/1.1k/99k/1M... (one decimal below 10 of
+  // the unit, none at/above it, trailing ".0" dropped) so a live token count
+  // doesn't grow into a wide, jumpy number as the reply streams in.
+  function formatCount(n) {
+    if (n < 1000) return String(n);
+    const units = [[1e9, "B"], [1e6, "M"], [1e3, "k"]];
+    for (const [div, suf] of units) {
+      if (n >= div) {
+        const v = n / div;
+        const rounded = v < 10 ? Math.round(v * 10) / 10 : Math.round(v);
+        return rounded + suf;
+      }
+    }
+    return String(n);
+  }
+
   function setChipDetail(item, text) {
     const dt = item && item.querySelector(".zs-chip .zs-chip-dt");
     if (dt) dt.textContent = text;
@@ -2220,7 +2335,7 @@
         if (name && name !== "command") setChipLabel(item, name);
         const tokens = Math.floor(reply.length / TOKEN_CHARS);
         const s = Math.round(elapsedOn(item, "zsGenT0"));
-        setChipDetail(item, `~${tokens.toLocaleString()} tokens · ${s}s`);
+        setChipDetail(item, `~${formatCount(tokens)} tokens · ${s}s`);
         return;
       }
     }
@@ -2362,7 +2477,28 @@
     if (document.hidden) setTimeout(run, 100);
     else requestAnimationFrame(run);
   }
-  const mo = new MutationObserver(scheduleSweep);
+  // Synchronous pre-hide: MutationObserver callbacks run as a microtask BEFORE
+  // the browser paints, but the debounced sweep above waits one extra rAF -
+  // long enough for a freshly-sent system-prompt/injected-feedback turn's raw
+  // text to paint for a single frame before decorate.sweep() builds its chip
+  // and hides it (seen live on DeepSeek: "Starting Up" flashed the raw prompt
+  // for an instant). Do the cheap whole-item hide test right here, synchronously,
+  // so the class lands before that first paint; the full sweep still runs after
+  // to build the actual chip.
+  function preHideWholeItems() {
+    for (const item of P.allItems()) {
+      if (item.classList.contains("zs-hidden")) continue;
+      const txt = P.classifyText(item, ".zs-chip");
+      if (txt.includes(ZS.SYS_MARKER) ||
+          (P.isUserItem(item) && ZSParse.isInjectedFeedback(txt))) {
+        item.classList.add("zs-hidden");
+      }
+    }
+  }
+  const mo = new MutationObserver(() => {
+    preHideWholeItems();
+    scheduleSweep();
+  });
   mo.observe(document.documentElement, { childList: true, subtree: true });
   // Belt-and-braces: a low-frequency sweep regardless of tab visibility or
   // mutation timing, so camouflage always converges.

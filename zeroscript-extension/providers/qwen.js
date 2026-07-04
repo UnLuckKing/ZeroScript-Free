@@ -353,6 +353,15 @@ const ZSProvider = (() => {
     );
   }
 
+  // With chipAppend (below), the chip trails the reply text - but the anchor's
+  // LAST child is actually `.message-hoc-container` (the copy/like/share action
+  // row), not the reply. Appending after that would sink the chip below those
+  // buttons. Name it as the fixed point the chip must stay just BEFORE.
+  function chipTrailRef(item) {
+    const anchor = chipAnchor(item);
+    return (anchor && anchor.querySelector(":scope > .message-hoc-container")) || null;
+  }
+
   // ── Input lock ────────────────────────────────────────────────────────────
   // Real <textarea>: swap placeholder text and set readonly. No re-assert loop
   // needed -- React doesn't recreate this element between inject/clear cycles.
@@ -754,6 +763,14 @@ const ZSProvider = (() => {
     // (redirected into the reply column by chipAnchor).
     chipAtItemLevel: true,
     chipAnchor,
+    // Qwen writes narration THEN the tool call at the end of the turn (never
+    // the reverse - the model stops generating once it emits the command), so
+    // trail the chip after the reply text instead of pinning it first (reads
+    // in the model's actual order). chipTrailRef keeps it just before the
+    // action-buttons row rather than sinking below it; the core's
+    // ensureOwnedChip re-asserts both across React's re-renders of the reply.
+    chipAppend: true,
+    chipTrailRef,
     reliableCounts: true,
     init({ diag: d } = {}) { if (d) diag = d; ensureCodeObserver(); startModeWatch(); },
     // turns

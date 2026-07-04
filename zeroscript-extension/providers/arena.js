@@ -475,29 +475,40 @@ const ZSProvider = (() => {
     }
     return null; // unknown
   }
-  // ── Build Apps (Code) mode gate ────────────────────────────────────────────
-  // The composer's "Code" button toggles Arena's app-building mode: it switches
-  // the whole app from the plain chat route (/text/*) to the code route (/code/*),
-  // where a turn no longer produces a normal .prose chat reply but an app-build
-  // surface. Every DOM/stream assumption in this provider breaks there and the
-  // loop wedges, so we gate it exactly like an unsupported chat mode. Primary
-  // signal is the /code/ route (set the instant the button is pressed); the button's
-  // active background is a fallback in case Arena ever toggles it without a route
-  // change. Detection fails CLOSED for safety only on a positive match.
-  function buildAppsActive() {
-    if (/^\/code\//.test(location.pathname)) return true;
-    for (const b of document.querySelectorAll('button[aria-label="Code"]')) {
-      if (b.offsetParent === null) continue;
-      if (b.getAttribute("aria-pressed") === "true") return true;
-      if (/bg-surface-tertiary|bg-surface-raised-alt/.test(b.className)) return true;
+  // ── Unsupported composer modes (Build Apps / Web Search / Generate Image) ──
+  // The composer's "Code", "Search" and "Image" buttons each switch the WHOLE
+  // app from the plain chat route (/text/*) to their own route (/code/*,
+  // /search/*, /image/*), where a turn no longer produces a normal .prose chat
+  // reply but a different output surface (an app-build canvas, a web-search
+  // result card, a generated-image card). Every DOM/stream assumption in this
+  // provider breaks there and the loop wedges, so all three are gated exactly
+  // like an unsupported chat mode. Primary signal is the route (set the instant
+  // the button is pressed); the button's active background is a fallback in
+  // case Arena ever toggles one without a route change (validated live: the
+  // active button carries a literal `bg-surface-tertiary` class, absent when
+  // idle - the OTHER `hover:bg-*` classes always present don't match this
+  // substring check). Detection fails CLOSED for safety only on a positive match.
+  const UNSUPPORTED_MODES = [
+    { route: /^\/code\//, aria: "Code", label: "Build Apps", tip: "the <b>Code</b> button" },
+    { route: /^\/search\//, aria: "Search", label: "Web Search", tip: "the <b>Search</b> (globe) button" },
+    { route: /^\/image\//, aria: "Image", label: "Generate Image", tip: "the <b>Image</b> button" },
+  ];
+  function activeUnsupportedMode() {
+    for (const m of UNSUPPORTED_MODES) {
+      if (m.route.test(location.pathname)) return m;
+      for (const b of document.querySelectorAll(`button[aria-label="${m.aria}"]`)) {
+        if (b.offsetParent === null) continue;
+        if (b.getAttribute("aria-pressed") === "true") return m;
+        if (/bg-surface-tertiary|bg-surface-raised-alt/.test(b.className)) return m;
+      }
     }
-    return false;
+    return null;
   }
 
   // True unless we POSITIVELY detect an unsupported mode (Battle / Side by Side)
-  // or the Build Apps (Code) mode.
+  // or one of the composer's Build Apps / Web Search / Generate Image modes.
   const isSupportedMode = () => {
-    if (buildAppsActive()) return false;
+    if (activeUnsupportedMode()) return false;
     const m = currentMode();
     return m === null || SUPPORTED_MODES.has(m);
   };
@@ -520,7 +531,7 @@ const ZSProvider = (() => {
     return false;
   }
   async function restoreDirectOnce() {
-    if (/^\/code\//.test(location.pathname)) return; // Build Apps route - leave alone
+    if (activeUnsupportedMode()) return; // Build Apps / Search / Image route - leave alone
     let combo = null;
     for (let i = 0; i < 60 && !combo; i++) { // up to ~15s for post-login load
       combo = [...document.querySelectorAll('button[role="combobox"]')].find((x) => x.offsetParent !== null) || null;
@@ -541,9 +552,10 @@ const ZSProvider = (() => {
   // DOM reskin never nags on the supported default). The core turns this into a
   // red warning state and disables Start until the user switches to Direct.
   function modeWarning() {
-    if (buildAppsActive())
-      return `Turn off <b>Build Apps</b> (the <b>Code</b> button in the composer) - ` +
-        `ZeroScript only works in plain chat. App-building mode uses a different ` +
+    const um = activeUnsupportedMode();
+    if (um)
+      return `Turn off <b>${um.label}</b> (${um.tip} in the composer) - ` +
+        `ZeroScript only works in plain chat. ${um.label} mode uses a different ` +
         `output surface and breaks the agent loop.`;
     if (isSupportedMode()) return "";
     const m = currentMode();

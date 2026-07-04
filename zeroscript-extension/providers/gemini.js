@@ -140,11 +140,15 @@ const ZSProvider = (() => {
   };
 
   const chatIsEmpty = () => allItems().length === 0;
-  // A genuinely fresh chat: the /app route without a conversation id, with the
-  // composer rendered and no turns. (An existing conversation that is still
-  // loading has an /app/<id> path, so it never gates.)
-  const isFreshChat = () =>
-    chatIsEmpty() && /\/app\/?$/.test(location.pathname) && !!getEditor();
+  // A genuinely fresh chat: no turns rendered yet, with the composer mounted.
+  // NOTE: we intentionally do NOT also require the bare "/app" route anymore -
+  // Gemini's own "New chat" button clears the turn list WITHOUT resetting the
+  // address bar (it keeps the PREVIOUS conversation's /app/<id> until the first
+  // message is actually sent, validated live 2026-07). Gating on the URL left
+  // isFreshChat() - and, transitively, conversationKey() below - still seeing
+  // the OLD conversation id on a chat that was visually empty, so the
+  // ZeroScript bar stuck on "Agent active" with no way to start a new session.
+  const isFreshChat = () => chatIsEmpty() && !!getEditor();
 
   // The composer box the Start gate hides as one unit.
   const composerFrame = () => document.querySelector(S.inputArea);
@@ -398,9 +402,14 @@ const ZSProvider = (() => {
   }
 
 
-  // /app without an id = a fresh chat whose conversation id is not assigned
-  // yet → return "" (transient) so the core never persists it as "started".
-  const conversationKey = () => (/\/app\/?$/.test(location.pathname) ? "" : location.pathname);
+  // A conversation with NO turns rendered yet is treated as transient ("") so
+  // the core never persists it - and never stays sticky on it - as "started".
+  // This covers both the bare "/app" route AND Gemini's "New chat" button,
+  // which clears the turn list but keeps the PREVIOUS conversation's /app/<id>
+  // in the address bar until the first message is actually sent (see
+  // isFreshChat() above for the full story).
+  const conversationKey = () =>
+    (chatIsEmpty() || /\/app\/?$/.test(location.pathname)) ? "" : location.pathname;
 
   // ── User-send interception ────────────────────────────────────────────────
   function installSendHooks(handlers) {
