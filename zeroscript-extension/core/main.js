@@ -18,6 +18,21 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const log = (...a) => console.log("[zeroscript]", ...a);
 
+  // ── Anti-bot mitigation (EXPERIMENTAL) ──────────────────────────────────
+  // Suspected contributor to Arena's captcha: the agentic loop sends turns
+  // back-to-back with near-zero, perfectly regular delay (~200ms settle),
+  // which behavioral risk-scoring (reCAPTCHA/Cloudflare) can read as a bot
+  // signal alongside the necessarily-synthetic input events. This adds a
+  // small randomized human-reaction-time delay before each send.
+  // REVERT: flip HUMANIZE_SEND to false - single toggle, no other changes needed.
+  const HUMANIZE_SEND = false; // didn't prevent Arena's captcha (fires on turn 1 already) - revert
+  const SEND_JITTER_MS = [400, 1400]; // [min, max] ms, randomized per send
+  function jitterBeforeSend() {
+    if (!HUMANIZE_SEND) return Promise.resolve();
+    const [lo, hi] = SEND_JITTER_MS;
+    return sleep(lo + Math.random() * (hi - lo));
+  }
+
   // ── Diagnostics ───────────────────────────────────────────────────────────
   // Persistent, lightweight breadcrumb log of the agentic loop's key decisions
   // (sends, response kinds, tool start/end, resumes, stops). Read back from the
@@ -171,6 +186,7 @@
           diag("send.waitVisible", { tries });
           if (!(await waitFor(() => !document.hidden || A.stop, 600000)) || A.stop) break;
         }
+        await jitterBeforeSend();
         await P.typeAndSend(text);
         // The site clears the textarea as soon as the send is accepted - faster
         // and more reliable than waiting for a DOM turn count change.
@@ -527,7 +543,7 @@
     const stopWatch = new Promise((res) => {
       stopTimer = setInterval(() => { if (A.stop) res({ ok: false, kind: "stopped" }); }, 150);
     });
-    const r = await Promise.race([bg({ type: "call_tool", name, arguments: args, timeout }), hardCap, stopWatch]);
+    let r = await Promise.race([bg({ type: "call_tool", name, arguments: args, timeout }), hardCap, stopWatch]);
     clearInterval(stopTimer);
     if (r && r.kind === "stopped") return "(stopped by user)";
     if (!r) return ZS.FEEDBACK.bridgeOffline;
@@ -1097,6 +1113,14 @@
         rawVisible = [...item.querySelectorAll("pre, p, [class*='code']")].some(
           (e) => !e.closest(".zs-tool-hide") && !e.closest(".zs-chip") &&
                  !(P.thinkingSel && e.closest(P.thinkingSel)) &&
+                 // Some sites (Arena) wrap a code block in a bare outer <pre>
+                 // that has no hide class of its own - the real content (and
+                 // the .zs-tool-hide class) live on a child wrapper instead.
+                 // closest() only checks ancestors, so without this the outer
+                 // <pre> reads as "raw command visible" FOREVER (its own
+                 // textContent includes the hidden child's text), causing an
+                 // infinite rebuild loop (~60/s, seen live on Arena).
+                 !e.querySelector(".zs-tool-hide") &&
                  ZSParse.hasCommandShape(e.textContent || ""));
       }
       // A provider opted into `chipAppend` (chip trails the reply text instead
@@ -1282,6 +1306,10 @@
         const rawVisible = [...item.querySelectorAll("pre, p, [class*='code']")].some(
           (e) => !e.classList.contains("zs-tool-hide") && !e.closest(".zs-tool-hide") &&
                  !e.closest(".zs-chip") && !(P.thinkingSel && e.closest(P.thinkingSel)) &&
+                 // see ensureOwnedChip's matching guard: a bare outer <pre>
+                 // wrapping a hidden child wrapper otherwise reads as visible
+                 // forever (Arena code-block markup).
+                 !e.querySelector(".zs-tool-hide") &&
                  ZSParse.hasCommandShape(e.textContent || ""));
         if (item.dataset.zphase !== phase || chipGone || rawVisible) {
           // Tracker: WHY the sweep chose this phase (only when it changes -
