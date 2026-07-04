@@ -17,16 +17,27 @@ All notable changes to ZeroScript Free are documented here.
   when the agent is active but Studio, the place, or the bridge itself isn't
   actually usable, it now names the real blocker (open a place / enable the
   MCP server / bridge offline).
-- Cross-provider: DeepSeek, Gemini, Kimi and Qwen composer menus, model
-  pickers and tooltips no longer render clipped or hidden behind ZeroScript's
-  own bar/pill/cover.
+- Cross-provider: DeepSeek, Gemini, Kimi, GLM and Qwen composer menus, model
+  pickers and tooltips (including GLM's search hover card and Kimi's model
+  popover) no longer render clipped or hidden behind ZeroScript's own
+  bar/pill/cover.
+- Cross-provider: a thinking model quoting command JSON in its own reasoning
+  area no longer makes the tool chip flap between done/run/done (Gemini, Kimi,
+  GLM and Qwen).
+- The "Agent is working" composer cover now blocks clicks into the composer
+  underneath it instead of letting them through, and can no longer balloon
+  past the composer's visible band or drag itself off position when a site
+  recreates its editor node mid-session (seen on Kimi).
+- A command chip could briefly flash or restart its spinner when revisiting a
+  past turn; it now settles to done correctly instead.
 - DeepSeek: the raw system-prompt turn no longer flashes for a frame before
   being hidden.
 - Gemini: "New chat" no longer gets stuck on "Agent active" from a reused
   previous conversation URL.
-- Kimi: a thinking model quoting command JSON in its reasoning no longer
-  causes the tool chip to flap between done/run/done; input can no longer be
-  typed mid-run after Vue recreates the editor node.
+- Kimi: reasoning is read separately from the actual reply, so a command
+  drafted while the model is still "thinking" is no longer detected or
+  executed; input can no longer be typed mid-run after the editor node is
+  recreated.
 - Arena: unsupported-mode gate now also covers Web Search and Generate Image,
   and chip alignment is fixed when a command turn renders as an A/B
   model-comparison carousel.
@@ -40,6 +51,7 @@ All notable changes to ZeroScript Free are documented here.
 - `start.bat` now detects and explains a double launch instead of silently
   replacing the previous instance, and warns clearly if port 17613 stays held
   after trying to free it.
+- Removed remaining em dashes from user-visible strings.
 - Removed remaining em dashes from user-visible strings.
 
 ## [1.3.3] - 2026-06-24

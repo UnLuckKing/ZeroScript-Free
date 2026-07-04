@@ -77,7 +77,8 @@ Go to https://chat.deepseek.com (recommended), https://gemini.google.com, https:
 
 - **More reliable bridge:** a Roblox process left running in the background after a restart no longer fights the next launch, and a dropped internal connection now retries silently instead of failing a command with a confusing error.
 - **Clearer status bar:** when the agent is active but Studio, the place, or the bridge is not actually usable, the bar now says exactly what to do (open a place, enable the MCP server, or restart the bridge) instead of showing a falsely healthy tool count.
-- **Cross-provider UI fixes:** DeepSeek, Gemini, Kimi and Qwen menus/tooltips no longer render clipped behind ZeroScript's bar, and several Gemini/Kimi/Arena session and chip glitches are fixed.
+- **Cross-provider UI polish:** menus, model pickers and tooltips (Kimi, GLM, Arena) no longer render clipped behind ZeroScript's bar; the "Agent is working" cover can no longer be clicked through or balloon past the composer; the tool chip no longer flashes or flaps when a thinking model quotes its own command, or when revisiting a past turn.
+- Several Gemini/Kimi/Arena session and chip glitches are fixed (see changelog for details).
 
 ## New in 1.3.5
 
