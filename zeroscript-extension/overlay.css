@@ -337,6 +337,10 @@ button.zs-site-opt:hover .zs-site-go { opacity: 1; transform: translateX(0); }
 .zs-mcp-health-on { background: #34d399; box-shadow: 0 0 5px rgba(52, 211, 153, 0.5); }
 .zs-mcp-health-off { background: #f87171; }
 .zs-mcp-health-unknown { background: #6b7280; }
+/* Roblox: always first, greyed out - no health dot (own status lives in the
+   main ZeroScript dot) and no remove button (protected bridge-side too). */
+.zs-mcp-item-primary { opacity: 0.55; background: rgba(255, 255, 255, 0.02); }
+.zs-mcp-item-primary .zs-mcp-name { font-weight: 500; }
 .zs-mcp-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .zs-mcp-sep { height: 1px; background: rgba(255, 255, 255, 0.07); margin: 4px 0 10px; }
 .zs-mcp-name { font-size: 12px; font-weight: 600; color: #e5e5e8; }
