@@ -294,14 +294,14 @@ button.zs-site-opt:hover .zs-site-go { opacity: 1; transform: translateX(0); }
 }
 #zs-set-text:focus { outline: none; border-color: rgba(255, 255, 255, 0.28); }
 .zs-set-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
-#zs-set-save {
+#zs-set-save, #zs-mcp-add {
   background: rgba(255, 255, 255, 0.09); color: #ededf0;
   border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px;
   padding: 6px 15px; font-size: 12px; font-weight: 600; cursor: pointer;
   transition: background 0.13s ease;
 }
-#zs-set-save:hover { background: rgba(255, 255, 255, 0.15); }
-#zs-set-status { font-size: 11px; color: #8a8a92; font-weight: 500; }
+#zs-set-save:hover, #zs-mcp-add:hover { background: rgba(255, 255, 255, 0.15); }
+#zs-set-status, #zs-mcp-status { font-size: 11px; color: #8a8a92; font-weight: 500; }
 
 /* support actions: neutral rows, differentiated by the aside text, not colour */
 .zs-tip-opt {
@@ -323,6 +323,47 @@ button.zs-site-opt:hover .zs-site-go { opacity: 1; transform: translateX(0); }
 .zs-tip-sep {
   font-size: 10px; color: #6b6b73; margin: 11px 0 8px; text-align: center;
 }
+
+/* ── custom MCP servers list (add-your-own, same shell as Custom prompt) ── */
+.zs-mcp-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; margin: 0 0 5px;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 7px;
+}
+.zs-mcp-health {
+  flex: none; width: 7px; height: 7px; border-radius: 50%; background: #6b7280;
+}
+.zs-mcp-health-on { background: #34d399; box-shadow: 0 0 5px rgba(52, 211, 153, 0.5); }
+.zs-mcp-health-off { background: #f87171; }
+.zs-mcp-health-unknown { background: #6b7280; }
+.zs-mcp-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.zs-mcp-sep { height: 1px; background: rgba(255, 255, 255, 0.07); margin: 4px 0 10px; }
+.zs-mcp-name { font-size: 12px; font-weight: 600; color: #e5e5e8; }
+.zs-mcp-url {
+  font-size: 10px; color: #6b6b73; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.zs-mcp-remove {
+  flex: none; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+  background: transparent; border: 0; border-radius: 5px; color: #7a7a82; cursor: pointer; font-size: 13px;
+  transition: background 0.13s ease, color 0.13s ease;
+}
+.zs-mcp-remove:hover { background: rgba(255, 255, 255, 0.08); color: #e5e5e8; }
+.zs-mcp-field {
+  width: 100%; box-sizing: border-box; background: rgba(255, 255, 255, 0.04); color: #e5e5e8;
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px;
+  padding: 7px 9px; font-size: 12px; font-family: inherit; margin-bottom: 6px;
+}
+.zs-mcp-field:focus { outline: none; border-color: rgba(255, 255, 255, 0.28); }
+
+/* small inline spinner shown next to #zs-mcp-add while the bridge restarts */
+.zs-mcp-spin-row { display: inline-flex; align-items: center; gap: 6px; }
+.zs-mcp-spin {
+  width: 11px; height: 11px; flex: none; border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2); border-top-color: #b8b8c0;
+  animation: zs-mcp-spin-rotate 0.7s linear infinite;
+}
+@keyframes zs-mcp-spin-rotate { to { transform: rotate(360deg); } }
 /* ── composer mode enforcement (force Expert / DeepThink etc.) ────────────── */
 .zs-hide-el { display: none !important; }
 
@@ -709,27 +750,36 @@ ol.flex-col-reverse > div.w-full:not(.mx-auto) > .zs-chip {
 }
 #zs-setup-dismiss:hover { background: rgba(255, 255, 255, 0.06); }
 
-/* ── capture preview panel ─────────────────────────────────── */
-.zs-img-wrap {
-  position: fixed; left: 18px; top: 60px;
-  max-width: 420px; max-height: 70vh; overflow-y: auto;
-  background: rgba(18, 18, 22, 0.97);
-  border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
-  box-shadow: 0 12px 40px rgba(0,0,0,0.6);
-  z-index: 2147483601; padding: 0 0 8px;
+/* ── capture preview popup (left-hand, ZeroScript style) ─────── */
+.zs-shot {
+  position: fixed; left: 18px; top: 72px; width: 300px; max-width: 32vw;
+  background: #161618; color: #ececee;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5);
+  z-index: 2147483601; overflow: hidden;
 }
-.zs-img-hdr {
+.zs-shot-hdr {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 12px; font-size: 12px; font-weight: 600;
-  color: #c7d2fe; border-bottom: 1px solid rgba(255,255,255,0.08);
-  position: sticky; top: 0; background: rgba(18,18,22,0.97);
+  padding: 10px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
-.zs-img-hdr button {
-  background: none; border: none; color: #94a3b8;
-  cursor: pointer; font-size: 14px; padding: 0 4px;
+.zs-shot-ttl {
+  font-size: 12px; font-weight: 600; color: #ececee;
+  font-family: ui-monospace, "Cascadia Code", monospace;
 }
-.zs-img-hdr button:hover { color: #e8e8ec; }
-.zs-img { display: block; width: 100%; padding: 8px 12px 0; box-sizing: border-box; border-radius: 8px; }
+.zs-shot-x {
+  background: none; border: none; color: #8b8b93; cursor: pointer;
+  font-size: 13px; line-height: 1; padding: 2px 4px;
+}
+.zs-shot-x:hover { color: #ececee; }
+.zs-shot-body {
+  padding: 10px; max-height: 70vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.zs-shot-img { display: block; width: 100%; height: auto; border-radius: 8px; background: rgba(0, 0, 0, 0.25); }
+html.zs-light .zs-shot { background: #ffffff; color: #1d232e; border-color: rgba(0,0,0,0.1); }
+html.zs-light .zs-shot-hdr { border-bottom-color: rgba(0,0,0,0.08); }
+html.zs-light .zs-shot-ttl { color: #1d232e; }
 
 /* ══════════════════════════════════════════════════════════════
    LIGHT MODE
@@ -802,9 +852,17 @@ html.zs-light #zs-setup-tag { color: #8a8a92; }
 html.zs-light .zs-menu-sec + .zs-menu-sec { border-top-color: rgba(0, 0, 0, 0.07); }
 html.zs-light .zs-sec-label span { color: #6b6b73; }
 html.zs-light .zs-menu-note { color: #6b7280; }
-html.zs-light #zs-set-text {
+html.zs-light #zs-set-text,
+html.zs-light .zs-mcp-field {
   background: #ffffff; color: #1f2430; border-color: rgba(0, 0, 0, 0.14);
 }
+html.zs-light .zs-mcp-item { background: #ffffff; border-color: rgba(0, 0, 0, 0.1); }
+html.zs-light .zs-mcp-name { color: #1f2430; }
+html.zs-light .zs-mcp-url { color: #6b7280; }
+html.zs-light .zs-mcp-remove { color: #8a8a92; }
+html.zs-light .zs-mcp-remove:hover { background: rgba(0, 0, 0, 0.06); color: #1f2430; }
+html.zs-light .zs-mcp-sep { background: rgba(0, 0, 0, 0.08); }
+html.zs-light .zs-mcp-spin { border-color: rgba(0, 0, 0, 0.15); border-top-color: #4b5563; }
 html.zs-light #zs-setup-sub { color: #4b5563; }
 html.zs-light #zs-setup-steps li { color: #374151; }
 html.zs-light #zs-setup-steps li + li { border-top-color: rgba(0, 0, 0, 0.06); }
@@ -821,12 +879,15 @@ html.zs-light button.zs-site-opt:hover { background: rgba(0, 0, 0, 0.05); }
 html.zs-light .zs-site-badge { color: #6b7280; border-color: rgba(0, 0, 0, 0.14); }
 html.zs-light .zs-site-go { color: #9ca3af; }
 html.zs-light #zs-set-save,
+html.zs-light #zs-mcp-add,
 html.zs-light .zs-tip-opt {
   background: rgba(0, 0, 0, 0.05); color: #1f2430; border-color: rgba(0, 0, 0, 0.12);
 }
 html.zs-light #zs-set-save:hover,
+html.zs-light #zs-mcp-add:hover,
 html.zs-light .zs-tip-opt:hover { background: rgba(0, 0, 0, 0.09); }
 html.zs-light #zs-set-status,
+html.zs-light #zs-mcp-status,
 html.zs-light .zs-tip-sub,
 html.zs-light .zs-rbx-cur,
 html.zs-light .zs-tip-sep { color: #6b7280; }

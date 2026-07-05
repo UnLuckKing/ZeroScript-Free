@@ -243,6 +243,13 @@ function handleBridgeMessage(msg) {
     broadcastStatus();
     return;
   }
+  if (msg.type === "server_changed") {
+    // The bridge acks, then restarts itself to reload config.json. The socket
+    // will drop right after this - the content script shows a spinner until the
+    // reconnect lands and a fresh status arrives.
+    resolvePending(msg.id, { ok: !!msg.ok, error: msg.error, restarting: !!msg.restarting });
+    return;
+  }
   if (msg.type === "error") {
     resolvePending(msg.id, { ok: false, error: msg.error });
     return;
@@ -303,6 +310,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       case "restart_mcp": {
         const r = await send({ type: "restart_mcp" }, 30000);
+        sendResponse(r);
+        break;
+      }
+      case "add_server": {
+        const r = await send({
+          type: "add_server", server_id: msg.server_id,
+          command: msg.command, args: msg.args, env: msg.env,
+        }, 15000);
+        sendResponse(r);
+        break;
+      }
+      case "remove_server": {
+        const r = await send({ type: "remove_server", server_id: msg.server_id }, 15000);
         sendResponse(r);
         break;
       }

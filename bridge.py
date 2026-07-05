@@ -68,6 +68,10 @@ PORT = int(os.environ.get("ZS_BRIDGE_PORT", "17613"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HERE, "config.json")
 
+# The primary server. It is always present, added by the installer, and can
+# never be edited/removed through the extension (it is what ZeroScript is FOR).
+PRIMARY_SERVER_ID = "roblox"
+
 if _enable_ansi_colors():
     C = {
         "reset": "\033[0m", "dim": "\033[2m", "gr": "\033[92m",
@@ -196,6 +200,99 @@ _TRANSIENT_STUDIO_MARKERS = (
 def _looks_like_transient_studio_drop(text):
     low = (text or "").lower()
     return any(m in low for m in _TRANSIENT_STUDIO_MARKERS)
+
+
+# ── config.json read / write (for extension-driven add/remove) ──────────────
+def _read_config():
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            if isinstance(cfg, dict):
+                cfg.setdefault("mcpServers", {})
+                return cfg
+        except Exception as e:
+            log(f"config.json unreadable ({e}) - starting from a fresh one", "yl")
+    return {"mcpServers": {PRIMARY_SERVER_ID: {"command": "launch_studio_mcp.py", "args": []}}}
+
+
+def _write_config(cfg):
+    """Atomic write so a crash mid-write never leaves a truncated config.json."""
+    tmp = CONFIG_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2)
+    os.replace(tmp, CONFIG_PATH)
+
+
+def config_add_server(server_id, command, args=None, env=None):
+    """Add/replace an addon server in config.json. Refuses to touch the primary
+    (roblox) server. Returns (ok, error)."""
+    sid = (server_id or "").strip()
+    if not sid:
+        return False, "server id is required"
+    if sid == PRIMARY_SERVER_ID:
+        return False, f"'{PRIMARY_SERVER_ID}' is the primary server and cannot be edited"
+    if not (command or "").strip():
+        return False, "a command is required"
+    cfg = _read_config()
+    spec = {"command": command.strip(), "args": list(args or [])}
+    if env:
+        spec["env"] = dict(env)
+    cfg["mcpServers"][sid] = spec
+    try:
+        _write_config(cfg)
+    except Exception as e:
+        return False, f"could not write config.json: {e}"
+    return True, None
+
+
+def config_remove_server(server_id):
+    """Remove an addon server from config.json. Refuses the primary server."""
+    sid = (server_id or "").strip()
+    if sid == PRIMARY_SERVER_ID:
+        return False, f"'{PRIMARY_SERVER_ID}' is the primary server and cannot be removed"
+    cfg = _read_config()
+    if sid not in cfg.get("mcpServers", {}):
+        return False, f"server '{sid}' is not in the config"
+    del cfg["mcpServers"][sid]
+    try:
+        _write_config(cfg)
+    except Exception as e:
+        return False, f"could not write config.json: {e}"
+    return True, None
+
+
+def restart_self():
+    """Replace this process with a fresh one so config.json is reloaded from
+    scratch. Children are killed first to free their stdio pipes / ports before
+    the new instance claims them. Never returns on success (os.execv)."""
+    log("restarting bridge to load new server config...", "yl")
+    try:
+        for c in mgr.clients.values():
+            c.stop()
+    except Exception:
+        pass
+    if _log_file:
+        try:
+            _log_file.flush()
+        except Exception:
+            pass
+    # sys.argv[0] may be relative ('bridge.py'); make it absolute so the restart
+    # works regardless of the current working directory.
+    argv = list(sys.argv)
+    script = os.path.abspath(argv[0]) if argv else os.path.abspath(__file__)
+    argv = [script] + argv[1:]
+    try:
+        os.execv(sys.executable, [sys.executable] + argv)
+    except Exception as e:
+        # execv failed (rare) - fall back to spawning a detached copy and exiting
+        # so the user still ends up with a running, up-to-date bridge.
+        log(f"in-place restart failed ({e}); spawning a fresh bridge...", "rd")
+        try:
+            subprocess.Popen([sys.executable] + argv, cwd=HERE)
+        except Exception as e2:
+            log(f"could not spawn a fresh bridge: {e2} - please restart it manually", "rd")
+        os._exit(0)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -465,14 +562,7 @@ class MCPManager:
         self.index_lock = threading.Lock()
 
     def load_config(self):
-        servers = {}
-        if os.path.exists(CONFIG_PATH):
-            try:
-                with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                    cfg = json.load(f)
-                servers = cfg.get("mcpServers", {}) or {}
-            except Exception as e:
-                log(f"config.json unreadable: {e}", "rd")
+        servers = _read_config().get("mcpServers", {}) or {}
         for sid, spec in servers.items():
             self.clients[sid] = MCPClient(
                 sid, spec.get("command"), spec.get("args"), spec.get("env"))
@@ -522,6 +612,7 @@ class MCPManager:
                             break
                 tt = dict(t)
                 tt["name"] = advertised
+                tt["server"] = sid
                 out.append(tt)
         return out
 
@@ -731,6 +822,30 @@ async def handler(ws):
                 # loop awaits each result before sending the next), so this never
                 # overlaps tool executions.
                 asyncio.create_task(run_tool_task(ws, name, args, timeout, rid))
+
+            elif mtype in ("add_server", "remove_server"):
+                # Adding/removing an addon MCP server rewrites config.json, which
+                # the bridge only reads at launch - so we ack, then restart the
+                # whole process to pick it up cleanly. The primary Roblox server
+                # is protected inside config_add/remove_server.
+                if mtype == "add_server":
+                    ok, err = await asyncio.to_thread(
+                        config_add_server,
+                        msg.get("server_id"), msg.get("command"),
+                        msg.get("args"), msg.get("env"))
+                else:
+                    ok, err = await asyncio.to_thread(
+                        config_remove_server, msg.get("server_id"))
+                await ws.send(json.dumps({
+                    "type": "server_changed", "id": rid,
+                    "ok": ok, "error": err, "restarting": ok,
+                }))
+                if ok:
+                    # Give the ack a beat to flush over the socket, then restart.
+                    async def _do_restart():
+                        await asyncio.sleep(0.4)
+                        restart_self()
+                    asyncio.create_task(_do_restart())
 
             elif mtype == "restart_mcp":
                 sid = msg.get("server")

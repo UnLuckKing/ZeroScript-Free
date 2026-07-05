@@ -130,6 +130,10 @@
     // so we re-inject the list every REMIND_TOOLS_EVERY calls (see agentLoop).
     toolCallsSinceReminder: 0,
     bridge: { connected: false, mcpAlive: false, tools: 0 },
+    // Images from the most recent tool result, stashed by runTool for the
+    // upcoming submitAndGetBase/typeAndSend call to attach as the LAST step
+    // before sending (see the comment in runTool's r.images branch).
+    pendingImages: null,
   };
 
   async function waitFor(pred, timeout) {
@@ -153,7 +157,7 @@
     A.sendToken = P.lastAssistantId ? P.lastAssistantId() : undefined;
   }
 
-  async function submitAndGetBase(text) {
+  async function submitAndGetBase(text, images) {
     captureSendToken();
     diag("send", { text: String(text).slice(0, 60), busy: P.isBusyNow() });
     A.injecting = true;
@@ -172,6 +176,14 @@
       }
       const base = P.assistantCount();
       const preUser = P.userCount();
+      // Arm the optimistic pre-hide for the result turn we're about to inject:
+      // the very next NEW user turn is ours, so preHideWholeItems can mask it on
+      // creation instead of waiting for its "Output of '…'" caption to render
+      // (which lands a tick after the node - especially with an attached image -
+      // and would otherwise flash the raw output for the 200/700ms until a sweep
+      // nudge catches it). See preHideWholeItems.
+      A.injectPreUser = preUser;
+      A.injectHideUntil = Date.now() + 2500;
       // "Landed" = a new turn appeared in the DOM. In long chats, list
       // virtualisation can keep counts flat even when our message landed - the
       // textarea-cleared signal below is the primary fast gate.
@@ -187,7 +199,8 @@
           if (!(await waitFor(() => !document.hidden || A.stop, 600000)) || A.stop) break;
         }
         await jitterBeforeSend();
-        await P.typeAndSend(text);
+        diag("submit.typeAndSend", { hasImages: !!(images && images.length) });
+        await P.typeAndSend(text, images);
         // The site clears the textarea as soon as the send is accepted - faster
         // and more reliable than waiting for a DOM turn count change.
         await waitFor(() => {
@@ -453,12 +466,24 @@
     });
   }
 
-  // Tools we never expose to the model: 'subagent' (long-running, hangs the
-  // loop) and 'screen_capture' (returns an image text-only models can't see).
-  // Filtered out of the advertised command list AND refused in runTool.
-  const BLOCKED_TOOLS = new Set(["subagent", "screen_capture"]);
+  // 'subagent' is always blocked (long-running, hangs the loop). 'screen_capture'
+  // is only blocked on providers whose underlying model can't see images
+  // (P.supportsVision === false) - see providers/*.js for the per-site flag.
+  // Both are filtered out of the advertised command list AND refused in runTool.
+  // Addon servers (Blender, Sketchfab, ...) can ALSO ship an image-returning
+  // tool under any name we don't know in advance - rather than guess names,
+  // any tool result carrying images is caught generically at the point results
+  // are handled (see the `r.images.length` branch) and turned into a plain
+  // error on non-vision providers, so nothing needs to be predicted here.
+  const ALWAYS_BLOCKED_TOOLS = new Set(["subagent"]);
+  const VISION_TOOLS = new Set(["screen_capture"]);
   const bareToolName = (name) => (name && name.includes("/") ? name.split("/").pop() : name) || "";
-  const isBlockedTool = (name) => BLOCKED_TOOLS.has(bareToolName(name));
+  const isBlockedTool = (name) => {
+    const bare = bareToolName(name);
+    if (ALWAYS_BLOCKED_TOOLS.has(bare)) return true;
+    if (VISION_TOOLS.has(bare) && !P.supportsVision) return true;
+    return false;
+  };
 
   async function ensureTools() {
     const r = await bg({ type: "list_tools" });
@@ -478,43 +503,80 @@
     // model abandons it and continues instead of wasting/hanging a turn.
     const bareName = bareToolName(name);
     if (isBlockedTool(name)) {
-      if (bareName === "screen_capture") {
+      if (VISION_TOOLS.has(bareName)) {
         return `ERROR: '${bareName}' is unavailable here - this assistant cannot see images. Do NOT call it again. Inspect the place programmatically instead (e.g. inspect_instance, get_studio_state, search_game_tree, script_read).`;
       }
       return `ERROR: the '${bareName}' command timed out and is unavailable in this environment. Do NOT call it again - complete the task yourself using the other commands (execute_luau, multi_edit, etc.).`;
     }
-    // Virtual command: list all available Roblox commands with full details.
+    // Virtual command: list the MCP server(s) ZeroScript is currently connected
+    // to, with each one's REAL per-server health (from the bridge, never the
+    // merged tool count - a dead server must not borrow another's numbers).
+    if (name === "list_mcp_servers") {
+      await ensureTools();
+      const servers = (A.bridge && A.bridge.servers) || [];
+      const lines = servers.length
+        ? servers.map((sv) => {
+            const label = sv.id === "roblox" ? "Roblox Studio (primary)" : `${sv.id} (addon)`;
+            return `- ${sv.id}: ${label} - ${sv.alive ? `${sv.tools || 0} commands available` : "offline (no tools)"}`;
+          })
+        : ["- roblox: Roblox Studio (primary) - unknown (bridge did not report server health)"];
+      return (
+        `Output of 'list_mcp_servers':\n` +
+        `Connected MCP servers (${lines.length}):\n${lines.join("\n")}\n` +
+        `Use list_tools with a "server" param (one of the ids above) to see that server's exact commands. Without "server", list_tools defaults to "roblox".`
+      );
+    }
+    // Virtual command: list available commands with full details. Defaults to
+    // the primary Roblox server - a DIFFERENT server's tools only ever show up
+    // if the model explicitly asks via {"server": "<id>"} (see list_mcp_servers).
     if (name === "list_commands" || name === "list_tools") {
       await ensureTools();
-      if (!A.toolList.length) return "No commands available - the bridge or Roblox Studio may be offline.";
-      const lines = A.toolList.map((t) => {
+      const requested = (args.server || "roblox").trim();
+      const known = new Set(A.toolList.map((t) => t.server).filter(Boolean));
+      // Tools from a bridge that doesn't tag "server" yet (old version) have no
+      // .server field at all - treat those as the primary server rather than
+      // hiding everything.
+      const scoped = A.toolList.filter((t) => (t.server || "roblox") === requested);
+      if (!A.toolList.length) return `Output of '${name}':\nNo commands available - the bridge or Roblox Studio may be offline.`;
+      if (!scoped.length) {
+        return `Output of '${name}':\nERROR: no server named "${requested}" is connected. Connected servers: ${[...known].join(", ") || "roblox"}. Call list_mcp_servers to check.`;
+      }
+      const lines = scoped.map((t) => {
         const props = (t.inputSchema && t.inputSchema.properties) || {};
         const req = new Set((t.inputSchema && t.inputSchema.required) || []);
-        const params = Object.entries(props)
-          .map(([k, v]) => {
-            // For an array of OBJECTS, surface the item's field shape - otherwise
-            // the model is blind to it (just "array") and guesses the per-step
-            // structure wrong (the real cause of "Unknown … action: nil").
-            const items = v.items && typeof v.items === "object" ? v.items : null;
-            const itemProps = items && items.properties;
-            let shape = "";
-            if (v.type === "array" && itemProps) {
-              const fields = Object.entries(itemProps).map(([ik, iv]) => {
-                const itemReq = new Set(items.required || []);
-                const en = Array.isArray(iv.enum) && iv.enum.length <= 12 ? `(${iv.enum.join("|")})` : (iv.type || "any");
-                return `${ik}${itemReq.has(ik) ? "" : "?"}:${en}`;
-              });
-              if (fields.length) shape = ` [each item: {${fields.join(", ")}}]`;
-            }
-            return `    ${k}${req.has(k) ? "" : "?"}: ${v.type || "any"}${v.description ? " - " + v.description : ""}${shape}`;
-          })
-          .join("\n");
-        // Append our tested usage notes for the error-prone commands.
+        // Two buckets: simple scalar params get packed onto ONE compact line;
+        // params that need real explanation (array-of-object shape, or a long
+        // description) keep their own line so nothing structurally important
+        // gets flattened away (that per-item shape is what fixed "Unknown …
+        // action: nil" bugs on user_keyboard_input/user_mouse_input).
+        const compact = [];
+        const detailed = [];
+        for (const [k, v] of Object.entries(props)) {
+          const items = v.items && typeof v.items === "object" ? v.items : null;
+          const itemProps = items && items.properties;
+          const mark = req.has(k) ? "" : "?";
+          if (v.type === "array" && itemProps) {
+            const itemReq = new Set(items.required || []);
+            const fields = Object.entries(itemProps).map(([ik, iv]) => {
+              const en = Array.isArray(iv.enum) && iv.enum.length <= 12 ? `(${iv.enum.join("|")})` : (iv.type || "any");
+              return `${ik}${itemReq.has(ik) ? "" : "?"}:${en}`;
+            });
+            detailed.push(`    ${k}${mark}: array [each item: {${fields.join(", ")}}]${v.description ? " - " + v.description : ""}`);
+          } else if (v.description && v.description.length > 45) {
+            detailed.push(`    ${k}${mark}: ${v.type || "any"} - ${v.description}`);
+          } else {
+            const ty = Array.isArray(v.enum) && v.enum.length <= 8 ? `(${v.enum.join("|")})` : (v.type || "any");
+            compact.push(`${k}${mark}:${ty}${v.description ? ` "${v.description}"` : ""}`);
+          }
+        }
+        const paramLines = [compact.length ? `    ${compact.join(", ")}` : "", ...detailed].filter(Boolean).join("\n");
+        // Tested usage note for the error-prone commands - kept full-length
+        // (these are validated fixes for real bugs, not filler).
         const note = ZS.TOOL_NOTES[bareToolName(t.name)];
-        const noteStr = note ? `\n    ⚠ HOW TO USE (tested): ${note}` : "";
-        return `${t.name}: ${(t.description || "").split("\n")[0]}${params ? "\n" + params : ""}${noteStr}`;
+        const noteStr = note ? `\n    ⚠ ${note}` : "";
+        return `${t.name}: ${(t.description || "").split("\n")[0]}${paramLines ? "\n" + paramLines : ""}${noteStr}`;
       });
-      return `Output of '${name}':\nAvailable commands (${A.toolList.length}):\n\n${lines.join("\n\n")}`;
+      return `Output of '${name}':\n${requested} commands (${scoped.length}):\n\n${lines.join("\n\n")}`;
     }
     if (A.toolNames.size && !A.toolNames.has(name)) {
       return ZS.FEEDBACK.unknownTool(name, [...A.toolNames]);
@@ -574,17 +636,33 @@
       r = { ok: false, error: r.text.replace(/^(?:\S*(?:ExecuteLuauTool|CommandExecution):\d+:\s*)+/, "").trim() || r.text };
     }
     if (r.ok) {
+      if (r.images && r.images.length && !P.supportsVision) {
+        // Any tool from ANY connected server can turn out to return images -
+        // we don't try to predict this from its name in advance. This is the
+        // generic catch: whatever just ran, if it handed back images and this
+        // provider's model can't see them, refuse cleanly instead of silently
+        // attaching a file it will never actually process.
+        return `ERROR: '${bareName}' returned an image, but this assistant cannot see images. Do NOT call it again. Use a different command to get the information as text instead.`;
+      }
       if (r.images && r.images.length) {
+        // Show the capture in a left-hand ZeroScript popup (from the in-memory
+        // base64 - simple and reliable on every site; no DOM-embedded preview).
         ui.showImages(r.images, name);
-        let attached = false;
-        try { attached = await P.attachImages(r.images); } catch (e) { log("attach failed", e); }
-        if (!attached) { try { P.clearAttachments(); } catch {} } // drop a broken upload
+        // Do NOT attach the image here: submitAndGetBase/typeAndSend types the
+        // feedback text into the editor LATER, and on providers whose editor is
+        // rebuilt via select-all + insertText (e.g. Gemini's setEditorText),
+        // that wipe severs the site's internal binding between "pending upload"
+        // and "message being composed" - the file then sits in the composer
+        // forever while only the text goes out (validated live: Gemini kept
+        // the file attached+unsent across the whole turn). Stash the images and
+        // let the provider attach them as the LAST step, right before the send
+        // click, so nothing mutates the editor afterward.
+        A.pendingImages = r.images;
+        diag("images.stashed", { count: r.images.length });
         const caption = r.text && r.text.trim()
           ? r.text.trim()
           : `${r.images.length} image(s) captured.`;
-        return attached
-          ? `Output of '${name}':\n${caption}\n(The image is attached to THIS message - you can see it directly. Analyse it and continue.)`
-          : `Output of '${name}':\n${caption}\n(The image was shown to the user, but could not be attached for you to see.)`;
+        return `Output of '${name}':\n${caption}\n(The image is attached to THIS message - you can see it directly. Analyse it and continue.)`;
       }
       const text = r.text && r.text.length ? r.text : "(tool returned an empty result)";
       return `Output of '${name}':\n${text}`;
@@ -777,7 +855,10 @@
               diag("tools.reminder", { after: REMIND_TOOLS_EVERY });
             }
           }
-          base = await submitAndGetBase(toSend);
+          const images = A.pendingImages;
+          A.pendingImages = null;
+          diag("images.consumed", { count: images ? images.length : 0 });
+          base = await submitAndGetBase(toSend, images);
         }
       }
     } catch (e) {
@@ -918,7 +999,7 @@
           `Could not switch ${P.displayName} to the required mode. Start a new chat or reload the page, then try again.`);
         return;
       }
-      const prompt = ZS.buildSystemPrompt(A.toolList, { siteName: P.displayName, customPrompt: ui.getCustomPrompt() });
+      const prompt = ZS.buildSystemPrompt({ siteName: P.displayName, customPrompt: ui.getCustomPrompt() });
       const base = await submitAndGetBase(prompt);
       if (!alive()) return;
       // (syncSessionState pins A.startingKey to the conversation id once the chat
@@ -1110,7 +1191,7 @@
         // JSON/###LUA### in their think area, which the camouflage never hides
         // (by design) - counting those as "raw block visible" made this
         // rebuild fire on EVERY sweep forever (60Hz spam, seen live).
-        rawVisible = [...item.querySelectorAll("pre, p, [class*='code']")].some(
+        rawVisible = [...item.querySelectorAll("pre, p, [class*='code'], .cm-line")].some(
           (e) => !e.closest(".zs-tool-hide") && !e.closest(".zs-chip") &&
                  !(P.thinkingSel && e.closest(P.thinkingSel)) &&
                  // Some sites (Arena) wrap a code block in a bare outer <pre>
@@ -1303,7 +1384,7 @@
         // forced repaint recomputes `live` each sweep - the chip then FLAPS
         // done→run→done with the generation flicker (seen live as a settled
         // green chip blinking back to a blue spinner).
-        const rawVisible = [...item.querySelectorAll("pre, p, [class*='code']")].some(
+        const rawVisible = [...item.querySelectorAll("pre, p, [class*='code'], .cm-line")].some(
           (e) => !e.classList.contains("zs-tool-hide") && !e.closest(".zs-tool-hide") &&
                  !e.closest(".zs-chip") && !(P.thinkingSel && e.closest(P.thinkingSel)) &&
                  // see ensureOwnedChip's matching guard: a bare outer <pre>
@@ -1390,7 +1471,7 @@
   //  UI  (control panel, onboarding, stop button, banners, toast, input cover)
   // ════════════════════════════════════════════════════════════════════════
   const ui = (() => {
-    let root, bar, dot, brandEl, stateEl, actionBtn, stopBtn, switchBtn, supportBtn, menuEl, unstableEl;
+    let root, bar, dot, brandEl, stateEl, actionBtn, stopBtn, switchBtn, supportBtn, discordEl, menuEl, unstableEl;
     let cover, coverRaf, barRaf;
     let bridgeOk = false, studioDown = false, placeDown = false, appDown = false;
     let wasConnected = false, bridgeBannerEl = null;
@@ -1426,6 +1507,7 @@
       stopBtn = root.querySelector("#zs-stop");
       switchBtn = root.querySelector("#zs-switch");
       supportBtn = root.querySelector("#zs-support");
+      discordEl = root.querySelector("#zs-discord");
       const swName = root.querySelector("#zs-switch-name");
       if (swName) swName.textContent = P.displayName || P.id;
       menuEl = root.querySelector("#zs-menu");
@@ -1447,6 +1529,11 @@
       const toggleMenu = (toSupport) => {
         menuEl.hidden = !menuEl.hidden;
         if (!menuEl.hidden) {
+          // Rebuild on every open, not just once at page load: the initial
+          // buildMenu() call runs before the bridge status (server list/health)
+          // has arrived, so the very first render always shows an empty/stale
+          // MCP servers section otherwise - nothing ever refreshed it after.
+          buildMenu();
           syncMenuPrompt();
           // On a FRESH open, menuEl has no max-height yet - that's only applied by
           // placeBar()'s positioning pass, which runs on the next rAF tick (it's a
@@ -1502,6 +1589,88 @@
       if (ta && document.activeElement !== ta) ta.value = customPrompt;
     }
 
+    // ── Custom MCP servers (addons) ─────────────────────────────────────────
+    // User-added MCP servers shown at the very bottom of the menu. These are
+    // ADDONS: the Roblox server stays primary and is never in this list. Each
+    // entry is { id, name, command } - `command` is the raw string the user
+    // typed (split into command+args when sent to the bridge). The bridge writes
+    // them to config.json and restarts to load them; this local list only drives
+    // the menu UI and is kept in sync with the bridge's server health.
+    let customMcpServers = [];
+    try {
+      chrome.storage.local.get("zsCustomMcpServers", (r) => {
+        if (r && Array.isArray(r.zsCustomMcpServers)) {
+          customMcpServers = r.zsCustomMcpServers;
+          if (!menuEl.hidden) buildMenu();
+        }
+      });
+    } catch {}
+    function getCustomMcpServers() { return customMcpServers; }
+    function saveCustomMcpServers() {
+      try { chrome.storage.local.set({ zsCustomMcpServers: customMcpServers }); } catch {}
+    }
+    // The bridge (config.json + live health) is the SOURCE OF TRUTH for which
+    // addon servers actually exist - chrome.storage.local is just a display-name
+    // cache, and the two CAN drift (e.g. storage cleared, or config.json edited
+    // by hand). Rendering from the bridge's live list means an addon never
+    // "disappears" from the menu while still running - and self-heals the local
+    // cache the moment we see a server it didn't know about.
+    function mergedMcpServers() {
+      const live = ((A.bridge && A.bridge.servers) || []).filter((sv) => sv.id !== "roblox");
+      const byId = new Map(customMcpServers.map((s) => [s.id, s]));
+      const merged = live.map((sv) => {
+        const cached = byId.get(sv.id);
+        return {
+          id: sv.id, name: (cached && cached.name) || sv.id, command: cached && cached.command,
+          alive: sv.alive, tools: sv.tools,
+        };
+      });
+      // Self-heal: cache didn't know about a server the bridge actually has.
+      let healed = false;
+      for (const sv of live) {
+        if (!byId.has(sv.id)) { customMcpServers.push({ id: sv.id, name: sv.id }); healed = true; }
+      }
+      if (healed) saveCustomMcpServers();
+      // A server we just added/removed but the bridge hasn't reported back on
+      // yet (mid-restart) - still show it, health unknown, so it doesn't blink
+      // out of the list during the few seconds the bridge is restarting.
+      for (const s of customMcpServers) {
+        if (!merged.some((m) => m.id === s.id)) merged.push({ ...s, alive: undefined, tools: undefined });
+      }
+      return merged;
+    }
+    // Derive a config-safe server id from a display name (roblox is reserved).
+    function mcpSlug(name) {
+      let s = String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+      if (!s || s === "roblox") s = `addon-${s || "server"}`;
+      let id = s, n = 2;
+      while (customMcpServers.some((x) => x.id === id)) id = `${s}-${n++}`;
+      return id;
+    }
+    // Split a raw "command with args" string into command + args (shell-lite:
+    // whitespace-separated, honouring "double" and 'single' quotes).
+    function splitCommand(raw) {
+      const parts = String(raw || "").match(/"[^"]*"|'[^']*'|\S+/g) || [];
+      const clean = parts.map((p) => p.replace(/^["']|["']$/g, ""));
+      return { command: clean[0] || "", args: clean.slice(1) };
+    }
+    // Wait for the bridge to come back after its restart (config reload). Resolves
+    // true once reconnected (optionally once `id` shows up in server health).
+    async function waitForBridgeBack(id, timeoutMs = 15000) {
+      const t0 = Date.now();
+      // Give the bridge a moment to actually drop before we start polling, so we
+      // don't instantly match the pre-restart "connected" state.
+      await new Promise((r) => setTimeout(r, 1200));
+      while (Date.now() - t0 < timeoutMs) {
+        const s = await bg({ type: "status" });
+        if (s && s.connected) {
+          if (!id || (Array.isArray(s.servers) && s.servers.some((x) => x.id === id))) return true;
+        }
+        await new Promise((r) => setTimeout(r, 700));
+      }
+      return false;
+    }
+
     // ── The "more" menu (⋯) ─────────────────────────────────────────────────
     // One popover holding every secondary control: other AI sites, the custom
     // prompt, and support (Ko-fi + Robux). Opens above the bar.
@@ -1520,11 +1689,28 @@
       for (const p of ROBUX_PASSES) {
         passes += `<button class="zs-tip-opt zs-tip-rbx" data-u="${passUrl(p.id)}"><span class="zs-rbx-cur">R$</span>${p.robux}</button>`;
       }
+      const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+      const mergedServers = mergedMcpServers();
+      let mcpList = "";
+      mergedServers.forEach((s, i) => {
+        // alive === undefined -> the bridge hasn't reported this server's health
+        // yet (just added/removed, still restarting) - shown neutral, not red.
+        const healthClass = s.alive === true ? "on" : s.alive === false ? "off" : "unknown";
+        const healthTitle = s.alive === true ? `${s.tools || 0} tools available` : s.alive === false ? "offline" : "status unknown";
+        mcpList += `<div class="zs-mcp-item"><span class="zs-mcp-health zs-mcp-health-${healthClass}" title="${healthTitle}"></span><div class="zs-mcp-info"><span class="zs-mcp-name">${esc(s.name)}</span><span class="zs-mcp-url">${esc(s.command || s.id)}</span></div><button class="zs-mcp-remove" data-id="${esc(s.id)}" title="Remove">✕</button></div>`;
+      });
       menuEl.innerHTML =
         `<div class="zs-menu-head"><span class="zs-menu-logo">ZeroScript</span><span class="zs-menu-tag">Free</span></div>
          <section class="zs-menu-sec">
            <div class="zs-sec-label"><span>Switch AI</span></div>
            ${sites}
+         </section>
+         <section class="zs-menu-sec">
+           <div class="zs-sec-label"><span>Support</span></div>
+           <button class="zs-tip-opt zs-tip-star" data-u="${GITHUB_URL}"><span>Star on GitHub</span><span class="zs-tip-sub">free, helps a lot</span></button>
+           <button class="zs-tip-opt zs-tip-kofi" data-u="${KOFI_URL}"><span>Tip on Ko-fi</span><span class="zs-tip-sub">any amount</span></button>
+           <div class="zs-tip-sep">or tip in Robux</div>
+           <div class="zs-rbx-grid">${passes}</div>
          </section>
          <section class="zs-menu-sec">
            <div class="zs-sec-label"><span>Custom prompt</span></div>
@@ -1533,11 +1719,13 @@
            <div class="zs-set-row"><button id="zs-set-save">Save</button><span id="zs-set-status"></span></div>
          </section>
          <section class="zs-menu-sec">
-           <div class="zs-sec-label"><span>Support</span></div>
-           <button class="zs-tip-opt zs-tip-star" data-u="${GITHUB_URL}"><span>Star on GitHub</span><span class="zs-tip-sub">free, helps a lot</span></button>
-           <button class="zs-tip-opt zs-tip-kofi" data-u="${KOFI_URL}"><span>Tip on Ko-fi</span><span class="zs-tip-sub">any amount</span></button>
-           <div class="zs-tip-sep">or tip in Robux</div>
-           <div class="zs-rbx-grid">${passes}</div>
+           <div class="zs-sec-label"><span>MCP servers</span></div>
+           <div class="zs-menu-note">Roblox Studio is always connected (primary). Add another MCP server (e.g. Blender, Sketchfab) as an addon - the bridge restarts briefly to load it. Experimental.</div>
+           ${mcpList}
+           ${mergedServers.length ? '<div class="zs-mcp-sep"></div>' : ""}
+           <input id="zs-mcp-name" class="zs-mcp-field" placeholder="Name, e.g. Blender" />
+           <input id="zs-mcp-url" class="zs-mcp-field" placeholder="Start command, e.g. npx -y @some/mcp-server" />
+           <div class="zs-set-row"><button id="zs-mcp-add">Add server</button><span id="zs-mcp-status"></span></div>
          </section>`;
       const open = (url) => { try { window.open(url, "_blank", "noopener"); } catch {} menuEl.hidden = true; };
       menuEl.querySelectorAll("button.zs-site-opt, .zs-tip-opt").forEach((b) =>
@@ -1551,6 +1739,66 @@
         try { chrome.storage.local.set({ zsCustomPrompt: customPrompt }); } catch {}
         status.textContent = "Saved ✓";
         setTimeout(() => { status.textContent = ""; }, 1600);
+      });
+      const mcpNameEl = menuEl.querySelector("#zs-mcp-name");
+      const mcpUrlEl = menuEl.querySelector("#zs-mcp-url");
+      const mcpStatus = menuEl.querySelector("#zs-mcp-status");
+      const mcpAddBtn = menuEl.querySelector("#zs-mcp-add");
+      // Disable every add/remove control and show the restart spinner. Adding or
+      // removing a server rewrites config.json and restarts the whole bridge, so
+      // no other server edit may run until it is back.
+      let mcpBusy = false;
+      function setMcpBusy(on, label) {
+        mcpBusy = on;
+        mcpAddBtn.disabled = on;
+        menuEl.querySelectorAll(".zs-mcp-remove").forEach((b) => (b.disabled = on));
+        mcpStatus.innerHTML = on
+          ? `<span class="zs-mcp-spin-row"><span class="zs-mcp-spin"></span>${label || "Restarting bridge…"}</span>`
+          : "";
+      }
+
+      menuEl.querySelectorAll(".zs-mcp-remove").forEach((b) =>
+        b.addEventListener("click", async () => {
+          if (mcpBusy) return;
+          const id = b.dataset.id;
+          if (!id) return;
+          setMcpBusy(true, "Restarting bridge…");
+          const r = await bg({ type: "remove_server", server_id: id });
+          if (!r || !r.ok) {
+            setMcpBusy(false);
+            mcpStatus.textContent = (r && r.error) || "Couldn't remove server";
+            setTimeout(() => { if (!mcpBusy) mcpStatus.textContent = ""; }, 2400);
+            return;
+          }
+          customMcpServers = customMcpServers.filter((s) => s.id !== id);
+          saveCustomMcpServers();
+          await waitForBridgeBack(null);
+          buildMenu(); // rebuilds with the spinner cleared
+        }));
+
+      mcpAddBtn.addEventListener("click", async () => {
+        if (mcpBusy) return;
+        const name = mcpNameEl.value.trim();
+        const command = mcpUrlEl.value.trim();
+        if (!name || !command) {
+          mcpStatus.textContent = "Name and command required";
+          setTimeout(() => { if (!mcpBusy) mcpStatus.textContent = ""; }, 1800);
+          return;
+        }
+        const id = mcpSlug(name);
+        const { command: cmd, args } = splitCommand(command);
+        setMcpBusy(true, "Restarting bridge…");
+        const r = await bg({ type: "add_server", server_id: id, command: cmd, args });
+        if (!r || !r.ok) {
+          setMcpBusy(false);
+          mcpStatus.textContent = (r && r.error) || "Couldn't add server";
+          setTimeout(() => { if (!mcpBusy) mcpStatus.textContent = ""; }, 2400);
+          return;
+        }
+        customMcpServers.push({ id, name, command });
+        saveCustomMcpServers();
+        await waitForBridgeBack(id);
+        buildMenu(); // rebuilds with the new server listed + spinner cleared
       });
     }
 
@@ -1645,7 +1893,15 @@
         msg = `Starting the Roblox agent…`;
         label = "Starting…"; kind = "starting"; disabled = true;
       } else if (A.started) {
-        const tools = (A.bridge && A.bridge.tools) || A.toolList.length || 0;
+        // Prefer the ADVERTISED list length (A.toolList - already filtered by the
+        // vision/blocked gate, so it matches what the model actually has: e.g.
+        // screen_capture is absent on non-vision providers like Kimi). Fall back
+        // to the bridge's raw catalogue count only before the list is loaded.
+        // Roblox-only count: A.toolList is already the Roblox catalogue (vision/
+        // blocked-filtered). Fall back to the Roblox server's own tool count from
+        // per-server health, NOT the aggregate that would include addon servers.
+        const robloxHealth = A.bridge && (A.bridge.servers || []).find((x) => x.id === "roblox");
+        const tools = A.toolList.length || (robloxHealth && robloxHealth.tools) || (A.bridge && A.bridge.tools) || 0;
         // "N tools" only means StudioMCP itself is up - it advertises its full
         // catalogue even with no Studio/place attached (see probe_studio() in
         // bridge.py), so showing it while Studio/place isn't actually usable
@@ -1716,7 +1972,14 @@
       // every sweep; rewriting stateEl.innerHTML each time recreated the spinner
       // <span> and RESTARTED its CSS animation, so "Starting…" appeared to stutter.
       const busy = !stopBtn.hidden;
-      const sig = [toneClass, indicator, msg, label, kind, disabled, warn, busy].join("|");
+      // Before a session is started, the bar stays minimal: only the Start action
+      // + Discord (help). The AI selector and the tips/support menu appear once the
+      // agent is actually running - so the pre-start bar isn't cluttered with
+      // options that only matter mid-session. (A.started is ambiguous with `warn`
+      // tone - which occurs both started-with-bridge-down and standby-with-bridge-
+      // down - so it's tracked explicitly in the signature.)
+      const showExtras = !!A.started;
+      const sig = [toneClass, indicator, msg, label, kind, disabled, warn, busy, showExtras].join("|");
       if (sig === lastBarSig) return;
       lastBarSig = sig;
       // Set the tone WITHOUT clobbering other classes (e.g. zs-bar-inline, which
@@ -1733,6 +1996,10 @@
       // With no kind (e.g. agent active, or an existing chat) there's no primary
       // action to offer, so the button is hidden entirely.
       actionBtn.style.display = (busy || !kind) ? "none" : "";
+      // AI selector + tips/support: only once a session is live. Discord stays
+      // visible in every state (it's the help link).
+      if (switchBtn) switchBtn.style.display = showExtras ? "" : "none";
+      if (supportBtn) supportBtn.style.display = showExtras ? "" : "none";
     }
     let lastBarSig = "";
 
@@ -1744,8 +2011,14 @@
       A.bridge = s;
       if (!dot) return;
       const servers = s.servers || [];
-      const up = servers.filter((x) => x.alive).length;
-      const mcpOk = s.connected && (s.mcpAlive || up > 0 || s.tools > 0);
+      // ZeroScript status tracks ONLY the primary Roblox MCP server. Every other
+      // server is an addon and must NEVER make the dot/gate look connected while
+      // Roblox itself is down. Old bridges don't send per-server health, so fall
+      // back to the aggregate signals they do send (mcpAlive / total tools).
+      const roblox = servers.find((x) => x.id === "roblox");
+      const mcpUp = roblox ? !!roblox.alive : (!!s.mcpAlive || servers.some((x) => x.alive));
+      const mcpTools = roblox ? (roblox.tools || 0) : (s.tools || 0);
+      const mcpOk = s.connected && (mcpUp || mcpTools > 0);
       // studio === false means the MCP server answered but the Studio is not USABLE
       // (no place loaded). studioApp tells the two sub-cases apart:
       //   studioApp === false → no Studio connected at all (app closed OR its MCP
@@ -1765,7 +2038,7 @@
       else if (noPlace) txt = "Roblox Studio is open but no place is loaded - open a place";
       else if (noApp) txt = "Roblox Studio not connected - open it and enable its MCP server";
       else if (studioOff) txt = "Studio not connected, enable the MCP server in Roblox Studio";
-      else txt = `Connected · ${s.tools} Roblox tools ready`;
+      else txt = `Connected · ${mcpTools} Roblox tools ready`;
       dot.title = txt; // full bridge detail on hover over the status dot
       bridgeOk = ok;
       studioDown = studioOff;
@@ -2198,28 +2471,40 @@
       root.appendChild(b);
     }
 
+    // Left-hand ZeroScript popup showing the latest screen_capture. Fed from the
+    // in-memory base64 (a data: URL always renders), so it works identically on
+    // every provider and never touches the site's DOM. Only the most recent
+    // capture is kept - a new one replaces the old.
     function showImages(images, toolName) {
+      root.querySelectorAll(".zs-shot").forEach((e) => e.remove());
       const wrap = document.createElement("div");
-      wrap.className = "zs-img-wrap";
+      wrap.className = "zs-shot";
       const hdr = document.createElement("div");
-      hdr.className = "zs-img-hdr";
-      hdr.textContent = `📷 ${toolName} · ${images.length} image${images.length > 1 ? "s" : ""}`;
+      hdr.className = "zs-shot-hdr";
+      const ttl = document.createElement("span");
+      ttl.className = "zs-shot-ttl";
+      ttl.textContent = `${toolName} · ${images.length} image${images.length > 1 ? "s" : ""}`;
       const close = document.createElement("button");
+      close.className = "zs-shot-x";
       close.textContent = "✕";
       close.addEventListener("click", () => wrap.remove());
+      hdr.appendChild(ttl);
       hdr.appendChild(close);
       wrap.appendChild(hdr);
+      const body = document.createElement("div");
+      body.className = "zs-shot-body";
       for (const img of images) {
         const el = document.createElement("img");
+        el.className = "zs-shot-img";
         el.src = `data:${img.mimeType || "image/jpeg"};base64,${img.data}`;
-        el.className = "zs-img";
-        wrap.appendChild(el);
+        body.appendChild(el);
       }
+      wrap.appendChild(body);
       root.appendChild(wrap);
     }
 
     build();
-    return { setStatus, setStarted, setStarting, showStop, markStopping, inputCover, toast, banner, showImages, nudgeStart, updateStartGate, refreshSetup, getCustomPrompt };
+    return { setStatus, setStarted, setStarting, showStop, markStopping, inputCover, toast, banner, showImages, nudgeStart, updateStartGate, refreshSetup, getCustomPrompt, getCustomMcpServers };
   })();
 
   // ── Live token + timer, shown ONLY on a tool call's chip detail. The
@@ -2535,7 +2820,25 @@
   // so the class lands before that first paint; the full sweep still runs after
   // to build the actual chip.
   function preHideWholeItems() {
-    for (const item of P.allItems()) {
+    const items = P.allItems();
+    // Optimistic pre-hide of a freshly injected result turn (armed in
+    // submitAndGetBase). The text-based match below can only fire once the
+    // "Output of '…'" caption has rendered, but the turn's NODE appears first
+    // (with its attached image) and the caption fills a tick later - so the raw
+    // output would flash until a post-send sweep nudge. We know the newest user
+    // turn in this window is ours: hide it on sight (blank, no raw text), and let
+    // the normal sweep swap in the real "· result" chip when the caption lands.
+    if (A.injectHideUntil && Date.now() < A.injectHideUntil) {
+      const users = items.filter((it) => P.isUserItem(it));
+      const last = users[users.length - 1];
+      if (last && !last.classList.contains("zs-hidden") &&
+          users.length > (A.injectPreUser || 0)) {
+        last.classList.add("zs-hidden");
+        A.injectHideUntil = 0; // one-shot: this turn is now masked
+        diag("result.prehide", { users: users.length });
+      }
+    }
+    for (const item of items) {
       if (item.classList.contains("zs-hidden")) continue;
       const txt = P.classifyText(item, ".zs-chip");
       if (txt.includes(ZS.SYS_MARKER) ||
