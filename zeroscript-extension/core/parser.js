@@ -37,6 +37,19 @@ const ZSParse = (() => {
     return m ? from + m.index : -1;
   }
 
+  // Strip a code-block UI label (the "Copy" button caption, or a leftover fence
+  // language token like "json") that some sites bleed into the block's text
+  // right after the opening marker. Seen live on Kimi: its code-block chrome
+  // renders as `###lua### Copy <code>`, so the bare-marker slice below would
+  // capture `Copy task.wait(...)` as the Lua code - not valid Lua, so StudioMCP
+  // rejects it with "Failed to parse command code". The JSON path already does
+  // this at line ~206; mirror it for the raw ###LUA### extraction. Requires
+  // trailing whitespace (\s+) so it never eats a legitimate identifier like
+  // `Copy(x)` that a script might genuinely start with.
+  function stripCodeChrome(code) {
+    return code.replace(/^(?:json|copy)\s+/i, "");
+  }
+
   // A command is `{"command":"name", ...}` (or "tool"). The params/arguments
   // object is OPTIONAL: paramless commands like list_commands are written as
   // `{"command":"list_commands"}`, so requiring "params" too would MISS them
@@ -198,7 +211,7 @@ const ZSParse = (() => {
       const { pos: ls, len: luaLen, dm } = findLuaStart(body);
       const le = findLuaEnd(body, ls === -1 ? 0 : ls + luaLen);
       if (ls !== -1 && le !== -1 && le > ls) {
-        out.push({ tool: "execute_luau", arguments: { code: body.slice(ls + luaLen, le).trim(), datamodel_type: dm } });
+        out.push({ tool: "execute_luau", arguments: { code: stripCodeChrome(body.slice(ls + luaLen, le).trim()), datamodel_type: dm } });
         from = em + END_M.length;
         continue;
       }
@@ -224,7 +237,7 @@ const ZSParse = (() => {
       const { pos: ls, len: luaLen, dm } = findLuaStart(r);
       const le = findLuaEnd(r, ls === -1 ? 0 : ls + luaLen);
       if (ls !== -1 && le !== -1 && le > ls) {
-        out.push({ tool: "execute_luau", arguments: { code: r.slice(ls + luaLen, le).trim(), datamodel_type: dm } });
+        out.push({ tool: "execute_luau", arguments: { code: stripCodeChrome(r.slice(ls + luaLen, le).trim()), datamodel_type: dm } });
       }
     }
     return out.map(cleanLuaCall);
@@ -249,12 +262,68 @@ const ZSParse = (() => {
     return call;
   }
 
+  // Last-resort salvage of a CUT-OFF JSON command: the model hit its output
+  // limit with the whole payload complete but the trailing closers missing
+  // (seen live on Qwen: a big multi_edit missing exactly ONE final "}").
+  // Strictly conservative - we only auto-close when it is provably just the
+  // closing sequence that was lost, never when actual content was amputated:
+  //  - the scan must NOT end inside a string literal (a value cut mid-string
+  //    means real content is missing → keep the parse_error);
+  //  - the last non-whitespace char must terminate a complete JSON value
+  //    (`"`, `}`, `]`, digit, or the tail of true/false/null);
+  //  - at most MAX_SALVAGE_CLOSERS closers may be appended. 2 covers the
+  //    root-brace and params-brace cases; a deeper deficit usually means the
+  //    cut fell between items (e.g. mid-edits-array), where running a partial
+  //    command would be dangerous - the retry feedback stays the right call.
+  // Callers must only invoke this once generation has ENDED (the watcher's
+  // parse_error branch), never on a still-streaming reply.
+  const MAX_SALVAGE_CLOSERS = 2;
+  function salvageCutOff(text) {
+    for (const key of ['"command"', '"tool"']) {
+      const k = text.indexOf(key);
+      if (k === -1) continue;
+      const start = text.lastIndexOf("{", k);
+      if (start === -1) continue;
+      if (matchBrace(text, start) !== -1) continue; // closed → not our case
+      // String-aware bracket stack from the opener to the end of the text.
+      const stack = [];
+      let inStr = false, esc = false;
+      for (let i = start; i < text.length; i++) {
+        const c = text[i];
+        if (inStr) {
+          if (esc) esc = false;
+          else if (c === "\\") esc = true;
+          else if (c === '"') inStr = false;
+        } else if (c === '"') inStr = true;
+        else if (c === "{") stack.push("}");
+        else if (c === "[") stack.push("]");
+        else if (c === "}" || c === "]") {
+          if (stack.pop() !== c) return null; // mismatched nesting → hopeless
+        }
+      }
+      if (inStr) return null;                       // cut mid-string value
+      if (!stack.length || stack.length > MAX_SALVAGE_CLOSERS) return null;
+      const body = text.slice(start).trimEnd();
+      if (!/["}\]0-9]$|(?:true|false|null)$/.test(body)) return null; // value incomplete
+      try {
+        const call = normalizeCall(parseLoose(body + stack.reverse().join("")));
+        if (call) return cleanLuaCall(call);
+      } catch {}
+      return null;
+    }
+    return null;
+  }
+
   function toolNameFromText(txt) {
     // Match the name even BEFORE its closing quote (`[^"]*`), so the chip shows
     // the real command name AS IT IS TYPED instead of a generic "command"
     // placeholder until the JSON closes. A still-empty value falls through.
+    // Trim: while the value is still streaming it can be whitespace-only (e.g.
+    // Kimi renders `"tool": "    "` for a beat), which would otherwise show a
+    // blank chip label until the loop repaints it. A whitespace value falls
+    // through to the placeholder below instead.
     const m = txt.match(/"(?:command|tool)"\s*:\s*"([^"]*)/);
-    if (m && m[1]) return m[1];
+    if (m && m[1].trim()) return m[1].trim();
     if (txt.includes("execute_luau") || LUA_START_RE.test(txt)) return "execute_luau";
     return "command";
   }
@@ -279,7 +348,7 @@ const ZSParse = (() => {
   return {
     START_M, END_M, LUA_START_RE, LUA_END_RE, CMD_KEY_RE,
     findLuaStart, findLuaEnd, matchBrace, extractJson, normalizeCall,
-    hasToolSignature, hasOpenToolBlock, parseToolCalls, toolNameFromText,
+    hasToolSignature, hasOpenToolBlock, parseToolCalls, salvageCutOff, toolNameFromText,
     isInjectedFeedback, hasCommandShape,
   };
 })();

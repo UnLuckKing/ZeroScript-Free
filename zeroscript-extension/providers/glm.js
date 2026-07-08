@@ -42,6 +42,15 @@ const ZSProvider = (() => {
     copyCodeBtn: ".copy-code-button",
     codeWrap: 'div[class*="rounded-xl"]',
     errorSurfaces: '[role="alert"],[class*="toast"],[class*="error"],[class*="alert"],[class*="modal"]',
+    // A SENT image renders as an attachment card (its filename + "JPG · NN KB")
+    // as the FIRST child div of `.chat-user`, BEFORE the message text. Its
+    // filename text would otherwise prefix the turn's classifyText - which broke
+    // the result-chip: the core anchors on /^Output of '/ (isInjectedFeedback),
+    // so "zeroscript_….jpg JPG 179 KB Output of 'screen_capture'…" failed to match
+    // and the screen_capture feedback turn stayed un-chipped (visible raw output,
+    // unlike Kimi). Strip it from every text read. Precise: only the child holding
+    // the attachment image, never the sibling text block.
+    attachment: '.chat-user > div:has(img[data-cy="image"])',
   };
 
   const RE = {
@@ -80,7 +89,7 @@ const ZSProvider = (() => {
   // blocks drafted inside reasoning are never detected, shown, or executed.
   function textWithout(root, excludeSel) {
     if (!root) return "";
-    const skip = S.thinking + ", .zs-chip" + (excludeSel ? ", " + excludeSel : "");
+    const skip = S.thinking + ", .zs-chip, " + S.attachment + (excludeSel ? ", " + excludeSel : "");
     let t = "";
     const walk = (n) => {
       if (n.nodeType === 3) { t += n.nodeValue; return; }
@@ -144,6 +153,28 @@ const ZSProvider = (() => {
     return null;
   }
 
+  // ── Chip anchor ───────────────────────────────────────────────────────────
+  // The turn's inner reply lives in a `.markdown-prose` div (NOTE the turn root
+  // `.chat-assistant` ALSO carries a `markdown-prose` class, so querySelector -
+  // descendants only - returns the inner one). Its parent is the content COLUMN
+  // (`.flex.flex-col.w-full`, a vertical stack holding the reply then an
+  // `aria-hidden` spacer; the copy/regenerate action bar lives OUTSIDE the turn,
+  // validated live). Anchoring the chip there + chipAppend stacks it UNDER the
+  // reply (parity with Qwen/Kimi) instead of pinned above the whole turn.
+  function chipAnchor(item) {
+    if (!item) return item;
+    const mp = item.querySelector(".markdown-prose");
+    return (mp && mp.parentElement) || item;
+  }
+  // With chipAppend the chip trails the reply. The column's last child is a bare
+  // `aria-hidden` spacer; name it as the fixed point the chip stays just BEFORE
+  // so it hugs the reply text rather than sinking below the spacer. null when
+  // absent -> the chip simply appends after the reply (still below it).
+  function chipTrailRef(item) {
+    const anchor = chipAnchor(item);
+    return (anchor && anchor.querySelector(':scope > div[aria-hidden="true"]')) || null;
+  }
+
   const chatIsEmpty = () => allItems().length === 0;
   // A genuinely fresh chat: the "/" route with the composer rendered and no turns.
   const isFreshChat = () =>
@@ -198,7 +229,15 @@ const ZSProvider = (() => {
     return [...c.querySelectorAll("button")].find(
       (b) => b.id !== "send-message-button" &&
              /rounded-full/.test(b.className) &&
-             /bg-black|bg-white/.test(b.className)
+             /bg-black|bg-white/.test(b.className) &&
+             // z.ai added round `bg-white rounded-full` SCROLL-TO-BOTTOM arrows to
+             // the composer (an <svg> down-arrow in an `absolute` overlay). They
+             // matched the old criteria, so genActive()/isGenerating latched TRUE
+             // forever on a static page - the Stop button showed red with no loop
+             // running and finalisation/camouflage stalled. The real stop button is
+             // a round button holding a small square <span> (NO svg), so exclude any
+             // svg-bearing button.
+             !b.querySelector("svg")
     ) || null;
   }
 
@@ -297,11 +336,17 @@ const ZSProvider = (() => {
     return false;
   }
 
-  async function typeAndSend(text) {
+  async function typeAndSend(text, images) {
     const editor = getEditor();
     if (!editor) throw new Error("GLM input box not found");
     editor.focus();
     setTextareaValue(editor, text);
+    // Attach images LAST, right before the send click - see gemini.js's
+    // typeAndSend for why (attaching before retyping the text can sever the
+    // site's binding between the pending upload and the message being sent).
+    // submitAndGetBase RETRIES this function; only attach if nothing is staged
+    // yet, else each retry uploads ANOTHER duplicate copy.
+    if (images && images.length && !hasPendingAttachment()) { try { await attachImages(images); } catch {} }
     // Wait for Svelte to re-enable the send button (proof it registered the text),
     // then click the instant it's clickable. In a LONG conversation the message
     // list is heavy, so Svelte's reactivity to the input event can take well over
@@ -367,30 +412,53 @@ const ZSProvider = (() => {
     const ext = mime.includes("png") ? "png" : "jpg";
     return new File([arr], `zeroscript_${Date.now()}_${i}.${ext}`, { type: mime });
   }
+  // The PENDING attachment chip. z.ai mounts each staged upload as a
+  // `.chip-scroll > button` inside the composer card (barAnchor). A SENT image
+  // renders separately in its `.user-message` turn, so scoping the probe to the
+  // composer card excludes history - which stops a leftover chip from a PREVIOUS
+  // capture reading as "already pending" and skipping the next attach (the
+  // 2nd-capture-never-attaches bug seen on Kimi). Validated live on chat.z.ai.
+  const pendingChip = () => {
+    const host = barAnchor() || document;
+    return host.querySelector(".chip-scroll > button");
+  };
+  const hasPendingAttachment = () => !!pendingChip();
+  // Upload done = the chip's <img data-cy="image"> src has flipped from its local
+  // placeholder to the remote CDN url (https://z-cdn-media.chatglm.cn/…). Sending
+  // before that goes out text-only, so we WAIT for the http(s) src.
+  const attachmentReady = () => {
+    const host = barAnchor() || document;
+    const im = host.querySelector('.chip-scroll img[data-cy="image"]') || host.querySelector(".chip-scroll img");
+    return !!(im && /^https?:\/\//.test(im.getAttribute("src") || ""));
+  };
   async function attachImages(images) {
-    const editor = getEditor();
-    if (!editor || !images || !images.length) return false;
+    if (!images || !images.length) return false;
     const dt = new DataTransfer();
     images.forEach((img, i) => { try { dt.items.add(fileFromImage(img, i)); } catch {} });
     if (!dt.items.length) return false;
-    editor.focus();
-    editor.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    // z.ai keeps a single always-mounted <input type=file> in the composer
+    // (accepts png/jpg among others); setting .files + change stages the upload -
+    // no "+" menu to open (unlike Kimi). A synthetic paste is NOT needed.
     const fileInput = document.querySelector('input[type="file"]');
-    if (fileInput) {
-      try { fileInput.files = dt.files; fileInput.dispatchEvent(new Event("change", { bubbles: true })); } catch {}
-    }
-    const box = composerFrame();
-    return await waitFor(
-      () => !!(box && box.querySelector("img, [class*='preview'], [class*='thumbnail']")),
-      15000
-    );
+    if (!fileInput) { diag("attach.noFileInput"); return false; }
+    diag("attach.setFiles", { count: dt.items.length });
+    try { fileInput.files = dt.files; fileInput.dispatchEvent(new Event("change", { bubbles: true })); }
+    catch (e) { diag("attach.setFilesThrew", { msg: String((e && e.message) || e) }); return false; }
+    if (!(await waitFor(pendingChip, 15000))) { diag("attach.noChip"); return false; }
+    const ok = await waitFor(attachmentReady, 30000);
+    diag("attach.uploadDone", { ok });
+    return ok;
   }
   function clearAttachments() {
     try {
-      const box = composerFrame();
-      if (!box) return;
-      box.querySelectorAll("[aria-label*='elete'], [aria-label*='emove'], [class*='delete'], [class*='remove']")
-        .forEach((d) => { try { d.click(); } catch {} });
+      const host = barAnchor() || document;
+      host.querySelectorAll(".chip-scroll > button").forEach((chip) => {
+        // The per-chip remove control is the small button revealed on hover
+        // (`invisible text-icon-…`); fall back to the chip's last inner button.
+        const inner = [...chip.querySelectorAll("button")];
+        const rm = inner.find((b) => /invisible|text-icon/.test(b.className)) || inner[inner.length - 1];
+        if (rm) try { rm.click(); } catch {}
+      });
     } catch {}
   }
 
@@ -427,7 +495,8 @@ const ZSProvider = (() => {
         const stop = t && t.closest && t.closest("button");
         if (stop && composerFrame() && composerFrame().contains(stop) &&
             stop.id !== "send-message-button" &&
-            /rounded-full/.test(stop.className) && /bg-black|bg-white/.test(stop.className)) {
+            /rounded-full/.test(stop.className) && /bg-black|bg-white/.test(stop.className) &&
+            !stop.querySelector("svg")) { // exclude the scroll-to-bottom arrows (see stopButton)
           handlers.onNativeStop();
           return;
         }
@@ -486,6 +555,13 @@ const ZSProvider = (() => {
   return {
     id: "glm",
     displayName: "GLM",
+    // GLM-5.2 is multimodal and z.ai's composer accepts image uploads (png/jpg via
+    // the always-mounted file input; chip staged in .chip-scroll, upload complete
+    // when its <img> src flips to the z-cdn-media CDN url - see attachImages). So
+    // screen_capture is exposed here (main.js BLOCKED_TOOLS gate). Confirm the
+    // model actually READS the image via provider-test-checklist step 9 (incl. two
+    // captures in a row) - flip back to false if a live read ever fails.
+    supportsVision: true,
     timings,
     // Reasoning-area selector, exported so the CORE's raw-command-visible probes
     // exclude it (same fix as DeepSeek/Gemini/Kimi): GLM's "Thought Process"
@@ -503,8 +579,17 @@ const ZSProvider = (() => {
       "\"No response, please try again later\" - that's a z.ai issue, not the extension. " +
       "Prefer the GLM-5.2 model and retry in a moment (or off-peak) if it happens.",
     // Svelte re-renders the reply's markdown subtree on every update, wiping any
-    // chip placed inside it. Anchor chips at the turn-element level instead.
+    // chip placed inside it. Anchor chips at the turn-element level instead
+    // (redirected into the reply column by chipAnchor).
     chipAtItemLevel: true,
+    chipAnchor,
+    // GLM writes narration THEN the tool call at the end of the turn, so trail
+    // the chip after the reply text (chipAppend) rather than pinning it first -
+    // it then sits BELOW the reply, like Qwen/Kimi. chipTrailRef keeps it just
+    // above the trailing aria-hidden spacer; ensureOwnedChip re-asserts both
+    // across Svelte's re-renders of the reply subtree.
+    chipAppend: true,
+    chipTrailRef,
     // Assistant turns expose a stable message-<uuid> identity (lastAssistantId),
     // so the core's watcher can refuse finalizing before this send's reply exists.
     reliableCounts: true,

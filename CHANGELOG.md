@@ -2,6 +2,73 @@
 
 All notable changes to ZeroScript Free are documented here.
 
+## [1.4.0] - 2026-07-08
+
+### Added
+- Multi-MCP addon servers (experimental): a new "MCP servers" section in the
+  panel menu lets you add or remove additional MCP servers (Blender,
+  Sketchfab, or any local MCP command) alongside the always-primary Roblox
+  Studio connection. The bridge rewrites `config.json` and restarts itself to
+  load a change; Roblox stays protected from edits/removal and its status dot
+  is scoped to Roblox alone so an addon going down never misrepresents the
+  primary connection. New `list_mcp_servers` command and a `server` param on
+  `list_commands` let the model discover and use addon tool sets on demand.
+  When Roblox is down but an addon server is alive, the panel now offers a
+  degraded start instead of refusing to start at all.
+- Vision support (screen_capture / other tool-returned images) enabled for
+  Arena, Gemini, GLM, Kimi and Qwen, each with a real "upload finished" signal
+  before sending instead of trusting the first local preview, fixing several
+  silent-attachment-drop and duplicate-attachment-on-retry bugs. A tool from
+  any connected server that returns an image now gets the camera chip and is
+  remembered for future calls, even for a custom MCP server whose name gives
+  no hint it returns images.
+- Parser: a JSON command cut off by the model's own output limit, missing
+  only its trailing closing brackets, is now auto-completed and executed
+  instead of failing with a parse error and forcing a full retry turn.
+  Strictly refuses to salvage anything where real content (not just closers)
+  was cut off.
+- Per-reason parse-error feedback (cut off, bad JSON, missing ###LUA###
+  opener, wrong envelope) instead of one generic "bad JSON" message, so the
+  model fixes the actual problem instead of guessing.
+
+### Fixed
+- DeepSeek: a command's chip could show green "done" while DeepSeek was still
+  streaming the reply, on back-to-back calls to the same tool. Caused by
+  DeepSeek's list virtualization defeating the turn-count identity guard;
+  fixed with a stable per-turn id.
+- GLM: new "scroll to bottom" buttons were mistaken for the Stop button and
+  permanently latched generation state to "busy." Raw command JSON could leak
+  into the visible reply when nested inside a paragraph. An image filename
+  could corrupt result-chip detection.
+- Kimi: added detection of Kimi's own native "Agent" mode, which conflicts
+  with ZeroScript's command protocol; Start is disabled with a warning until
+  it's turned off. Fixed the hidden file-upload input not existing until the
+  "+" menu is opened, raw command text leaking when nested/oversized, and
+  normal model prose containing "try again" being misread as a site error.
+- Qwen: same "try again" false-busy fix as Kimi. A/B "carousel" comparison
+  turns (where the composer disappears mid-carousel) now auto-resolve to
+  Response 1 once both candidates finish, instead of stalling or misreading a
+  candidate as a truncated command.
+- Arena: send is now confirmed until the composer actually clears instead of
+  trusting a single click, preventing stranded messages/attachments; the chip
+  now anchors below the reply text instead of floating above it.
+- A command turn abandoned mid-stream (reload, or superseded by a
+  regenerate) no longer shows a false green checkmark; it now shows a
+  neutral "not run" state instead.
+- A tool's own in-body error (e.g. "Output of '...': Error executing code...")
+  now settles the chip red instead of green, even when the tool didn't use
+  ZeroScript's own ERROR wrapper.
+- Regenerating a stopped command no longer briefly re-shows the old call's
+  chip before the new one streams in.
+
+### Changed
+- The version number next to the ZeroScript name in the panel is now small,
+  plain text instead of a bordered green badge.
+- System prompt updated to cover multiple MCP servers: the model must call
+  `list_mcp_servers` before assuming something outside Roblox is unsupported,
+  and the tool list is no longer inlined in the prompt (fetched on demand via
+  `list_commands`).
+
 ## [1.3.9] - 2026-07-04
 
 ### Fixed

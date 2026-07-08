@@ -73,6 +73,14 @@ Go to https://chat.deepseek.com (recommended), https://gemini.google.com, https:
 - Control play-testing
 - **Remember your project across sessions** persistent project memory saved inside your place
 
+## New in 1.4.0
+
+- **Connect other MCP servers alongside Roblox Studio (experimental):** add an addon MCP server (Blender, Sketchfab, or any local MCP command) from the panel's menu. Roblox Studio stays the always-on primary connection; addons are optional extras the AI reaches for only when the task actually needs them, and a Roblox outage never gets confused with an addon outage. When Roblox is down but an addon is still alive, the agent can start in a degraded mode instead of refusing to start at all.
+- **Vision support on more providers:** Arena, Gemini, GLM, Kimi and Qwen can now all actually see an attached screen capture or other tool-returned image, with a more reliable upload flow that no longer silently drops the attachment on send.
+- **Smarter command recovery:** a command cut off by the model's own output limit, with only its closing brackets missing, is now auto-completed and run instead of forcing a full retry. Broken-command feedback is also more specific about what actually went wrong (cut off, bad JSON, missing marker, wrong format), so the AI fixes the real problem faster.
+- **More accurate tool chips:** fixed a DeepSeek bug where a command's chip could show as finished while the AI was still writing it, plus several chip-state fixes shared across providers (regenerate flicker, orphaned commands after a reload, image-result labeling).
+- **Cleaner panel:** the version number next to the ZeroScript name is now small, plain text instead of a bordered badge.
+
 ## New in 1.3.9
 
 - **More reliable bridge:** a Roblox process left running in the background after a restart no longer fights the next launch, and a dropped internal connection now retries silently instead of failing a command with a confusing error.

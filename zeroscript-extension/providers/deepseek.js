@@ -33,6 +33,10 @@ const ZSProvider = (() => {
     userBubble: ".fbb737a4", // user text bubble (secondary signal)
     box: ".ds-markdown",
     editor: "textarea", // DeepSeek uses a real <textarea>, NOT a contenteditable
+    // The inline "edit this message" box is DeepSeek's design-system bordered
+    // textarea (.ds-textarea--bordered), mounted UP in the turn list. The bottom
+    // composer is NOT wrapped in one - so this scopes getEditor() away from it.
+    msgEditBox: ".ds-textarea",
     thinking: ".ds-think-content",
     markdown: ".ds-markdown",
     generating: ".ds-loading",
@@ -137,10 +141,15 @@ const ZSProvider = (() => {
   // send hooks and letting them swallow the DeepSeek "Log in" click (which is
   // itself a .ds-button--primary, the same selector as the send button).
   const getEditor = () => {
-    for (const e of document.querySelectorAll(S.editor)) {
-      if (!e.closest("#zs-root")) return e;
-    }
-    return null;
+    const site = [...document.querySelectorAll(S.editor)].filter(
+      (e) => !e.closest("#zs-root")
+    );
+    // Prefer the bottom composer over the inline message-EDIT box. When the user
+    // edits a turn, DeepSeek mounts a bordered .ds-textarea up in the turn list;
+    // it precedes the composer in DOM order, so the old "first textarea" pick
+    // returned it - and barMount() then dragged the whole ZeroScript bar INTO the
+    // editor. Skip any textarea inside that DS component; the composer isn't one.
+    return site.find((e) => !e.closest(S.msgEditBox)) || site[0] || null;
   };
   // The composer is a <textarea>, so its live content is .value (NOT textContent).
   const editorText = () => {
@@ -169,6 +178,23 @@ const ZSProvider = (() => {
     const it = assistantItems();
     return it.length ? it[it.length - 1] : null;
   };
+
+  // Stable per-turn identity: each .ds-message's PARENT carries
+  // data-virtual-list-item-key, a monotonically increasing per-turn key
+  // (validated live, 2026-07). DeepSeek VIRTUALIZES its message list (the
+  // attribute name says it all), so assistantCount() stalls once old turns
+  // detach - which defeated the core's count-based chip.reown guard on
+  // back-to-back calls to the same tool: the previous call's settled "done"
+  // chip was repainted onto the NEW streaming command turn (the "chip appears
+  // done with no spinner while DeepSeek is still writing" report). This key is
+  // immune to that; the core prefers it over the count whenever it exists.
+  function lastAssistantId() {
+    const last = lastAssistant();
+    if (!last) return null;
+    const p = last.parentElement;
+    const key = p && p.getAttribute("data-virtual-list-item-key");
+    return key != null ? key : null;
+  }
 
   // A "blank" conversation = no chat turns rendered yet.
   const chatIsEmpty = () => allItems().length === 0;
@@ -419,6 +445,39 @@ const ZSProvider = (() => {
     return isStopBtn(document.querySelector(S.sendBtn));
   }
 
+  // ── Diagnostic breakdown of isGenerating() ────────────────────────────────
+  // The chip "settled ✓ done while DeepSeek was still writing" bug means
+  // isGenerating() flickered false at the wrong moment. This exposes EACH
+  // sub-signal so the core's chip.why tracker can show WHICH one failed:
+  //  - spinner  : the .ds-loading spin-up flag
+  //  - stopBtn  : the footer button is in its STOP-square state (answer phase)
+  //  - btnGlyph : the raw first token of the button's <path d> (to catch a
+  //               DeepSeek reskin that breaks isStopBtn's M[0-3] test)
+  //  - reasoning: DeepThink reasoning is in progress (no stop button then)
+  //  - streamMax/streamAgeMs : stream-growth meter (the ONLY liveness signal in
+  //               the reasoning phase, and the fallback when stopBtn is false)
+  //  - grewGen/grewReason    : did the stream grow within the answer / reasoning
+  //               idle windows (what isGenerating actually gates on)
+  function genDebug() {
+    try {
+      sampleStream();
+      const btn = document.querySelector(S.sendBtn);
+      const path = btn && btn.querySelector("path");
+      const rp = btn && btn.querySelector("rect");
+      return {
+        spinner: !!document.querySelector(S.generating),
+        stopBtn: isStopBtn(btn),
+        btnGlyph: rp ? "rect" : (path ? (path.getAttribute("d") || "").slice(0, 6) : "none"),
+        reasoning: reasoningInProgress(lastAssistant()),
+        streamMax: _streamMax,
+        streamAgeMs: _streamAt ? Date.now() - _streamAt : -1,
+        grewGen: grewWithin(timings.GEN_IDLE_MS),
+        grewReason: grewWithin(timings.REASON_IDLE_MS),
+        gen: isGenerating(),
+      };
+    } catch (e) { return { err: String(e && e.message || e) }; }
+  }
+
   // Lightweight turn snapshot for diagnostics (reasoning/reply lengths).
   function snapshot() {
     try {
@@ -499,11 +558,15 @@ const ZSProvider = (() => {
     return false;
   }
 
-  async function typeAndSend(text) {
+  async function typeAndSend(text, images) {
     const editor = getEditor();
     if (!editor) throw new Error("DeepSeek input box not found");
     editor.focus();
     setTextareaValue(editor, text);
+    // Attach images LAST, right before the send click - see gemini.js's
+    // typeAndSend for why (attaching before retyping the text can sever the
+    // site's binding between the pending upload and the message being sent).
+    if (images && images.length) { try { await attachImages(images); } catch {} }
     // Wait for React to re-enable the send button (poll up to 800ms).
     await waitFor(() => {
       const btn = document.querySelector(S.sendBtn);
@@ -711,6 +774,9 @@ const ZSProvider = (() => {
   return {
     id: "deepseek",
     displayName: "DeepSeek",
+    // DeepSeek's chat web model cannot see images - keep screen_capture
+    // blocked for it (see main.js BLOCKED_TOOLS gate).
+    supportsVision: false,
     timings,
     // Reasoning-area selector, exported so the CORE's raw-command-visible
     // probes can exclude it: DeepSeek QUOTES the command JSON/###LUA### inside
@@ -721,12 +787,12 @@ const ZSProvider = (() => {
     init({ diag: d } = {}) { if (d) diag = d; },
     // turns
     allItems, isUserItem, isAssistantItem, itemText, classifyText,
-    assistantCount, userCount, lastAssistant, readAssistant,
+    assistantCount, userCount, lastAssistant, lastAssistantId, readAssistant,
     streamLen, snapshot,
     // composer / state
     getEditor, editorText, chatIsEmpty, isFreshChat, composerFrame, barMount,
     setInputLock, typeAndSend, stopGeneration,
-    isGenerating, isBusyNow, isHardGenerating,
+    isGenerating, isBusyNow, isHardGenerating, genDebug,
     enforceComposer, ensureComposerReady,
     turnHalted, findContinueBtn, clickContinueBtn,
     scanError, isTooLongMsg, isBusyMsg,

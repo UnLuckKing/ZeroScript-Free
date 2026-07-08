@@ -102,10 +102,9 @@ html.zs-light #zs-bar.zs-bar-anchored {
 
 #zs-brand { font-weight: 700; letter-spacing: 0.2px; flex: none; font-size: 12.5px; }
 .zs-free {
-  font-size: 8.5px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
-  color: #34d399; background: rgba(52, 211, 153, 0.14);
-  border: 1px solid rgba(52, 211, 153, 0.35);
-  padding: 1px 4px; border-radius: 5px; vertical-align: middle;
+  font-size: 9.5px; font-weight: 500; letter-spacing: 0.2px;
+  color: rgba(255, 255, 255, 0.55); background: none; border: none;
+  padding: 0; margin-left: 3px; vertical-align: middle;
 }
 
 /* provider instability warning (Gemini / Kimi): a small amber pill that FLOATS
@@ -167,6 +166,13 @@ html.zs-light #zs-unstable {
   box-shadow: 0 2px 12px rgba(99, 102, 241, 0.45);
 }
 #zs-action[data-kind="start"]:hover { filter: brightness(1.08); }
+/* Degraded start: Roblox is down but another MCP server is live. Amber to signal
+   "startable, but not the full setup" - distinct from the blue full-ready start. */
+#zs-action[data-kind="start-degraded"] {
+  background: linear-gradient(135deg, #d97706, #f59e0b); color: #fff; border-color: transparent;
+  box-shadow: 0 2px 12px rgba(217, 119, 6, 0.45);
+}
+#zs-action[data-kind="start-degraded"]:hover { filter: brightness(1.08); }
 #zs-action:disabled {
   background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.45);
   border-color: rgba(255, 255, 255, 0.10); box-shadow: none; cursor: not-allowed;
@@ -618,6 +624,9 @@ ol.flex-col-reverse > div.w-full:not(.mx-auto) > .zs-chip {
 .zs-chip.err    { --cat: #ef6b6b; border-color: rgba(239, 68, 68, 0.38); color: #f0b8b8; }
 .zs-chip.result { --cat: #8b8b93; color: #a8a8b0; }
 .zs-chip.sys    { --cat: #8b8b93; color: #a8a8b0; }
+/* Orphaned command we won't execute (e.g. reload left it un-run): neutral grey,
+   never a green ✓ that would imply the tool succeeded. */
+.zs-chip.idle   { --cat: #8b8b93; color: #a8a8b0; }
 
 /* running shimmer, seamless: a REPEATING gradient (period = 210px) scrolled by
    exactly one period in LINEAR time, so the last frame is pixel-identical to the
@@ -823,6 +832,7 @@ html.zs-light #zs-bar {
   box-shadow: 0 8px 30px rgba(15, 23, 42, 0.16);
 }
 html.zs-light #zs-brand { color: #1f2430; }
+html.zs-light .zs-free { color: rgba(31, 36, 48, 0.5); }
 html.zs-light #zs-state { color: #4b5563; }
 html.zs-light #zs-state b { color: #4f46e5; }
 html.zs-light #zs-state.zs-state-warn { color: #b91c1c; }

@@ -17,6 +17,16 @@ ok("lua :Server datamodel", luaServer.length === 1 && luaServer[0].arguments.dat
 const luaClient = ZSParse.parseToolCalls("### LUA : client ###\nreturn 1\n###END_LUA###");
 ok("lua spaced :client datamodel", luaClient.length === 1 && luaClient[0].arguments.datamodel_type === "Client");
 
+// Kimi bleeds its code-block "Copy" button caption into the block text right
+// after a lowercase ###lua### marker: `###lua### Copy <code>`. The extracted
+// code must NOT start with "Copy" (StudioMCP would reject `Copy task.wait(...)`
+// as invalid Lua -> "Failed to parse command code").
+const luaCopy = ZSParse.parseToolCalls('###lua### Copy task.wait(4)\nreturn "dom test done"\n###END_LUA###');
+ok("strips Copy chrome from bare lua block", luaCopy.length === 1 && luaCopy[0].arguments.code === 'task.wait(4)\nreturn "dom test done"');
+// A genuine identifier called Copy (no trailing space eaten) must survive.
+const luaCopyIdent = ZSParse.parseToolCalls("###LUA###\nCopy(workspace)\n###END_LUA###");
+ok("keeps legit Copy( identifier", luaCopyIdent[0].arguments.code === "Copy(workspace)");
+
 const paramless = ZSParse.parseToolCalls('{"command":"list_commands"}');
 ok("paramless command", paramless.length === 1 && paramless[0].tool === "list_commands");
 
@@ -38,3 +48,22 @@ ok("command shape detected", ZSParse.hasCommandShape('{"command":"x"}') === true
 ok("injected feedback detected", ZSParse.isInjectedFeedback("Output of 'execute_luau':\n2") === true);
 ok("parse-error note is feedback not command", ZSParse.isInjectedFeedback('ERROR: bad JSON, write {"command": "name"}') === true);
 ok("tool name mid-stream", ZSParse.toolNameFromText('{"command":"multi_ed') === "multi_ed");
+
+// ── salvageCutOff: auto-close a command whose trailing closers were cut ──
+// The live Qwen case: a big multi_edit missing exactly ONE final "}".
+const cut1 = ZSParse.salvageCutOff('{"command": "multi_edit", "params": {"datamodel_type": "Edit", "file_path": "game.ServerScriptService.AdminHandler", "edits": [{"old_string": "a", "new_string": "b"}]}');
+ok("salvage: one missing root brace", cut1 && cut1.tool === "multi_edit" && cut1.arguments.edits.length === 1);
+// Two missing closers (params + root) still salvages.
+const cut2 = ZSParse.salvageCutOff('{"command": "get_studio_state", "params": {"verbose": true');
+ok("salvage: two missing closers", cut2 && cut2.tool === "get_studio_state" && cut2.arguments.verbose === true);
+// Cut MID-STRING = real content amputated -> refuse.
+ok("salvage refuses mid-string cut", ZSParse.salvageCutOff('{"command": "multi_edit", "params": {"edits": [{"old_string": "elseif command ==') === null);
+// Deep deficit (cut between edits: ] } } missing = 3 closers) -> refuse.
+ok("salvage refuses deep deficit", ZSParse.salvageCutOff('{"command": "multi_edit", "params": {"edits": [{"old_string": "a", "new_string": "b"}') === null);
+// A CLOSED command is not salvage's business.
+ok("salvage ignores closed command", ZSParse.salvageCutOff('{"command": "list_commands"}') === null);
+// Dangling comma after the last complete value = incomplete next value -> refuse.
+ok("salvage refuses trailing comma", ZSParse.salvageCutOff('{"command": "multi_edit", "params": {"edits": [{"old_string": "a"},') === null);
+// Escaped quotes inside values must not confuse the string tracking.
+const cutEsc = ZSParse.salvageCutOff('{"command": "execute_luau", "params": {"code": "print(\\"hi\\")", "datamodel_type": "Edit"}');
+ok("salvage handles escaped quotes", cutEsc && cutEsc.tool === "execute_luau" && cutEsc.arguments.code === 'print("hi")');

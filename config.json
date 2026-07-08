@@ -3,12 +3,6 @@
     "roblox": {
       "command": "launch_studio_mcp.py",
       "args": []
-    },
-    "blender": {
-      "command": "uvx",
-      "args": [
-        "blender-mcp"
-      ]
     }
   }
 }

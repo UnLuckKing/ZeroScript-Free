@@ -319,18 +319,37 @@ const ZSProvider = (() => {
     }
   }
 
-  async function typeAndSend(text) {
+  async function typeAndSend(text, images) {
     const ed = getEditor();
     if (!ed) throw new Error("Gemini input box not found");
     const relock = _locked;
     if (relock) ed.setAttribute("contenteditable", "true"); // injection needs it editable
     try {
-      setEditorText(ed, text);
+      // submitAndGetBase RETRIES this whole function (up to 4x) when the send
+      // doesn't land within its window. Naively redoing both steps every retry
+      // is destructive: (1) setEditorText's select-all + insertText wipes the
+      // editor's internal reference to whatever is already pending, and (2)
+      // pasting again attaches ANOTHER duplicate file on top of the first
+      // (validated live: 3 retries produced 3 separate attach.dispatchPaste
+      // calls with 3 different files, and the model's replies stayed generic
+      // - it never got one coherent image). So: only retype if the text isn't
+      // already there, and only attach if nothing is pending yet.
+      if (editorText() !== text) setEditorText(ed, text);
+      const hasPendingAttachment = () => {
+        const box = document.querySelector(S.inputArea);
+        return !!(box && box.querySelector("[class*='preview'], [class*='thumbnail']"));
+      };
+      if (images && images.length && !hasPendingAttachment()) {
+        diag("attach.beforeCall", { count: images.length });
+        try { const ok = await attachImages(images); diag("attach.afterCall", { ok }); }
+        catch (e) { diag("attach.threw", { msg: String((e && e.message) || e) }); }
+      }
       // Wait for Angular to render the send (arrow_upward) button - proof that
       // it registered the text. The Quill-API injection (see setEditorText)
       // fires text-change so this resolves; if it doesn't, the send won't work.
-      await waitFor(() => !!sendButton(), 1500);
+      await waitFor(() => !!sendButton(), 3000);
       const btn = sendButton();
+      diag("send.click", { found: !!btn, pending: hasPendingAttachment() });
       if (btn) { btn.click(); return; }
       // Fallback: Enter sends in Gemini's composer.
       const o = { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true };
@@ -380,17 +399,45 @@ const ZSProvider = (() => {
   }
   async function attachImages(images) {
     const ed = getEditor();
-    if (!ed || !images || !images.length) return false;
+    if (!ed) { diag("attach.noEditor"); return false; }
+    if (!images || !images.length) return false;
     const dt = new DataTransfer();
     images.forEach((img, i) => { try { dt.items.add(fileFromImage(img, i)); } catch {} });
-    if (!dt.items.length) return false;
+    if (!dt.items.length) { diag("attach.noDtItems"); return false; }
+    diag("attach.dispatchPaste", { items: dt.items.length });
     ed.focus();
     ed.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
-    // An upload preview appearing in the input area is the success signal.
-    return await waitFor(() => {
+    // An upload preview appearing in the input area is the FAST accepted-signal,
+    // but it renders instantly from a local blob: URL - well before Gemini
+    // finishes uploading the file to its backend. Sending while the upload's
+    // own progress spinner is still up silently drops the attachment (validated
+    // live: the message went out text-only and the file sat in the composer,
+    // unsent, indefinitely - even though the preview had long since appeared).
+    const previewOk = await waitFor(() => {
       const box = document.querySelector(S.inputArea);
       return !!(box && box.querySelector("img, [class*='preview'], [class*='thumbnail']"));
     }, 15000);
+    diag("attach.previewOk", { previewOk });
+    if (!previewOk) return false;
+    // Gemini's uploader renders a <mat-spinner> (Angular Material) inside the
+    // file-preview container while the paste is still uploading to its backend
+    // - NOT mat-progress-spinner. Missing it here made the wait resolve instantly,
+    // so the send fired mid-upload and the file was dropped (text went out alone,
+    // the attachment stuck loading in the composer). Verified live: the mat-spinner
+    // is present ~2-4s (grows with file size), then removed on completion.
+    const spinnerSel = 'mat-spinner, mat-progress-spinner, progress, [role="progressbar"]';
+    const hasSpinner = () => {
+      const box = document.querySelector(S.inputArea);
+      return !!(box && box.querySelector(spinnerSel));
+    };
+    // The preview wrapper and the spinner mount in the SAME Angular render, so a
+    // "no spinner ⇒ done" check can win a frame before the spinner appears and
+    // resolve prematurely. First give the spinner a short window to show up; if it
+    // never does (tiny file, instant upload) that's fine - proceed either way.
+    await waitFor(hasSpinner, 1500);
+    const spinnerCleared = await waitFor(() => !hasSpinner(), 20000);
+    diag("attach.spinnerCleared", { spinnerCleared });
+    return true;
   }
   function clearAttachments() {
     try {
@@ -503,6 +550,10 @@ const ZSProvider = (() => {
   return {
     id: "gemini",
     displayName: "Gemini",
+    // Gemini's web model is natively multimodal (image understanding), so
+    // screen_capture is safe to expose here. Other providers default this
+    // to false until confirmed live (see main.js BLOCKED_TOOLS gate).
+    supportsVision: true,
     timings,
     // Reasoning-area selector, exported so the CORE's raw-command-visible probes
     // exclude it (same fix as DeepSeek): Gemini's thinking models (2.5 Pro/Flash)

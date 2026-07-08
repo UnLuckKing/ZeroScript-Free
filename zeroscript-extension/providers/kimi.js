@@ -50,6 +50,14 @@ const ZSProvider = (() => {
     editor: ".chat-input-editor",
     composer: ".chat-box",
     sendBtn: ".send-button-container",
+    // Kimi's OWN "Agent" toggle (bottom-left of the composer, next to the "+").
+    // Validated live: toggling it adds an "open" class to `.tool-switch` and
+    // flips the model-selector label from "K2.6 Instant" to "K2.6 Agent". In
+    // that mode Kimi reaches for its native agentic tools instead of emitting
+    // the ZeroScript command blocks, so a session must not be started while it
+    // is on.
+    nativeAgentToggle: ".tool-switch",
+    currentModelName: ".current-model .name",
     codeWrap: ".segment-code",
     errorSurfaces: '[role="alert"],[class*="toast"],[class*="error"],[class*="alert"],[class*="notification"]',
   };
@@ -67,7 +75,13 @@ const ZSProvider = (() => {
       "i"
     ),
     tooLong: /conversation .{0,20}(too long|getting too long|trop longue)|context .{0,15}(length|window)/i,
-    busy: /something went wrong|une erreur s.est produite|try again|réessayer|server is busy|rate.?limit|too many requests|系统繁忙|请稍后再试/i,
+    // NB: the core no longer acts on isBusyMsg (a "busy" reply just ends the loop
+    // as a normal terminal turn), but keep this matching the site's ACTUAL error
+    // phrasing, not the model's prose: a bare "try again" / "réessayer" also fires
+    // on normal answers that tell the USER to try again (e.g. "the Blender addon
+    // isn't running... then try again"). Require "please try again" / "réessayer
+    // plus tard".
+    busy: /something went wrong|une erreur s.est produite|please try again|réessayer plus tard|server is busy|serveur est occup|rate.?limit|too many requests|系统繁忙|请稍后再试/i,
   };
 
   // Kimi streams with a hard stop-class signal for the WHOLE generation, so
@@ -135,10 +149,15 @@ const ZSProvider = (() => {
   // the send hooks intact (otherwise our own textarea would defeat it and the
   // hooks could swallow the site's login button).
   const getEditor = () => {
-    for (const e of document.querySelectorAll(S.editor)) {
-      if (!e.closest("#zs-root")) return e;
-    }
-    return null;
+    const site = [...document.querySelectorAll(S.editor)].filter(
+      (e) => !e.closest("#zs-root")
+    );
+    // Prefer the bottom composer over the inline message-EDIT box. Editing a turn
+    // mounts a second .chat-input-editor up in the message list; it precedes the
+    // composer in DOM order, so the old "first editor" pick returned it - and
+    // barAnchor() then hugged the fixed ZeroScript bar over the editor. The real
+    // composer lives inside the `.chat-editor` card; the edit box does not.
+    return site.find((e) => e.closest(".chat-editor")) || site[0] || null;
   };
   const editorText = () => {
     const e = getEditor();
@@ -193,10 +212,30 @@ const ZSProvider = (() => {
   // ── Chip anchor ───────────────────────────────────────────────────────────
   // The turn is a flex ROW [avatar | container]; inserting the chip at the turn
   // root's firstChild would make it the avatar's flex sibling and shove the
-  // message sideways. Redirect it into the content column.
+  // message sideways. Redirect it into the content COLUMN `.segment-content` (a
+  // block-flow column holding, in order, `.segment-content-box` (the reply),
+  // an optional `.okc-cards-container`, then `.segment-assistant-actions` (the
+  // copy/regenerate toolbar) - validated live). With chipAppend below the chip
+  // stacks UNDER the reply there (parity with Qwen) instead of above the turn.
   function chipAnchor(item) {
     if (!item) return item;
-    return item.querySelector(".segment-container") || item;
+    return (
+      item.querySelector(".segment-content") ||
+      item.querySelector(".segment-container") ||
+      item
+    );
+  }
+
+  // With chipAppend the chip trails the reply text - but the LAST child of
+  // `.segment-content` is the action toolbar (`.segment-assistant-actions`), so
+  // a plain append would sink the chip below the copy/regenerate buttons. Name
+  // that toolbar as the fixed point the chip must stay just BEFORE (mirrors
+  // Qwen's chipTrailRef). Returns null while streaming (toolbar not mounted yet),
+  // so the chip simply appends after the reply until the toolbar appears, then
+  // ensureOwnedChip's drift check re-seats it above the toolbar.
+  function chipTrailRef(item) {
+    const anchor = chipAnchor(item);
+    return (anchor && anchor.querySelector(":scope > .segment-assistant-actions")) || null;
   }
 
   // ── Input lock ────────────────────────────────────────────────────────────
@@ -371,13 +410,21 @@ const ZSProvider = (() => {
     document.execCommand("insertText", false, text);
   }
 
-  async function typeAndSend(text) {
+  async function typeAndSend(text, images) {
     const ed = getEditor();
     if (!ed) throw new Error("Kimi input box not found");
     const relock = _locked;
     if (relock) { _injecting = true; ed.setAttribute("contenteditable", "true"); } // injection needs it editable
     try {
-      setEditorText(ed, text);
+      if (editorText() !== text) setEditorText(ed, text);
+      // Attach images LAST, right before the send click - see gemini.js's
+      // typeAndSend for why (attaching before retyping the text can sever the
+      // site's binding between the pending upload and the message being sent).
+      // submitAndGetBase RETRIES this function; only attach if nothing is pending
+      // yet, else each retry uploads ANOTHER duplicate copy.
+      if (images && images.length && !hasPendingAttachment()) {
+        try { await attachImages(images); } catch {}
+      }
       // Wait for the send control to enable (proof Lexical registered the text).
       await waitFor(() => !!sendButton(), 1500);
       const btn = sendButton();
@@ -396,7 +443,28 @@ const ZSProvider = (() => {
     if (b) try { b.click(); } catch {}
   }
 
-  // No site modes to enforce (model / thinking toggle left to the user).
+  // Kimi's native "Agent" mode (see S.nativeAgentToggle above) makes the model
+  // favor its own built-in tools over the ZeroScript command protocol - check
+  // both the toggle's "open" class and the model-selector label as belt/braces
+  // since either can lag the other during Vue's re-render.
+  function nativeAgentModeOn() {
+    const t = document.querySelector(S.nativeAgentToggle);
+    if (t && t.classList.contains("open")) return true;
+    const m = document.querySelector(S.currentModelName);
+    return !!(m && /agent/i.test(m.textContent || ""));
+  }
+  // Visible mode guard for the ZeroScript bar (core renderBar reads this every
+  // sweep, same mechanism as arena.js's modeWarning). Returns a warning string
+  // while Kimi's native Agent mode is on, "" otherwise. The core turns this
+  // into a red warning state and disables Start until the user switches it off.
+  function modeWarning() {
+    if (nativeAgentModeOn())
+      return `Turn off Kimi's own <b>Agent</b> mode (next to the message box) - ` +
+        `it replaces the ZeroScript commands with Kimi's native tools and breaks the agent loop.`;
+    return "";
+  }
+
+  // No other site modes to enforce (model / thinking toggle left to the user).
   function enforceComposer() { return { ready: !!getEditor() }; }
   async function ensureComposerReady(reason) {
     diag("mode_ready", { reason, provider: "kimi" });
@@ -428,29 +496,71 @@ const ZSProvider = (() => {
     const ext = mime.includes("png") ? "png" : "jpg";
     return new File([arr], `zeroscript_${Date.now()}_${i}.${ext}`, { type: mime });
   }
+  // The PENDING upload's thumbnail (`.image-thumbnail`, in the composer's
+  // `.carousel-scroll`). Kimi ALSO keeps every SENT image's `.image-thumbnail`
+  // in the conversation history (inside a `.segment-user` turn), so a plain
+  // document-wide query would count a leftover from the PREVIOUS capture as if
+  // an upload were already pending - which made the 2nd (and every later)
+  // capture never attach: hasPendingAttachment() stayed true, so typeAndSend
+  // skipped attachImages. Exclude history turns. Both the pending thumb and the
+  // hidden <input> sit OUTSIDE `.chat-box` (a body-portalled popover / carousel),
+  // so we can't scope to the composer - we filter out `.segment-user` instead.
+  // (Validated live: pending thumb parent = `.carousel-scroll`; sent thumb is
+  // under `.segment-user > .attachment-list`.)
+  const pendingThumb = () => {
+    for (const n of document.querySelectorAll(".image-thumbnail")) {
+      if (!n.closest(S.userItem)) return n;
+    }
+    return null;
+  };
+  const hasPendingAttachment = () => !!pendingThumb();
+  const fileInput = () =>
+    document.querySelector("input.hidden-input") || document.querySelector('input[type="file"]');
+
   async function attachImages(images) {
-    const ed = getEditor();
-    if (!ed || !images || !images.length) return false;
+    if (!images || !images.length) return false;
     const dt = new DataTransfer();
     images.forEach((img, i) => { try { dt.items.add(fileFromImage(img, i)); } catch {} });
     if (!dt.items.length) return false;
-    ed.focus();
-    ed.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
-    const fileInput = document.querySelector('input[type="file"]');
-    if (fileInput) {
-      try { fileInput.files = dt.files; fileInput.dispatchEvent(new Event("change", { bubbles: true })); } catch {}
+    // Kimi's Lexical composer IGNORES a synthetic file-paste (validated live: the
+    // paste event produced no preview at all). Uploads go exclusively through the
+    // hidden <input type=file> that the "+" toolkit menu mounts on demand - it is
+    // NOT in the DOM on a fresh load, so open the menu first when it's missing.
+    let fi = fileInput();
+    let opened = null; // the "+" trigger, set only if WE had to open the menu
+    if (!fi) {
+      opened = document.querySelector(".toolkit-trigger-btn");
+      if (opened) { try { opened.click(); } catch {} } // opens menu → mounts the input
+      await waitFor(() => !!fileInput(), 2500);
+      fi = fileInput();
     }
-    const box = composerFrame();
-    return await waitFor(
-      () => !!(box && box.querySelector("img, [class*='preview'], [class*='thumbnail']")),
-      15000
-    );
+    if (!fi) { diag("attach.noFileInput"); return false; }
+    diag("attach.setFiles", { count: dt.items.length });
+    try { fi.files = dt.files; fi.dispatchEvent(new Event("change", { bubbles: true })); }
+    catch (e) { diag("attach.setFilesThrew", { msg: String((e && e.message) || e) }); return false; }
+    // A real file pick closes the toolkit menu; our programmatic set doesn't, and
+    // Escape does NOT dismiss it (validated live). Toggle the trigger to close it
+    // so it doesn't sit open over the composer. The hidden input persists once
+    // mounted, so later captures reuse it without reopening the menu.
+    if (opened) { try { opened.click(); } catch {} }
+    // The thumbnail mounts as `.image-thumbnail … loading` and flips to `… success`
+    // once the upload to Kimi's backend completes (validated live: ~5.8s for a
+    // 10MB image). Sending while still `loading` silently drops the attachment, so
+    // wait for `success` - or bail on an `error` state.
+    if (!(await waitFor(pendingThumb, 15000))) { diag("attach.noThumb"); return false; }
+    await waitFor(() => {
+      const c = (pendingThumb() && pendingThumb().className) || "";
+      return /\bsuccess\b/.test(c) || /\berror\b/.test(c);
+    }, 30000);
+    const cls = (pendingThumb() && pendingThumb().className) || "";
+    diag("attach.uploadDone", { cls });
+    return /\bsuccess\b/.test(cls);
   }
   function clearAttachments() {
     try {
-      const box = composerFrame();
-      if (!box) return;
-      box.querySelectorAll("[aria-label*='elete'], [aria-label*='emove'], [class*='delete'], [class*='remove']")
+      // Kimi's per-thumbnail remove control (revealed on hover) is
+      // `.image-delete-container`; click every one to drop pending uploads.
+      document.querySelectorAll(".image-delete-container")
         .forEach((d) => { try { d.click(); } catch {} });
     } catch {}
   }
@@ -508,6 +618,11 @@ const ZSProvider = (() => {
   // its identity) with .zs-cmd-mask so the overlay.css rule re-hides recreated
   // wrappers with zero flash. Also catch a stray bare inline command paragraph.
   const CMD_SHAPE = /"(?:command|tool)"\s*:\s*"|###\s*lua|###mcp_tool###/i;
+  // A block whose text STARTS with a command (optionally behind a ```json fence).
+  // Used to hide a command Kimi rendered as a nested <div class="paragraph"> at
+  // ANY length - the length-capped direct-children pass misses those on two
+  // counts (nesting + a big inline command over the cap).
+  const STARTS_CMD = /^\s*(?:```(?:json)?\s*)?(?:\{?\s*"(?:command|tool)"\s*:|###\s*lua|###mcp_tool###)/i;
   function findToolBlockSpot(item /*, chip */) {
     const md = bodyEl(item);
     if (!md) return null;
@@ -530,12 +645,33 @@ const ZSProvider = (() => {
         hidAny = hidAny || { parent: el.parentElement, ref: el };
       }
     });
+    // Nested inline-command paragraphs. Kimi sometimes renders a command as a
+    // <div class="paragraph"> deep inside .markdown (not a code block and not a
+    // direct child of md), so BOTH passes above miss it and the raw JSON leaks -
+    // and a big execute_blender_code/multi_edit written this way (1868 chars, seen
+    // live) also blows past the <600 cap. Scan such blocks anywhere in the reply
+    // and hide any whose text STARTS with a command (so it IS the command, never a
+    // prose answer that merely quotes one), at any length.
+    md.querySelectorAll(".paragraph, p").forEach((el) => {
+      if (el.classList.contains("zs-tool-hide") || el.closest(".zs-chip") ||
+          el.closest(S.codeWrap) || el.closest(S.thinking)) return;
+      if (STARTS_CMD.test((el.textContent || "").trim())) {
+        el.classList.add("zs-tool-hide");
+        item.classList.add("zs-cmd-mask");
+        hidAny = hidAny || { parent: el.parentElement, ref: el };
+      }
+    });
     return hidAny;
   }
 
   return {
     id: "kimi",
     displayName: "Kimi",
+    // Confirmed live: Kimi (K2.6) reads attached images - it correctly described
+    // a test screenshot's content. So screen_capture is exposed here (see main.js
+    // BLOCKED_TOOLS gate); attachImages uploads via the toolkit file input, and
+    // the capture is shown in the core's left-hand ZeroScript popup (ui.showImages).
+    supportsVision: true,
     timings,
     // Reasoning-area selector, exported so the CORE's raw-command-visible probes
     // exclude it (same fix as DeepSeek/Gemini): K2.6 Thinking quotes the command
@@ -547,6 +683,14 @@ const ZSProvider = (() => {
     // (redirected into the content column by chipAnchor).
     chipAtItemLevel: true,
     chipAnchor,
+    // Kimi writes narration THEN the tool call at the end of the turn, so trail
+    // the chip after the reply text (chipAppend) rather than pinning it first -
+    // it then reads in the model's actual order and sits BELOW the reply, like
+    // Qwen. chipTrailRef keeps it just above the copy/regenerate action row
+    // instead of sinking below it; ensureOwnedChip re-asserts both across Vue's
+    // re-renders of the reply subtree.
+    chipAppend: true,
+    chipTrailRef,
     // Turns accumulate and are not virtualized for normal lengths, so
     // assistantCount() reliably increases for every reply.
     reliableCounts: true,
@@ -566,7 +710,7 @@ const ZSProvider = (() => {
     getEditor, editorText, chatIsEmpty, isFreshChat, composerFrame, gateTarget, barAnchor,
     setInputLock, typeAndSend, stopGeneration,
     isGenerating, isBusyNow, isHardGenerating,
-    enforceComposer, ensureComposerReady,
+    enforceComposer, ensureComposerReady, modeWarning,
     turnHalted, findContinueBtn, clickContinueBtn,
     scanError, isTooLongMsg, isBusyMsg,
     // actions

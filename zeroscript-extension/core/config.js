@@ -29,11 +29,45 @@ const ZS = (() => {
 
   // Feedback strings sent back to the model so it can self-correct.
   const FEEDBACK = {
-    parseError:
-      "ERROR: a ZeroScript command was detected in your reply but its JSON could not be parsed. " +
-      'Write a single valid JSON object as plain text, exactly like {"command": "name", "params": {...}} ' +
-      "(or use the ###LUA### / ###END_LUA### block for execute_luau). You may add a short note around it. " +
-      "Please retry.",
+    // A command-shaped reply that could not be turned into a runnable call.
+    // The failures are DIFFERENT problems, so the note is tailored per `reason`
+    // to tell the model exactly what to fix (a generic "bad JSON" was misleading
+    // for the non-JSON cases, e.g. a missing ###LUA### opener). Falls back to the
+    // generic "malformed" text for any unrecognised reason.
+    parseError: (reason, toolName) => {
+      // ###LUA### is execute_luau-ONLY (the parser always maps a bare ###LUA###
+      // block to execute_luau). So only suggest it when the broken command IS
+      // execute_luau, or when we could not tell which command it was. For a KNOWN
+      // other command (e.g. execute_blender_code) the ###LUA### hint is wrong and
+      // misleading - a model that followed it would ship its code to the wrong MCP
+      // - so drop it and keep the JSON-only guidance.
+      const otherCmd = toolName && toolName !== "command" && toolName !== "execute_luau";
+      const luaMalformed = otherCmd ? "" : " (or use the ###LUA### / ###END_LUA### block for execute_luau)";
+      const luaUnclosed = otherCmd ? "" : " (or a complete ###LUA### ... ###END_LUA### block for execute_luau)";
+      const objAlt = otherCmd ? "" : " (or ###...### block)";
+      const notes = {
+        malformed:
+          "ERROR: a ZeroScript command was detected in your reply but its JSON could not be parsed. " +
+          'Rewrite it as a single valid JSON object in plain text, exactly like {"command": "name", "params": {...}}' +
+          luaMalformed + ". You may add a short note around it. " +
+          "Please retry.",
+        unclosed:
+          "ERROR: your ZeroScript command was cut off before it finished - the JSON object" +
+          objAlt + " never closed, so it could not run. Rewrite the WHOLE command in one " +
+          'piece as valid JSON, exactly like {"command": "name", "params": {...}}' +
+          luaUnclosed + ". Please retry.",
+        luaOpener:
+          "ERROR: you wrote the closing ###END_LUA### marker but not the opening ###LUA### marker, " +
+          "so the Luau block was not detected and did not run. Put ###LUA### immediately BEFORE your " +
+          "code and ###END_LUA### after it. Please retry.",
+        envelope:
+          "ERROR: you wrote a command's parameters as a bare JSON object, but without the required " +
+          "envelope, so it was not recognised as a command. Wrap them like " +
+          '{"command": "name", "params": { ...your parameters... }} - the parameter keys go INSIDE ' +
+          '"params". Please retry.',
+      };
+      return notes[reason] || notes.malformed;
+    },
     multiTool: (names) =>
       "ERROR: You wrote multiple commands in one reply. Write ONE command at a " +
       "time and wait for its result before the next. You tried: " +
@@ -48,7 +82,9 @@ const ZS = (() => {
       "could not run. Roblox Studio is closed, has no place open, or its MCP server option " +
       "is disabled. This is an environment problem on the user's machine, NOT your mistake. " +
       "Tell the user in one short sentence to open their place in Roblox Studio and enable " +
-      "the MCP server (Assistant settings), then stop sending commands until they confirm.",
+      "the MCP server (Assistant settings). Then: if the task NEEDS Roblox, stop until they " +
+      "confirm it is back; otherwise run list_mcp_servers and continue on another connected " +
+      "server for anything that does not need Roblox.",
     bridgeOffline:
       "ERROR: the local ZeroScript bridge is unreachable, so no command could run. " +
       "This is an environment problem on the user's machine (the bridge is not " +
@@ -59,7 +95,6 @@ const ZS = (() => {
       "(System note: your previous reply was cut off by a length limit before you " +
       "finished. Continue from exactly where you stopped. Do NOT restart and do " +
       "NOT repeat what you already wrote.)",
-    continue: "(System note: the server was busy; nothing was lost. Please continue from where you stopped.)",
   };
 
   const BT = "```";
@@ -93,23 +128,24 @@ const ZS = (() => {
     const prompt = `CONTEXT:
 A browser extension (ZeroScript) is running inside this page. It watches your replies. When it detects a ZeroScript command in your text, it runs it against one or more connected MCP servers and sends the result back as the next message. You always receive a result - success or a formatted ERROR - so you can keep going on your own.
 
-The user's open Roblox Studio place, reached through a local bridge, is always connected by default - use \`list_tools\` for its exact commands with full parameter details. Other MCP servers may ALSO be connected alongside it (each with its own command set). If the user ever asks you to use a different tool/server (or something a command doesn't seem to cover), run \`list_mcp_servers\` first to check what else is connected before assuming it is unsupported. You do not need any special capability yourself - you just write text. The extension does the rest.
+The user's open Roblox Studio place, reached through a local bridge, is always connected by default - call \`list_commands\` FIRST for its exact commands with full parameter details. Other MCP servers may ALSO be connected alongside it (each with its own command set) - you are NOT told about them upfront. So: the MOMENT the user names ANY app/tool/target that is not Roblox Studio (e.g. "Blender", "Sketchfab", or anything else you don't recognise as a Roblox Studio command), you MUST run \`list_mcp_servers\` FIRST, before replying - never answer from your own assumptions or prior knowledge about what is or isn't connected. Only after checking may you tell the user something is unsupported. You do not need any special capability yourself - you just write text. The extension does the rest.
 
 CRITICAL - ZeroScript commands are NOT function calls / tools. They are plain JSON you TYPE into your normal text reply; ZeroScript reads your text and runs them. So NEVER use your own native/built-in tools or features for anything covered above - not code interpreter/sandbox, web search/browsing, file or web connectors, image tools, or real function calling. None of that touches the user's Roblox Studio, so it accomplishes nothing here and breaks the flow, even just to think, test, or draft. The ONLY exception is if the user EXPLICITLY asks you to search the web. Internal reasoning (deep-think modes) is fine. Do not try to "call a function" - just write the JSON below as ordinary text.
 
 ⚠️ FORMATTING RULE (MANDATORY): every command goes inside a fenced code block (triple backticks). Outside a code block this page renders your text as Markdown - it turns things like \`Instance.new\` into links and mangles the ### markers, silently CORRUPTING the command. Inside a code block it is kept verbatim.
 
 ━━━ STANDARD COMMAND FORMAT (everything except execute_luau) ━━━
-Write this JSON object inside a fenced code block:
+Write this JSON object inside a fenced code block, replacing the placeholders with a REAL command name and its parameters (never type "command_name" literally - it is not a command):
 ${BT}json
 {
   "command": "command_name",
   "params": {"key": "value"}
 }
 ${BT}
+For example, to list every available command you would write ${BT}{"command": "list_commands"}${BT}.
 
 ━━━ SPECIAL FORMAT FOR execute_luau ━━━
-Because Lua code contains " characters that break JSON encoding, use this format instead.
+execute_luau is the ONE exception to the JSON format above: you MUST use the ###LUA### block below, NEVER the {"command": "execute_luau", ...} JSON form. Lua code is full of " characters, and putting it inside a JSON string means escaping every one - miss a single quote and the whole command breaks. The ###LUA### block needs NO escaping and NO JSON, so this never happens.
 The ###LUA### / ###END_LUA### markers AND the code all go INSIDE one fenced code block:
 ${BT}
 ###LUA###
@@ -127,6 +163,7 @@ RULES:
 - execute_luau: wrap code in BOTH markers ###LUA### ... ###END_LUA### (three hashes each side - never ###LUA--- and never a lone end marker; ZeroScript fills datamodel_type, so add no JSON around it). Use \`return\` for output (print is NOT captured). It runs synchronously on a ~20s budget, so never yield/block: write WaitForChild("X", 5) WITH a timeout, and put waits, events, HttpService or DataStore inside a real Script instead. (Per-command tips are in the list_commands output.)
 - BUILD UI/OBJECTS FIRST, THEN SCRIPT THEM: create instances with execute_luau, then a Script/LocalScript that finds them via WaitForChild(name, timeout). Use runtime Instance.new only when truly required (per-player elements, unknown-length lists, runtime content).
 - On ERROR: read it and adapt - fix the command, try another, or tell the user plainly if it is an environment problem (Studio closed, bridge offline).
+- On a property/attribute/value error (e.g. "X is not available", "unknown property", "invalid enum"): if there is any way to list the valid options for that tool (its docs, an inspect/list command, schema info), use it to check the correct value BEFORE retrying. Never guess blindly a second time.
 
 ━━━ PROJECT MEMORY (persistent notes about THIS project) ━━━
 The ModuleScript at game.ServerStorage.ZeroScript.Memory is your long-term memory for this project, saved inside the place. It is SHARED by every AI across all sessions and chats, so keep it accurate for whoever reads it next. Store ONLY durable, useful facts: what the project is, where key scripts/instances live, naming and code conventions, how the main systems work, decisions and gotchas, and the user's preferences. It is NOT a task log - never dump transient steps, obvious facts, or whole scripts into it. Keep it short.
@@ -148,7 +185,7 @@ ${BT}
 - IF SOMETHING CONTRADICTS THE MEMORY: do NOT blindly trust either side. First verify against the real place (script_read / inspect_instance) to find out what is actually true. Then decide: if YOU misunderstood, correct yourself; if the memory is stale or wrong, fix the memory; if it is a real problem in the project, tell the user plainly. Always leave the memory consistent with reality.
 - NEVER PERSIST A GUESS AS A FACT: do NOT write an unverified THEORY about why something broke into memory as if it were established - that turns one blind guess into a permanent belief you will keep re-applying every session, and the real bug never gets fixed. Store only what you actually verified. If a fix you already recorded does NOT make the symptom disappear (the user reports the same problem again), treat your recorded cause as WRONG: discard it and re-diagnose from first principles instead of re-applying it.
 
-IMPORTANT: Your very first action is to write \`list_tools\` with no params (this defaults to the Roblox Studio server) to get the full command reference with parameter details - never guess a command name or parameter that wasn't in that result. Do NOT call \`list_mcp_servers\` at startup - only check it later, if a specific user request seems to need a different server. After receiving the list_tools result, reply with exactly one short sentence confirming you are ready, then wait for the user's first request. (Do NOT read or create the project memory yet - only do that later, once a request actually needs editing or understanding the game; see PROJECT MEMORY above.)`;
+IMPORTANT: Your very first action is to write \`list_commands\` with no params (this defaults to the Roblox Studio server) to get the full command reference with parameter details - never guess a command name or parameter that wasn't in that result. Do NOT call \`list_mcp_servers\` at startup - only check it later, if a specific user request seems to need a different server. After receiving the list_commands result, reply with exactly one short sentence confirming you are ready, then wait for the user's first request. (Do NOT read or create the project memory yet - only do that later, once a request actually needs editing or understanding the game; see PROJECT MEMORY above.) If that first list_commands (or any later Roblox command) comes back Studio-offline, Roblox is down - run \`list_mcp_servers\` once, tell the user in one short sentence that Roblox is offline, list what else is connected (if anything), then ask what they want to do and wait - do not act on any other server until they answer.`;
 
     // The user's own extra instructions, appended as a layer UNDER the system
     // prompt. Optional - empty by default. It cannot change the rules above.
@@ -234,7 +271,8 @@ IMPORTANT: Your very first action is to write \`list_tools\` with no params (thi
       "\n\n────────────────────────────────\n" +
       "(System note from ZeroScript - this is an automatic REMINDER, not a request and not a new result. " +
       "Do NOT reply to it or run any command because of it; just keep it in mind for your next command.)\n" +
-      "Reminder of the ONLY valid commands (use exact names and parameter keys):\n" +
+      "Reminder of the Roblox Studio commands (use exact names and parameter keys; " +
+      "for other connected apps call list_mcp_servers):\n" +
       toolsString
     );
   }

@@ -29,6 +29,11 @@ const ZSProvider = (() => {
   "use strict";
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let diag = () => {}; // injected by core via init()
+  // Identity of the last image set we STAGED into the composer. The core reuses
+  // the same array reference across submitAndGetBase's up-to-4 typeAndSend
+  // retries, so keying on it makes the attach idempotent (see typeAndSend) - a
+  // genuinely new capture arrives as a new array and attaches normally.
+  let _attachedImages = null;
 
   const S = {
     list: "ol.flex-col-reverse",
@@ -115,6 +120,23 @@ const ZSProvider = (() => {
   // A carousel container is never right-aligned, so it classifies as assistant.
   const isUserItem = (item) => !!item && item.classList.contains("justify-end");
   const isAssistantItem = (item) => !!item && !isUserItem(item);
+
+  // ── Chip anchor ───────────────────────────────────────────────────────────
+  // The turn root (`.mx-auto`) opens with a sticky model-name header, so pinning
+  // the chip at item.firstChild parks it ABOVE the reply. Redirect it into the
+  // reply's own column instead: proseOf(item) is the markdown body (candidate A's
+  // for an A/B carousel) and its parent `.flex.flex-col.gap-3` holds only that
+  // body - appending there (chipAppend) drops the chip directly UNDER the reply
+  // text (parity with Qwen/Kimi/GLM; verified live it sits below .prose). The
+  // copy/vote action bar lives higher up the tree, OUTSIDE this column, so a
+  // plain append never sinks below it and no chipTrailRef is needed. React
+  // reconciles this subtree on stream updates, but ensureOwnedChip rebuilds the
+  // chip from its stored opts after each wipe (same as the other providers).
+  function chipAnchor(item) {
+    if (!item) return item;
+    const prose = proseOf(item);
+    return (prose && prose.parentElement) || item;
+  }
 
   // ── A/B "battle" resolution ───────────────────────────────────────────────
   // Arena periodically turns a reply into an A/B comparison: TWO candidates
@@ -403,31 +425,66 @@ const ZSProvider = (() => {
     el.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
-  function clickSendButton() {
-    if (isBusyNow()) return false;
-    const btn = sendButton();
-    if (btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true") {
-      btn.click();
-      return true;
-    }
-    return false;
-  }
-
-  async function typeAndSend(text) {
+  async function typeAndSend(text, images) {
     const editor = getEditor();
     if (!editor) throw new Error("Arena input box not found");
     editor.focus();
     setTextareaValue(editor, truncateForSend(text));
-    // Wait for React to enable the submit button (proof it registered the text).
-    await waitFor(() => {
-      const btn = sendButton();
-      return btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true";
-    }, 1500);
-    if (!clickSendButton() && !isBusyNow()) {
-      const o = { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true };
-      editor.dispatchEvent(new KeyboardEvent("keydown", o));
-      editor.dispatchEvent(new KeyboardEvent("keyup", o));
+    if (images && images.length) tagImages(images);
+    diag("arena.tas.enter", {
+      textLen: (text || "").length,
+      imgId: images ? images.__zsId : null,
+      imgCount: images ? images.length : 0,
+      attachedId: _attachedImages ? _attachedImages.__zsId : null,
+      sameSet: images === _attachedImages,
+      pendingBefore: pendingCount(),
+    });
+    // The send button being ENABLED is Arena's own "ready to accept a send"
+    // signal. CRITICAL for images: in an A/B battle the button stays DISABLED
+    // while the SECOND candidate keeps streaming, but the core (which tracks
+    // candidate A, already finished) calls us during that window. The button is
+    // Arena's truth here, so we WAIT on it rather than on our own generation
+    // heuristics. We wait BEFORE staging the image so a not-yet-sendable image is
+    // never left visible/stranded in the composer (the reported "phantom" that
+    // the next capture then inherited). Enabling also needs text present (set
+    // above). Long window covers a slow second candidate.
+    const sendReady = () => {
+      const b = sendButton();
+      return !!b && !b.disabled && b.getAttribute("aria-disabled") !== "true";
+    };
+    const ready1 = await waitFor(sendReady, 60000);
+    diag("arena.tas.ready", { ready: ready1 });
+    // Attach LAST, right before the send - see gemini.js for why. Guard against
+    // the core's up-to-4 typeAndSend retries (same `images` array ref): skip when
+    // this exact set was already staged (identity match), and drop any stale
+    // preview from a prior failed set so it can't block a genuinely new capture.
+    if (images && images.length && images !== _attachedImages) {
+      if (hasPendingAttachment()) { diag("arena.tas.clearStale", { pending: pendingCount() }); clearAttachments(); }
+      try {
+        const ok = await attachImages(images);
+        if (ok) _attachedImages = images;
+        diag("arena.tas.attached", { imgId: images.__zsId, ok, pendingAfter: pendingCount() });
+      } catch (e) { diag("arena.tas.attachErr", { msg: String(e && e.message || e) }); }
+      // Staging the file re-disables send for ~0.4s while Arena ingests it.
+      await waitFor(sendReady, 6000);
+    } else {
+      diag("arena.tas.skipAttach", { reason: !images || !images.length ? "no-images" : "same-set", imgId: images ? images.__zsId : null });
     }
+    // Click and CONFIRM the send took (editor clears the instant Arena accepts
+    // it, image AND text paths). Re-click until it clears so a single swallowed
+    // click can't strand the message/attachment. No re-attach here.
+    let sent = false;
+    for (let i = 0; i < 6 && !sent; i++) {
+      if (sendReady()) {
+        try { sendButton().click(); } catch {}
+      } else if (!isHardGenerating()) {
+        const o = { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true };
+        editor.dispatchEvent(new KeyboardEvent("keydown", o));
+        editor.dispatchEvent(new KeyboardEvent("keyup", o));
+      }
+      sent = await waitFor(() => editorText().trim() === "", 700);
+    }
+    diag("arena.tas.sent", { sent, editorLen: editorText().length, pendingAfterSend: pendingCount() });
   }
 
   // Arena shows "Generating…" for a beat BEFORE the native "Stop generation"
@@ -645,38 +702,72 @@ const ZSProvider = (() => {
   const isTooLongMsg = (text) => RE.tooLong.test(text);
   const isBusyMsg = (text) => RE.busy.test(text);
 
-  // ── Image attachment (best effort: paste onto the composer) ──────────────
+  // ── Image attachment (validated live 2026-07 on /text/direct) ─────────────
+  // Arena's composer <form> holds ONE always-mounted hidden `input[type=file]`
+  // (accept image/png,jpeg,webp, multiple). Setting its `.files` + dispatching
+  // `change` stages the image and mounts a preview card - a synthetic paste is
+  // NOT needed (and React ignores it here), so we drive the input directly like
+  // GLM. There is NO async backend upload to wait for: Arena keeps a local
+  // blob: preview and only uploads the bytes when the message is SENT (a live
+  // network trace showed no request on file-select, and the sent turn then
+  // carries an https image). So "attach done" = the preview card has mounted.
   function fileFromImage(img, i) {
     const mime = img.mimeType || "image/jpeg";
     const bin = atob(img.data);
     const arr = new Uint8Array(bin.length);
     for (let j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
-    const ext = mime.includes("png") ? "png" : "jpg";
+    const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
     return new File([arr], `zeroscript_${Date.now()}_${i}.${ext}`, { type: mime });
   }
+  // The PENDING preview: each staged image mounts as
+  // `.flex.flex-wrap.gap-2 > div.group > img` (alt = filename, blob: src) INSIDE
+  // the composer <form>. A SENT image renders inside the chat <ol> turn instead
+  // (outside the form), so scoping to the form naturally excludes history and a
+  // leftover from a previous capture never reads as "already pending".
+  const pendingPreview = () => {
+    const frame = composerFrame();
+    return frame ? frame.querySelector(".flex.flex-wrap.gap-2 img") : null;
+  };
+  const hasPendingAttachment = () => !!pendingPreview();
+  // How many staged preview cards are currently in the composer (diagnostics).
+  const pendingCount = () => {
+    const frame = composerFrame();
+    return frame ? frame.querySelectorAll(".flex.flex-wrap.gap-2 img").length : 0;
+  };
+  // Stamp a stable id on an images array so the diag trace can tell which SET is
+  // being (re)attached across the core's retries (same array = same id).
+  let _imgSeq = 0;
+  function tagImages(images) {
+    if (images && images.__zsId == null) {
+      try { Object.defineProperty(images, "__zsId", { value: ++_imgSeq, enumerable: false }); } catch { images.__zsId = ++_imgSeq; }
+    }
+    return images;
+  }
+  function fileInputEl() {
+    const frame = composerFrame();
+    return frame ? frame.querySelector('input[type="file"]') : null;
+  }
   async function attachImages(images) {
-    const editor = getEditor();
-    if (!editor || !images || !images.length) return false;
+    const inp = fileInputEl();
+    if (!inp || !images || !images.length) return false;
     const dt = new DataTransfer();
     images.forEach((img, i) => { try { dt.items.add(fileFromImage(img, i)); } catch {} });
     if (!dt.items.length) return false;
-    editor.focus();
-    editor.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
-    const fileInput = document.querySelector('input[type="file"]');
-    if (fileInput) {
-      try { fileInput.files = dt.files; fileInput.dispatchEvent(new Event("change", { bubbles: true })); } catch {}
-    }
-    const frame = composerFrame();
-    return await waitFor(
-      () => !!(frame && frame.querySelector("img, [class*='preview'], [class*='thumbnail']")),
-      15000
-    );
+    try {
+      inp.files = dt.files;
+      inp.dispatchEvent(new Event("change", { bubbles: true }));
+    } catch { return false; }
+    diag("attach.set", { count: dt.items.length });
+    const ok = await waitFor(hasPendingAttachment, 15000);
+    diag("attach.preview", { ok });
+    return ok;
   }
   function clearAttachments() {
     try {
       const frame = composerFrame();
       if (!frame) return;
-      frame.querySelectorAll("[aria-label*='emove'], [aria-label*='upprimer'], [class*='delete'], [class*='remove']")
+      // Each staged card carries a per-card `button[aria-label="Remove file"]`.
+      frame.querySelectorAll('.flex.flex-wrap.gap-2 button[aria-label="Remove file"]')
         .forEach((d) => { try { d.click(); } catch {} });
     } catch {}
   }
@@ -764,10 +855,27 @@ const ZSProvider = (() => {
   return {
     id: "arena",
     displayName: "Arena",
+    // Arena's chat composer accepts image uploads (hidden `input[type=file]` in
+    // the form → staged preview card → uploaded on send; see attachImages). The
+    // underlying model varies per selection, but the vision-capable ones DO read
+    // the attached image - confirmed LIVE 2026-07 (Anthropic via "Max" described
+    // a probe image correctly). So screen_capture is exposed here (main.js
+    // BLOCKED_TOOLS gate). Note: a model the user has picked that lacks vision
+    // will simply ignore the image; there's no per-model signal to gate on.
+    supportsVision: true,
     timings,
     // React reconciles a turn's content subtree on every update, wiping a chip
-    // placed inside it. Anchor chips at the turn-element level instead.
+    // placed inside it. Anchor chips at the turn-element level instead
+    // (redirected into the reply column by chipAnchor).
     chipAtItemLevel: true,
+    chipAnchor,
+    // Arena writes narration THEN the tool call at the end of the turn, so trail
+    // the chip after the reply text (chipAppend) rather than pinning it above the
+    // model-name header - it then sits BELOW the reply, like the other providers.
+    // No chipTrailRef: the reply column holds only the .prose body, so a plain
+    // append lands the chip right under it; ensureOwnedChip re-asserts it across
+    // React's re-renders of the reply subtree.
+    chipAppend: true,
     // No unstableWarning chip: the live mode guard (modeWarning) already shows a
     // visible, reactive warning + disables Start whenever a non-Direct mode is
     // selected, which covers the only Arena caveat that chip used to flag.

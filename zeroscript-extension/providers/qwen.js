@@ -62,7 +62,10 @@ const ZSProvider = (() => {
       "i"
     ),
     tooLong: /conversation .{0,20}(too long|getting too long|trop longue)|context .{0,15}(length|window)/i,
-    busy: /something went wrong|une erreur s.est produite|try again|réessayer|server is busy|rate.?limit|too many requests|系统繁忙|请稍后再试/i,
+    // Bare "try again"/"réessayer" also matches the model's OWN prose (telling
+    // the user to try again), which the loop misread as a site "busy" toast and
+    // answered forever - require the site's real phrasing (see kimi.js note).
+    busy: /something went wrong|une erreur s.est produite|please try again|try again later|réessayer plus tard|server is busy|rate.?limit|too many requests|系统繁忙|请稍后再试/i,
     // Qwen free-tier DAILY usage cap. When hit, Qwen sits on each message ~35s
     // (throttle) and eventually shows this toast; we surface it as a hard limit so
     // the loop STOPS with a clear banner instead of grinding silently. Seen live:
@@ -440,6 +443,45 @@ const ZSProvider = (() => {
   }
   const grewWithin = (ms) => _streamMax > 1 && Date.now() - _streamAt < ms;
 
+  // Core hook: is the LATEST turn's text still an unsettled read? Only the A/B
+  // "dual" turn is at risk - the network tap flips `done` when the SSE ends, but
+  // the candidate-1 DOM we parse (netReplyFor returns null for dual) can still be
+  // rendering, so a real command momentarily looks half-written and the core
+  // fired a premature parse_error. sampleStream() tracks candidate-1's own text;
+  // report unsettled while it is still growing. Non-dual turns are read from the
+  // verbatim network tap and are never unsettled this way.
+  function replyUnsettled(item) {
+    if (!isDualItem(item)) return false;
+    sampleStream();
+    return grewWithin(timings.GEN_IDLE_MS);
+  }
+
+  // Core hook: is `item` an unresolved A/B "carousel" turn? While one is showing,
+  // the site REMOVES the composer from the DOM (getEditor() is null), so the agent
+  // cannot send the tool result until a candidate is selected.
+  const isComparisonTurn = (item) => isDualItem(item);
+
+  // Core hook: resolve the carousel by selecting the FIRST candidate (Response 1),
+  // per the product rule that we always use candidate 1. Clicking its "I prefer
+  // this response" button collapses the A/B turn back to a normal reply and brings
+  // the composer back. The two buttons sit in DOM order [Response 1, Response 2],
+  // so the first match is candidate 1. Returns true if a button was clicked. The
+  // core only calls this once BOTH candidates have finished generating.
+  function resolveComparison() {
+    const duals = document.querySelectorAll(".qwen-chat-message-dual-message");
+    const dual = duals[duals.length - 1];
+    if (!dual) return false;
+    // The prefer button lives INSIDE each candidate's own .response-message-box
+    // (validated live: box > .smulti-o-footer > button). Scope to the FIRST box so
+    // we click Response 1's button specifically - never rely on global DOM order.
+    const firstBox = dual.querySelector(".response-message-box") || dual;
+    const btn = [...firstBox.querySelectorAll("button")].find(
+      (b) => /prefer this response|préfère cette réponse/i.test(b.textContent || "")
+    );
+    if (!btn) return false;
+    try { btn.click(); return true; } catch { return false; }
+  }
+
   // Authoritative generation state from the network tap. Qwen's DOM stop-button
   // LINGERS ~6s after the stream actually finishes (measured live: stream done at
   // ~600ms, button gone at ~6.8s), which made every command take ~6s longer than
@@ -513,7 +555,7 @@ const ZSProvider = (() => {
     window.HTMLTextAreaElement.prototype, "value"
   )?.set;
 
-  async function typeAndSend(text) {
+  async function typeAndSend(text, images) {
     const ed = getEditor();
     if (!ed) throw new Error("Qwen input box not found");
     // Mark the response now in the tap as consumed: we are replying to it, so the
@@ -526,6 +568,12 @@ const ZSProvider = (() => {
       else { ed.value = text; }
       ed.dispatchEvent(new Event("input", { bubbles: true }));
       ed.dispatchEvent(new Event("change", { bubbles: true }));
+      // Attach images LAST, right before the send click - see gemini.js's
+      // typeAndSend for why (attaching before retyping the text can sever the
+      // site's binding between the pending upload and the message being sent).
+      // Guard: submitAndGetBase RETRIES typeAndSend up to 4x; only attach if
+      // nothing is staged yet, else each retry pastes ANOTHER duplicate copy.
+      if (images && images.length && !hasPendingAttachment()) { try { await attachImages(images); } catch {} }
       await waitFor(() => !!sendButton(), 2000);
       const btn = sendButton();
       if (btn) { btn.click(); return; }
@@ -574,26 +622,50 @@ const ZSProvider = (() => {
     const ext = mime.includes("png") ? "png" : "jpg";
     return new File([arr], `zeroscript_${Date.now()}_${i}.${ext}`, { type: mime });
   }
+  // The PENDING upload's preview: Qwen mounts each staged image as
+  // `img.vision-item-image` in the composer's `.file-card-list`. A SENT image
+  // reuses the SAME class inside its `.qwen-chat-message-user` turn, so exclude
+  // history - else a leftover from the PREVIOUS capture reads as "already
+  // pending" and the next capture's attach is skipped (the 2nd-capture bug seen
+  // on Kimi/GLM). Validated live on chat.qwen.ai.
+  const pendingVision = () => {
+    for (const im of document.querySelectorAll("img.vision-item-image")) {
+      if (!im.closest(S.userItem)) return im;
+    }
+    return null;
+  };
+  const hasPendingAttachment = () => !!pendingVision();
+  // Upload done = every pending preview's src has flipped from its local
+  // placeholder to the OSS CDN url (https://qwen-webui-prod.oss…). Sending before
+  // that drops the attachment, so we WAIT for the https src.
+  const visionUploaded = () => {
+    const imgs = [...document.querySelectorAll("img.vision-item-image")]
+      .filter((im) => !im.closest(S.userItem));
+    return imgs.length > 0 && imgs.every((im) => /^https?:\/\//.test(im.getAttribute("src") || ""));
+  };
   async function attachImages(images) {
     const ed = getEditor();
     if (!ed || !images || !images.length) return false;
     const dt = new DataTransfer();
     images.forEach((img, i) => { try { dt.items.add(fileFromImage(img, i)); } catch {} });
     if (!dt.items.length) return false;
+    // Qwen's composer accepts a synthetic image PASTE (validated live: it uploads
+    // to Qwen's OSS backend and mounts the `.vision-item-image` preview). Setting
+    // the hidden file <input> does NOT work here (React ignores the programmatic
+    // change), so paste is the mechanism.
     ed.focus();
     ed.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
-    const box = composerFrame();
-    return await waitFor(
-      () => !!(box && box.querySelector("img, [class*='preview'], [class*='thumbnail']")),
-      15000
-    );
+    diag("attach.paste", { count: dt.items.length });
+    if (!(await waitFor(pendingVision, 15000))) { diag("attach.noPreview"); return false; }
+    const ok = await waitFor(visionUploaded, 30000);
+    diag("attach.uploadDone", { ok });
+    return ok;
   }
   function clearAttachments() {
     try {
-      const box = composerFrame();
-      if (!box) return;
-      box.querySelectorAll("[aria-label*='elete'], [aria-label*='emove'], [class*='delete'], [class*='remove']")
-        .forEach((d) => { try { d.click(); } catch {} });
+      // Each pending preview carries a `.close-button` remove control.
+      document.querySelectorAll(".file-card-list .vision-item-container .close-button")
+        .forEach((b) => { try { b.click(); } catch {} });
     } catch {}
   }
 
@@ -683,7 +755,7 @@ const ZSProvider = (() => {
   // build onto <html data-zs-qwen-ver>; read it from the page to confirm which
   // qwen.js is actually running (the isolated-world closure can't be read直接).
   // BUMP this whenever qwen.js changes in a way worth verifying live.
-  const QWEN_VER = "2026-06_net-rid-ddwarn2-usagelimit-dualab-turnid-dualgen";
+  const QWEN_VER = "2026-07_carousel-autoresolve";
   function setVersionBeacon() {
     try { document.documentElement.setAttribute("data-zs-qwen-ver", QWEN_VER); } catch {}
   }
@@ -748,6 +820,13 @@ const ZSProvider = (() => {
   return {
     id: "qwen",
     displayName: "Qwen",
+    // Qwen3.x is multimodal and chat.qwen.ai accepts image uploads (synthetic
+    // paste → OSS upload → `.vision-item-image` preview; upload done when its src
+    // is the qwen-webui-prod OSS https url - see attachImages). So screen_capture
+    // is exposed here (main.js BLOCKED_TOOLS gate). Confirm the model actually
+    // READS the image via provider-test-checklist step 9 (incl. two captures in a
+    // row) - flip back to false if a live read ever fails.
+    supportsVision: true,
     timings,
     // Reasoning-area selector, exported so the CORE's raw-command-visible probes
     // exclude it (parity with DeepSeek/Gemini/Kimi/GLM). Qwen's thinking renders
@@ -782,7 +861,7 @@ const ZSProvider = (() => {
     setInputLock, typeAndSend, stopGeneration,
     isGenerating, isBusyNow, isHardGenerating,
     enforceComposer, ensureComposerReady,
-    turnHalted, findContinueBtn, clickContinueBtn,
+    turnHalted, findContinueBtn, clickContinueBtn, replyUnsettled, isComparisonTurn, resolveComparison,
     scanError, isTooLongMsg, isBusyMsg,
     // actions
     attachImages, clearAttachments, conversationKey,

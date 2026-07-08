@@ -64,6 +64,9 @@ def _enable_ansi_colors():
 
 
 HOST = "127.0.0.1"
+# Keep in sync with zeroscript-extension/manifest.json "version" - printed at
+# startup so a user's terminal output alone tells us which build they're on.
+BRIDGE_VERSION = "1.4.0"
 PORT = int(os.environ.get("ZS_BRIDGE_PORT", "17613"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HERE, "config.json")
@@ -935,8 +938,8 @@ async def studio_watch(initial_app, initial_place=None):
 
 
 async def main():
-    print(f"\n{C['cy']}  ZeroScript Bridge{C['reset']}  {C['dim']}- Roblox Studio - ws://{HOST}:{PORT}{C['reset']}\n")
-    log(f"===== BRIDGE START  pid={os.getpid()}  log={LOG_PATH} =====", "cy")
+    print(f"\n{C['cy']}  ZeroScript Bridge v{BRIDGE_VERSION}{C['reset']}  {C['dim']}- Roblox Studio - ws://{HOST}:{PORT}{C['reset']}\n")
+    log(f"===== BRIDGE START  v{BRIDGE_VERSION}  pid={os.getpid()}  log={LOG_PATH} =====", "cy")
     killed_squatter = await asyncio.to_thread(check_studio_port)
     mgr.load_config()
     try:

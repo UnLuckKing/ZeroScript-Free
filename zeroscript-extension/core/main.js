@@ -60,6 +60,10 @@
   const KOFI_URL = "https://ko-fi.com/sebattfg";
   // GitHub releases page - where users download the Bridge + start.bat.
   const GITHUB_URL = "https://github.com/sebattfg/ZeroScript-Free";
+  // Shown in the panel instead of a static "Free" label, so a user's screenshot
+  // alone tells us which build they're on for debugging. Pulled from
+  // manifest.json (single source of truth) rather than duplicated here.
+  const EXT_VERSION = chrome.runtime.getManifest().version;
   // YouTube tutorial - how to set up the Bridge.
   const VIDEO_URL = "https://youtu.be/kPKiZLZ9_Ps";
   // Roblox "tip" Game Passes - the native currency for the audience.
@@ -134,6 +138,13 @@
     // upcoming submitAndGetBase/typeAndSend call to attach as the LAST step
     // before sending (see the comment in runTool's r.images branch).
     pendingImages: null,
+    // BARE names of tools observed to return images at least once this session.
+    // For the KNOWN Roblox vision tool (screen_capture) toolCategory already
+    // gives the "screen" chip optimistically at run time; a custom MCP tool's
+    // name tells us nothing, so we can't predict it - but once we've SEEN it
+    // return an image we can be optimistic on its NEXT call. Populated in the
+    // agent loop's result branch when A.pendingImages lands.
+    imageTools: new Set(),
   };
 
   async function waitFor(pred, timeout) {
@@ -201,6 +212,15 @@
         await jitterBeforeSend();
         diag("submit.typeAndSend", { hasImages: !!(images && images.length) });
         await P.typeAndSend(text, images);
+        // Re-arm the pre-hide window NOW that typeAndSend has returned (the send
+        // was just clicked, so our result turn is about to render). The initial
+        // arm above can EXPIRE during an image upload - typeAndSend blocks ~3-6s
+        // uploading the capture before the turn appears, past the 2.5s window - so
+        // without this re-arm the raw "Output of…" + a still-loading (0-byte)
+        // thumbnail flash for image feedbacks until a sweep chip lands. Safe: the
+        // input is covered and the loop owns this send, so no user turn can slip
+        // into the window, and the pre-hide is one-shot (consumes the first turn).
+        A.injectHideUntil = Date.now() + 2500;
         // The site clears the textarea as soon as the send is accepted - faster
         // and more reliable than waiting for a DOM turn count change.
         await waitFor(() => {
@@ -263,9 +283,14 @@
     let curItem = null, sawContent = false, warmSince = 0; // per-turn "warming up"
     let reasonSince = 0; // reasoning written but no answer yet (loading phase)
     let noTurnSince = 0; // finalize attempted before this send's reply turn exists
+    let unsettledSince = 0; // command-shaped reply whose read is not yet stable
     const WARMUP_MS = T.WARMUP_MS;
     const REASON_NOREPLY_MS = T.REASON_NOREPLY_MS;
     const NO_TURN_GRACE_MS = 30000;
+    // Upper bound on holding off a parse verdict while a provider reports its
+    // read is unsettled (Qwen A/B dual turn still landing). A genuinely stuck
+    // read still resolves after this and is parsed as-is.
+    const UNSETTLED_GRACE_MS = 8000;
     // Once the generating flag has been OFF this long, the model has clearly
     // stopped streaming - so an "open tool block" reading is a DOM-churn/parse
     // artifact, not live output, and must not keep the watcher waiting. Provider
@@ -352,7 +377,14 @@
       // a while → stop waiting and finalize. This must BYPASS the gen branch
       // below entirely: falling through while gen stays true used to reset
       // doneSince every iteration, so the watcher never finalized at all.
-      const stuckDone = started && d.reply && Date.now() - lastChangeAt > STABLE_MS;
+      // ...but NEVER treat a still-OPEN command block as "done" while the site is
+      // genuinely still generating. A model writing a big command (a 3799-char
+      // execute_luau seen live on GLM) can pause >STABLE_MS between tokens - that
+      // is a mid-write gap, NOT a wedged stop button on a COMPLETE reply. Firing
+      // here parsed the half-written JSON and stamped a false "bad JSON" error
+      // while GLM was still typing. RESPONSE_TIMEOUT still bounds a truly stuck one.
+      const stuckDone = started && d.reply && Date.now() - lastChangeAt > STABLE_MS &&
+        !(gen && ZSParse.hasOpenToolBlock(d.reply));
       if ((gen || effectiveBlock) && !stuckDone) {
         // DIAG: attribute this wait. genOffFirstAt set ⇒ we are PAST first stop,
         // so any wait here is tail latency: either gen flickered back on, or an
@@ -408,6 +440,45 @@
       // messages; gating on a short reply stops the model's own long output
       // (which may quote those phrases) from tripping them.
       if (r.length < 400 && P.isTooLongMsg(r)) return { kind: "too_long" };
+      // Hold off on any "unparseable command" verdict while the provider reports
+      // this turn's text is not yet a settled read. Qwen's A/B "dual" turn is the
+      // case: its network tap flips `done` the instant the SSE ends, but the
+      // candidate-1 DOM we parse can still be mid-render, so a real command looks
+      // half-written for a beat. Firing parse_error there sends an ERROR
+      // mid-generation and nags a model that did nothing wrong. Only guard when
+      // the reply already LOOKS like a command (so a plain-text answer is never
+      // delayed) and bound it with UNSETTLED_GRACE_MS. No-op on providers that
+      // don't implement replyUnsettled (DeepSeek/Gemini/GLM/Kimi/Arena).
+      const cmdShaped = P.replyUnsettled && (
+        ZSParse.hasToolSignature(r) ||
+        (ZSParse.LUA_END_RE.test(r) && !ZSParse.LUA_START_RE.test(r)) ||
+        (/"(?:datamodel_type|edits|old_string|new_string|file_path|target_file)"\s*:/.test(r) &&
+          !/"command"\s*:/.test(r))
+      );
+      if (cmdShaped && P.replyUnsettled(d.item)) {
+        if (!unsettledSince) unsettledSince = Date.now();
+        if (Date.now() - unsettledSince < UNSETTLED_GRACE_MS) { await sleep(250); continue; }
+      } else {
+        unsettledSince = 0;
+      }
+      // A/B "carousel" turn (Qwen): while it is unresolved the site REMOVES the
+      // composer from the DOM (validated live: getEditor() is null), so we can't
+      // send the tool result until a candidate is picked - and the read reply is a
+      // partial candidate, so a command there looks "cut off". Per the product rule
+      // we use the FIRST candidate: wait for BOTH candidates to finish generating
+      // (you can't select mid-stream), then auto-select Response 1. That collapses
+      // the carousel to a normal turn - composer returns - and the normal parse/run
+      // path below handles it. Never a parse_error here (the model didn't truncate).
+      // No-op for every provider except Qwen. RESPONSE_TIMEOUT still bounds a truly
+      // stuck carousel, so this cannot hang.
+      if (P.isComparisonTurn && P.isComparisonTurn(d.item)) {
+        if (P.isGenerating()) { await sleep(250); continue; }   // both still writing
+        if (P.resolveComparison && P.resolveComparison()) {
+          diag("carousel.resolved");
+          await sleep(400); continue;                            // let it collapse, re-read
+        }
+        await sleep(250); continue;                              // button not ready yet
+      }
       if (ZSParse.hasToolSignature(r)) {
         const calls = ZSParse.parseToolCalls(r);
         if (calls.length) { finalizeDiag("tool"); return { kind: "tool", calls, item: d.item }; }
@@ -415,18 +486,48 @@
         // was truncated mid-stream → resume it rather than reporting bad JSON.
         if (P.findContinueBtn()) return { kind: "truncated", text: r, item: d.item };
         // Only fire parse_error if explicit markers were present.
-        if (r.includes(ZSParse.START_M) || ZSParse.LUA_START_RE.test(r)) return { kind: "parse_error", raw: r };
+        if (r.includes(ZSParse.START_M) || ZSParse.LUA_START_RE.test(r)) return { kind: "parse_error", reason: "malformed", raw: r, item: d.item };
         // A command opener with no closer (a JSON object that never closed -
         // the model was halted mid-write and there is no Continue affordance):
         // ask the model to rewrite it instead of silently ending the turn.
-        if (ZSParse.hasOpenToolBlock(r)) return { kind: "parse_error", raw: r };
+        // ...unless ONLY the trailing closers were lost (the model hit its
+        // output limit with the payload complete - seen live on Qwen: a big
+        // multi_edit missing exactly one final "}"). salvageCutOff auto-closes
+        // and runs it instead of burning a whole retry turn; it refuses any
+        // cut that amputated real content (mid-string / deep deficit), which
+        // still falls through to the parse_error feedback. Safe to run here:
+        // generation has ended (the open-block branch above kept waiting
+        // while it streamed).
+        if (ZSParse.hasOpenToolBlock(r)) {
+          const saved = ZSParse.salvageCutOff(r);
+          if (saved) {
+            diag("tool.salvaged", { name: saved.tool });
+            finalizeDiag("tool");
+            return { kind: "tool", calls: [saved], item: d.item };
+          }
+          return { kind: "parse_error", reason: "unclosed", raw: r, item: d.item };
+        }
+        // A closed-looking JSON command envelope that NAMES A REAL TOOL but failed
+        // to parse - typically an unescaped " inside a code/string param broke the
+        // JSON (seen live on Kimi's execute_blender_code: `name = "Camera_System"`
+        // mid-code). Unlike execute_luau there is NO ###LUA### fallback, so the
+        // command silently dropped and the loop finalized the turn as a plain-text
+        // answer with no result and no error - a dead turn. Fire a parse_error so
+        // the model can fix its JSON. GATED on a known command name so prose that
+        // merely quotes {"command":"..."} (a DeepSeek-style explanation, or a
+        // placeholder like "command_name") is NOT misread as a broken command and
+        // looped on - only a real tool name means a genuine failed call.
+        const nm = ZSParse.toolNameFromText(r);
+        if (nm && nm !== "command" && (A.toolNames.has(nm) || A.toolNames.has(bareToolName(nm)))) {
+          return { kind: "parse_error", reason: "malformed", raw: r, item: d.item };
+        }
       }
       // Malformed execute_luau: the model wrote the ###END_LUA### closer but
       // FORGOT the ###LUA### opener, so hasToolSignature missed it and the block
       // never ran (seen on Gemini). Don't silently treat it as a final answer -
       // nudge a rewrite instead of leaving the user stuck on a dead turn.
       if (ZSParse.LUA_END_RE.test(r) && !ZSParse.LUA_START_RE.test(r) && !r.includes(ZSParse.START_M)) {
-        return { kind: "parse_error", raw: r };
+        return { kind: "parse_error", reason: "luaOpener", raw: r, item: d.item };
       }
       // Malformed command: the model emitted a tool's RAW ARGUMENTS as a bare JSON
       // object (e.g. {"datamodel_type":...,"edits":[...],"file_path":...}) instead of
@@ -435,9 +536,15 @@
       // normal prose answer, so nudge a rewrite rather than ending the turn silently.
       if (/"(?:datamodel_type|edits|old_string|new_string|file_path|target_file)"\s*:/.test(r) &&
           !/"command"\s*:/.test(r)) {
-        return { kind: "parse_error", raw: r };
+        return { kind: "parse_error", reason: "envelope", raw: r, item: d.item };
       }
-      if (r.length < 400 && P.isBusyMsg(r)) return { kind: "busy" };
+      // NOTE: a site "server busy / something went wrong" notice is deliberately
+      // NOT special-cased. It falls through to kind:"text" below and simply ENDS
+      // the loop as a final answer - no auto-retry. Retrying risked an infinite
+      // re-answer loop when the model's OWN prose said "try again", and treating
+      // busy as a normal terminal turn is cleaner: the user just re-sends if the
+      // site actually hiccuped. (P.isBusyMsg stays on the provider interface,
+      // unused by the core, in case a future flow wants it.)
       // The site caps output length and shows a native "Continue" button when it
       // truncates. We try clicking it directly (same turn) in the loop.
       if (P.findContinueBtn()) return { kind: "truncated", text: r, item: d.item };
@@ -485,6 +592,30 @@
     return false;
   };
 
+  // ── Learned image tools (reload-proof "screen" chip) ──────────────────────
+  // The known Roblox vision tool (screen_capture) is themed "screen" by name via
+  // ZS.toolCategory. A custom MCP tool's NAME reveals nothing, so we learn which
+  // ones return images and persist that across reloads: with it, a revisited or
+  // reloaded conversation still shows the image-capture chip (not the generic
+  // wrench), and the NEXT call of a known image tool is optimistic from the start.
+  // The marker below is the exact tail runTool appends to a feedback that carries
+  // an image (see runTool's r.images branch) - the reload-proof signal, readable
+  // straight from the injected result turn's text even when no loop is running.
+  const IMAGE_FEEDBACK_RE = /image is attached to THIS message/i;
+  function rememberImageTool(name) {
+    const bare = bareToolName(name);
+    if (!bare || A.imageTools.has(bare)) return;
+    A.imageTools.add(bare);
+    diag("imageTool.remember", { name: bare, total: A.imageTools.size });
+    try { chrome.storage.local.set({ zsImageTools: [...A.imageTools].slice(-200) }); } catch {}
+  }
+  try {
+    chrome.storage.local.get("zsImageTools", (r) => {
+      if (r && Array.isArray(r.zsImageTools)) for (const n of r.zsImageTools) A.imageTools.add(n);
+      diag("imageTool.loaded", { tools: [...A.imageTools] });
+    });
+  } catch {}
+
   async function ensureTools() {
     const r = await bg({ type: "list_tools" });
     if (r && r.tools && r.tools.length) {
@@ -498,7 +629,7 @@
   async function runTool(call) {
     const name = call.tool;
     const args = call.arguments || {};
-    if (!name) return ZS.FEEDBACK.parseError;
+    if (!name) return ZS.FEEDBACK.parseError("malformed");
     // Blocked commands: refuse up-front with a clear, tailored error so the
     // model abandons it and continues instead of wasting/hanging a turn.
     const bareName = bareToolName(name);
@@ -523,7 +654,7 @@
       return (
         `Output of 'list_mcp_servers':\n` +
         `Connected MCP servers (${lines.length}):\n${lines.join("\n")}\n` +
-        `Use list_tools with a "server" param (one of the ids above) to see that server's exact commands. Without "server", list_tools defaults to "roblox".`
+        `Use list_commands with a "server" param (one of the ids above) to see that server's exact commands. Without "server", list_commands defaults to "roblox".`
       );
     }
     // Virtual command: list available commands with full details. Defaults to
@@ -532,6 +663,26 @@
     if (name === "list_commands" || name === "list_tools") {
       await ensureTools();
       const requested = (args.server || "roblox").trim();
+      // The MCP proxy keeps advertising Roblox's catalogue even with no Studio
+      // attached, so list_commands would hand back the full command list and read
+      // as "Roblox is fine" - then every command silently fails. When Roblox is
+      // actually unusable, short-circuit the DEFAULT (roblox) listing into a plain
+      // "Roblox is down" note that points the model at the other server(s), so it
+      // can keep working in degraded mode instead of firing dead Roblox commands.
+      if (requested === "roblox") {
+        const s = A.bridge || {};
+        const srv = s.servers || [];
+        const rbx = srv.find((x) => x.id === "roblox");
+        const rbxAlive = rbx ? !!rbx.alive : (!!s.mcpAlive || srv.some((x) => x.alive));
+        const rbxUsable = !!s.connected && rbxAlive && s.studio !== false;
+        if (!rbxUsable) {
+          const others = srv.filter((x) => x.id !== "roblox" && x.alive && (x.tools || 0) > 0);
+          const otherStr = others.length
+            ? `Other connected MCP server(s): ${others.map((x) => x.id).join(", ")}. Call list_mcp_servers, then list_commands with a "server" param to use them for anything that does not need Roblox.`
+            : `No other MCP server is connected right now.`;
+          return `Output of '${name}':\nRoblox Studio is currently OFFLINE (closed, no place open, or its MCP server disabled), so its commands cannot run. This is an environment problem on the user's machine, not your mistake. Tell the user in one short sentence to open their place in Roblox Studio and enable its MCP server. ${otherStr}`;
+        }
+      }
       const known = new Set(A.toolList.map((t) => t.server).filter(Boolean));
       // Tools from a bridge that doesn't tag "server" yet (old version) have no
       // .server field at all - treat those as the primary server rather than
@@ -698,13 +849,39 @@
     return `${k}: ${v}`;
   }
 
+  // An MCP tool can report its OWN failure as a NORMAL result ("Output of '…':
+  // Error executing code: …") instead of our ERROR wrapper - so a
+  // startsWith("ERROR") test alone paints a FAILED call ✓ green and shows the
+  // error as its summary (seen live on Blender's execute_blender_code, and it
+  // will hit EVERY future MCP server the same way). Treat a result whose FIRST
+  // line opens with an error lead-in as failed too. Deliberately PHRASE-based,
+  // not the bare words "error"/"failed", so a genuine success line like
+  // "Failed: 0" / "Error count: 0" is NOT misread as a failure.
+  const BODY_ERR_RE =
+    /^\s*(error executing|error:|erreur|exception|traceback|communication error|failed to|could ?not|cannot |unable to|fatal)\b/i;
+  const stripOutputPrefix = (feedback) => feedback.replace(/^Output of '[^']*':\n?/, "");
+  function bodyLooksFailed(feedback) {
+    if (!feedback || feedback.startsWith("ERROR")) return false; // wrapper already flags it
+    const first = stripOutputPrefix(feedback).split("\n").map((s) => s.trim()).find(Boolean) || "";
+    return BODY_ERR_RE.test(first);
+  }
+  // True failure = OUR wrapper prefix OR an MCP tool's in-body error lead-in.
+  const feedbackIsError = (feedback) => feedback.startsWith("ERROR") || bodyLooksFailed(feedback);
+
   function outSummary(feedback) {
     if (!feedback) return "";
-    const isErr = feedback.startsWith("ERROR");
-    const body = feedback.replace(/^Output of '[^']*':\n?/, "").trim();
+    const isErr = feedbackIsError(feedback);
+    const body = stripOutputPrefix(feedback).trim();
     if (!body) return "";
-    const lines = body.split("\n").filter((l) => l.trim()).length;
-    const first = body.split("\n")[0].slice(0, 44);
+    const all = body.split("\n").map((l) => l.trim()).filter(Boolean);
+    const lines = all.length;
+    // On SUCCESS, skip a leading non-fatal warning/note some MCP tools print
+    // before the real status so the chip shows the useful line, not the noise.
+    let first = all[0] || "";
+    if (!isErr && lines > 1 && /^(warning|warn|note|deprecat|info)\b/i.test(first)) {
+      first = all.find((l) => !/^(warning|warn|note|deprecat|info)\b/i.test(l)) || first;
+    }
+    first = first.slice(0, 44);
     if (isErr) return first;
     return lines > 1 ? `${first} · ${lines} lines` : first;
   }
@@ -722,6 +899,7 @@
   async function agentLoop(base) {
     if (A.running) return;
     A.running = true;
+    A.resumeArmed = false; // loop now owns the turn; drop the regenerate grace
     A.stop = false;
     A.stopping = false; // clean slate: never inherit a stale "Stopping…" from a
                         // Stop click that landed before this loop actually started
@@ -756,12 +934,6 @@
             `${P.displayName} did not respond in time. The loop has stopped.`);
           break;
         }
-        if (res.kind === "busy") {
-          ui.toast(`${P.displayName} is busy - retrying in 4s…`);
-          await sleep(4000);
-          base = await submitAndGetBase(ZS.FEEDBACK.continue);
-          continue;
-        }
         // A genuinely empty turn is effectively never produced (the warm-up
         // guard waits out slow starts) - just end the loop quietly.
         if (res.kind === "empty") { diag("empty.end"); break; }
@@ -792,7 +964,23 @@
         truncCount = 0;
 
         if (res.kind === "parse_error") {
-          base = await submitAndGetBase(ZS.FEEDBACK.parseError);
+          // The command turn ended in a parse error - it NEVER ran. Paint its chip
+          // as an error (owned, so the sweep won't repaint it the green ✓ "done" it
+          // stamps on any command-shaped turn once generation ends - the misleading
+          // "chip says OK, result says error" state seen live on GLM's truncated
+          // execute_blender_code).
+          const failName = ZSParse.toolNameFromText(res.raw || "") || "command";
+          if (res.item) {
+            const detail = res.reason === "unclosed" ? "cut off"
+              : res.reason === "luaOpener" ? "missing ###LUA###"
+              : res.reason === "envelope" ? "bad format"
+              : "bad JSON";
+            decorate.toolBox(res.item, failName, "err", detail, true, "", ZS.toolCategory(failName));
+          }
+          // Pass the detected command name so the feedback only offers the
+          // ###LUA### block when it actually applies (execute_luau) - never for a
+          // truncated/broken execute_blender_code or other JSON-only command.
+          base = await submitAndGetBase(ZS.FEEDBACK.parseError(res.reason, failName));
           continue;
         }
         if (res.kind === "text") break; // final answer
@@ -804,7 +992,13 @@
             continue;
           }
           const call = calls[0];
-          const category = ZS.toolCategory(call.tool);
+          // A tool ALREADY seen to return an image this session gets the "screen"
+          // chip optimistically at run time (parity with the known screen_capture),
+          // even though its name alone wouldn't reveal it. First-ever call of an
+          // unknown image tool stays generic here and upgrades at result time below.
+          const learnedImg = A.imageTools.has(bareToolName(call.tool));
+          const category = learnedImg ? "screen" : ZS.toolCategory(call.tool);
+          diag("tool.runCat", { name: call.tool, learnedImg, category });
 
           // Loading chip with the real args (loop owns this item from here).
           decorate.toolBox(res.item, call.tool, "run", argSummary(call), true, callBody(call), category);
@@ -814,6 +1008,10 @@
           A.toolName = call.tool;
           A.toolItem = res.item;
           A.toolArg = argSummary(call);
+          // Record this turn as dispatched OFF the DOM so the auto-resume
+          // watchdog never re-fires it after a scroll re-render wipes the node's
+          // zloop/zResume markers (see the `executed` map).
+          rememberExecuted(res.item);
           diag("tool.start", { name: call.tool });
           const feedback = await runTool(call);
           A.toolRunning = false;
@@ -827,10 +1025,28 @@
             decorate.toolBox(res.item, call.tool, "err", "stopped", true, "", category);
             break;
           }
-          const isErr = feedback.startsWith("ERROR");
-          const outBody = feedback.replace(/^Output of '[^']*':\n?/, "");
+          const isErr = feedbackIsError(feedback);
+          const outBody = stripOutputPrefix(feedback);
+          // Trace the chip's DERIVED phase vs summary. Blender (and any MCP whose
+          // output leads with a warning/diagnostic line) resolves ✓ done - the
+          // payload starts "Output of…", not "ERROR" - yet outSummary shows its
+          // FIRST line, which is the warning. Captures firstLine vs a later
+          // success line so we can see the mismatch without guessing.
+          {
+            const lns = outBody.split("\n").map((l) => l.trim()).filter(Boolean);
+            diag("tool.result", { name: call.tool, isErr, phase: isErr ? "err" : "done",
+              summary: outSummary(feedback), lineCount: lns.length,
+              firstLine: (lns[0] || "").slice(0, 90), lastLine: (lns[lns.length - 1] || "").slice(0, 90) });
+          }
+          // A tool (Roblox OR any custom MCP server) that actually RETURNED an
+          // image becomes a "screen" chip - even if its name never let us guess.
+          // Reactive, not predictive: A.pendingImages is set by runTool before it
+          // returns. Remember the name so its next call is optimistic (see above).
+          const hasImages = !!(A.pendingImages && A.pendingImages.length);
+          if (hasImages) rememberImageTool(call.tool);
+          const resultCat = hasImages ? "screen" : category;
           decorate.toolBox(res.item, call.tool, isErr ? "err" : "done", outSummary(feedback),
-            true, outBody, category);
+            true, outBody, resultCat);
           // Snapshot the settled outcome. If the site swaps this turn's DOM node
           // while we wait for the model's next turn (wiping the chip AND the
           // zloop ownership dataset), the sweep re-owns the fresh node with this
@@ -838,7 +1054,15 @@
           // chip on an already-executed call.
           A.toolSettle = {
             phase: isErr ? "err" : "done", detail: outSummary(feedback),
-            body: outBody, category, count: P.assistantCount(),
+            body: outBody, category: resultCat, count: P.assistantCount(),
+            // Node IDENTITY of the settled turn (virtualization-proof), when the
+            // provider exposes it. The count guard alone misfires on Qwen: the
+            // list virtualizes so assistantCount() doesn't grow for the model's
+            // NEXT turn, and back-to-back calls to the SAME tool defeat the name
+            // guard too - the sweep then re-owned the STREAMING next turn's chip
+            // with the previous done/err outcome (seen live: 5x chip.reown with
+            // gen:true, rp tiny).
+            id: P.lastAssistantId ? P.lastAssistantId() : undefined,
           };
 
           // Re-inject the command list every REMIND_TOOLS_EVERY successful calls.
@@ -851,7 +1075,14 @@
             A.toolCallsSinceReminder++;
             if (A.toolCallsSinceReminder >= REMIND_TOOLS_EVERY) {
               A.toolCallsSinceReminder = 0;
-              toSend += ZS.toolsReminder(A.toolList) + "\n" + ZS.memoryNudge();
+              // Scope the reminder to the primary Roblox server, exactly like
+              // list_commands: re-injecting EVERY connected server's tools (Blender
+              // etc.) merged flat would bloat the model's context - the opposite of
+              // what the model gets when it lists commands itself. Anti-drift only
+              // needs the primary Roblox set; addon commands were listed on demand
+              // and the bridge routes by name regardless.
+              const roblox = A.toolList.filter((t) => (t.server || "roblox") === "roblox");
+              toSend += ZS.toolsReminder(roblox) + "\n" + ZS.memoryNudge();
               diag("tools.reminder", { after: REMIND_TOOLS_EVERY });
             }
           }
@@ -934,6 +1165,39 @@
     rememberHalted(it);
   }
 
+  // Off-DOM record of assistant turns whose command has ALREADY been dispatched
+  // (by the normal loop OR the auto-resume watchdog). The dataset markers that
+  // dedupe re-execution (zResume / zloop) live on the DOM NODE - but sites
+  // virtualize long conversations, so scrolling up DESTROYS and RECREATES a
+  // turn's node, wiping those markers. The fresh node then looks un-run, and the
+  // watchdog can re-fire the turn's tool with no live generation at all (the
+  // "tools execute when I scroll back" bug). Mirror the `halted` map exactly
+  // (keyed by conversation + assistant index + a text prefix, NOT the node) so
+  // the "already ran this" memory survives node recreation. This makes
+  // re-execution IDEMPOTENT regardless of any isGenerating/lastGenAt heuristic
+  // misfire - the hard part (is this a live turn?) can be wrong without harm.
+  const executed = new Map(); // "conv|assistantIdx" → text prefix at dispatch time
+  function rememberExecuted(item) {
+    if (!item) return;
+    try {
+      const idx = assistantIdx(item);
+      if (idx < 0) return;
+      const pref = (P.itemText(item) || "").slice(0, 60);
+      // Same guard as rememberHalted: too little text to identify the turn (a
+      // command still streaming) would startsWith-match any later turn at this
+      // index. Fall back to the dataset marker until there is enough text.
+      if (pref.trim().length < 12) return;
+      executed.set(`${P.conversationKey()}|${idx}`, pref);
+    } catch {}
+  }
+  function isRememberedExecuted(item, txt) {
+    if (!executed.size) return false;
+    try {
+      const pref = executed.get(`${P.conversationKey()}|${assistantIdx(item)}`);
+      return pref != null && (txt || "").startsWith(pref);
+    } catch { return false; }
+  }
+
   function stopLoop() {
     if (A.stopping) return; // already winding down - ignore double-clicks
     diag("stopLoop");
@@ -941,6 +1205,14 @@
     A.stopping = true;
     A.stopAt = Date.now(); // grace anchor for the regenerate-as-resume gates
     A.userStopped = true; // suppress auto-resume until the next user message
+    A.resumeArmed = false; // a stop overrides any pending regenerate grace
+    // Disarm any pending optimistic pre-hide (armed in submitAndGetBase for the
+    // feedback turn we just sent - see the re-arm note there). The input unlocks
+    // right after this function returns, but the window can still be open for a
+    // couple more seconds (e.g. mid-image-upload); without this, a message the
+    // user types fast right after Stop could be the "next new user turn" the
+    // window masks by mistake, instead of the (now abandoned) feedback turn.
+    A.injectHideUntil = 0;
     markStoppedTurn();
     // A tool's loading chip is only settled AFTER its `await runTool()` resolves
     // (the if(A.stop) branch in agentLoop). A long-running call (e.g. a big
@@ -1017,7 +1289,23 @@
           (firstName === "list_commands" || firstName === "list_tools")) {
         decorate.toolBox(startRes.item, "Loading commands", "run", "", true);
         const toolFeedback = await runTool(startRes.calls[0]);
-        decorate.toolBox(startRes.item, "Loading commands", "done", `${A.toolList.length} commands`, true);
+        // Roblox down short-circuits list_commands into a plain "offline" note
+        // (main.js, list_commands handler) instead of the real catalogue - detect
+        // that and show it as such, rather than the STALE cached tool count below
+        // (the bridge keeps advertising Roblox's catalogue even with no Studio
+        // attached, so A.toolList still has 25+ entries that were never actually
+        // usable this boot).
+        if (/Roblox Studio is currently OFFLINE/.test(toolFeedback)) {
+          decorate.toolBox(startRes.item, "Loading commands", "err", "Roblox offline", true);
+        } else {
+          // Count what the model ACTUALLY received: list_commands is scoped to the
+          // primary Roblox server (main.js ~629), so showing A.toolList.length (every
+          // connected server merged - Roblox + Blender + addons) overstated the boot
+          // count and made it look like all servers were loaded at once. Count the
+          // Roblox-scoped tools instead, matching the real result.
+          const robloxCount = A.toolList.filter((t) => (t.server || "roblox") === "roblox").length;
+          decorate.toolBox(startRes.item, "Loading commands", "done", `${robloxCount} commands`, true);
+        }
         const base2 = await submitAndGetBase(toolFeedback);
         const readyRes = await waitForResponse(base2); // wait for "I'm ready" reply
         if (!alive()) return;
@@ -1088,6 +1376,8 @@
     delete item.dataset.zsig;
     delete item.dataset.zphase;
     delete item.dataset.zStopped;
+    delete item.dataset.zRegenLen;
+    delete item.dataset.zRegenAt;
     delete item.__zsChip;
   }
 
@@ -1234,7 +1524,7 @@
           by: owned ? "loop" : "sweep", detail: detail || "",
         });
       }
-      const cls = phase === "run" ? "run" : phase === "err" ? "err" : "done";
+      const cls = phase === "run" ? "run" : phase === "err" ? "err" : phase === "idle" ? "idle" : "done";
       this.chip(item, {
         label: name, detail: detail || "", body: body || "",
         category: category || ZS.toolCategory(name), phase, cls,
@@ -1269,11 +1559,16 @@
       if (P.isUserItem(item) && ZSParse.isInjectedFeedback(txt)) {
         const m = txt.match(/Output of '([^']+)'/);
         const isErr = /^\s*ERROR\b/.test(txt);
-        const sig = (m ? m[1] : "note") + "|" + (isErr ? "err" : "result");
+        // Reload-proof image detection: a feedback carrying an image ends with the
+        // IMAGE_FEEDBACK_RE marker. Learn the tool (persisted) so its command turn
+        // above AND its next call get the "screen" chip even with no loop running.
+        const hasImg = !isErr && IMAGE_FEEDBACK_RE.test(txt);
+        if (hasImg && m) rememberImageTool(m[1]);
+        const sig = (m ? m[1] : "note") + "|" + (isErr ? "err" : hasImg ? "img" : "result");
         if (item.dataset.zsig !== sig || !item.classList.contains("zs-hidden") || chipGone) {
           this.chip(item, {
             label: m ? `${m[1]} · result` : "result",
-            category: m ? ZS.toolCategory(m[1]) : "tool",
+            category: hasImg ? "screen" : m ? ZS.toolCategory(m[1]) : "tool",
             body: txt, phase: isErr ? "err" : "result",
             cls: isErr ? "err" : "result", whole: true,
           });
@@ -1307,6 +1602,26 @@
 
       // 3. Assistant command turns → live loading while streaming, ✓ when done.
       if (P.isAssistantItem(item) && ZSParse.hasCommandShape(txt)) {
+        // Regenerate transition (see zRegenLen capture in regenResume): the site is
+        // still showing the OLD command text after a post-stop regenerate, before it
+        // wipes and re-streams. Keep the coherent red "stopped" look instead of
+        // re-animating the stale old call as a fresh "run" spinner. Clears the moment
+        // the content is actually replaced (stream length drops below the captured
+        // baseline) or a short safety window elapses, after which normal
+        // classification paints the freshly regenerated command.
+        if (item.dataset.zRegenLen) {
+          const baseLen = Number(item.dataset.zRegenLen);
+          const armedAt = Number(item.dataset.zRegenAt || 0);
+          const replaced = txt.length < baseLen - 8;      // old content wiped
+          const expired = Date.now() - armedAt > 6000;    // safety fallback
+          if (!replaced && !expired) {
+            const nm = ZSParse.toolNameFromText(txt) || "command";
+            this.toolBox(item, nm, "err", "stopped", false);
+            return;
+          }
+          delete item.dataset.zRegenLen;
+          delete item.dataset.zRegenAt;
+        }
         // A turn the user manually halted (Stop / native stop) stays "stopped" -
         // never let this sweep repaint it ✓ done (or worse, re-spin it) just
         // because generation is still settling. The dataset marker is set where we
@@ -1315,10 +1630,23 @@
         // derive "stopped" from the userStopped latch (which survives node swaps)
         // for the last turn; it's cleared on the next user message / deliberate
         // resume, so a settled turn is never falsely frozen later.
-        const stopped =
+        // A turn that is GENERATING again (or whose tool the loop is actively
+        // running), with NO active user-stop latch, has been REGENERATED - it is no
+        // longer the halted turn. Clear its stale halt so isRememberedHalted (index
+        // + text-prefix based) can't keep repainting the FRESH command red: a Gemini
+        // regenerate reuses the same assistant index and a similar opening prefix,
+        // so the old halt otherwise matches and the running command shows "stopped"
+        // (red) until it settles. Gated on !A.userStopped so a real Stop that is
+        // still settling (isGenerating can lag true for a beat) is NEVER cleared.
+        const regenerating = !A.userStopped && (
+          (item === P.lastAssistant() && P.isGenerating()) ||
+          (A.running && A.toolItem === item)
+        );
+        if (regenerating) { delete item.dataset.zStopped; forgetHalted(item); }
+        const stopped = !regenerating && (
           item.dataset.zStopped === "1" ||
           (A.userStopped && item === P.lastAssistant()) ||
-          isRememberedHalted(item, txt);
+          isRememberedHalted(item, txt));
         // Self-heal: a site re-render that swapped this turn's node wiped the
         // dataset marker - re-stamp it so the stop survives the next wipe of
         // the A.userStopped latch (a fresh user message clears it by design).
@@ -1334,7 +1662,14 @@
         // outcome. The count guard skips this once the model's NEXT turn exists,
         // so a follow-up call to the same tool still classifies live.
         if (!stopped && A.running && !A.toolRunning && A.toolSettle &&
-            A.toolSettle.count === P.assistantCount() &&
+            // Same TURN check. Node identity when available (virtualization-proof:
+            // on Qwen the count doesn't grow for a new turn, and a back-to-back
+            // call to the same tool defeats the name guard - the old outcome then
+            // repainted the STREAMING next turn's chip as done/err). Falls back to
+            // the count guard for providers without lastAssistantId.
+            (A.toolSettle.id !== undefined && P.lastAssistantId
+              ? P.lastAssistantId() === A.toolSettle.id
+              : A.toolSettle.count === P.assistantCount()) &&
             item === P.lastAssistant() &&
             ZSParse.toolNameFromText(txt) === A.toolName) {
           diag("chip.reown", { name: A.toolName, phase: A.toolSettle.phase });
@@ -1359,11 +1694,55 @@
         const resultAfter = next && P.isUserItem(next) &&
           ZSParse.isInjectedFeedback(P.classifyText(next, ".zs-chip"));
         const inFlight = (A.running || A.starting) && !resultAfter;
+        // Regenerate grace: keep the freshly-regenerated command turn "run" in the
+        // gap between regenResume clearing the stop latch and the watchdog starting
+        // the loop, so it never flashes a premature ✓ "done" (see regenResume). The
+        // anchor slides with generation and expires ~2.5s after it truly stops.
+        const resumeGrace = A.resumeArmed && item === P.lastAssistant() &&
+          Date.now() - (A.resumeArmedAt || 0) < 2500;
         const live = !stopped && (
-          inFlight || (item === P.lastAssistant() && P.isGenerating())
+          inFlight || resumeGrace || (item === P.lastAssistant() && P.isGenerating())
         );
-        let phase = stopped ? "err" : (live ? "run" : "done");
-        let detail = stopped ? "stopped" : "";
+        // Orphaned command: a COMPLETE command turn that is the last assistant with
+        // NO result below it, not live and not loop-owned, whose generation is now
+        // stale (typically the page/extension was reloaded while this command sat
+        // un-executed). The auto-resume watchdog deliberately refuses to run a
+        // reload-restored generation (the "execute_luau leaked into the new chat"
+        // leak guard - same lastGenAt staleness test used here), so it will NEVER
+        // execute. Painting it a green ✓ "done" falsely implies the tool ran and
+        // succeeded; show a neutral, greyed "not run" state instead (cosmetic only -
+        // we intentionally do NOT auto-execute it).
+        // A command turn we have no evidence ever executed: not loop-owned, no
+        // injected result below it, and not in the off-DOM executed memory (the
+        // memory keeps this virtualization-safe - a scrolled-back turn whose result
+        // detached is still known-executed and never mislabelled).
+        const neverRun = !item.dataset.zloop && !resultAfter &&
+          !isRememberedExecuted(item, txt);
+        // Superseded orphan: abandoned command - a NEWER assistant turn exists below
+        // it yet it never ran (e.g. stopped then regenerated into a fresh turn on
+        // Qwen). It will never execute, so it must show neither a green ✓ "done" NOR
+        // a live spinner. inFlight is not turn-specific: with the loop running the
+        // NEW turn, this old no-result turn would otherwise also read as "run" - the
+        // "both the old and the new chip spinning at once" seen live.
+        const supersededOrphan = neverRun && item !== P.lastAssistant();
+        // Reload orphan: the LAST command turn, not live, whose generation is stale -
+        // the page/extension was reloaded while it sat un-executed and the watchdog
+        // refuses to run a reload-restored generation (leak guard). Also never a
+        // false green ✓; show a neutral, greyed "not run" (we do NOT auto-execute it).
+        const staleLastOrphan = neverRun && item === P.lastAssistant() && !live &&
+          Date.now() - A.lastGenAt > 8000;
+        const orphanPending = !stopped && (supersededOrphan || staleLastOrphan);
+        // Handoff window: a JUST-finished last-assistant command with no result yet
+        // that the loop has not taken over (A.running not yet true, so `live` is
+        // false). Without this it flashes a premature ✓ "done" for the frames
+        // between generation ending and the loop starting, THEN re-spins when the
+        // loop paints its own chip - most visible on the instant virtual commands
+        // (list_mcp_servers/list_commands). Keep it spinning instead; staleLastOrphan
+        // takes over after 8s if the loop genuinely never runs it.
+        const pendingExec = !stopped && !orphanPending && !live &&
+          neverRun && item === P.lastAssistant() && Date.now() - A.lastGenAt <= 8000;
+        let phase = stopped ? "err" : (orphanPending ? "idle" : ((live || pendingExec) ? "run" : "done"));
+        let detail = stopped ? "stopped" : (orphanPending ? "not run" : "");
         // Error-aware settle: a command whose injected result RIGHT BELOW is an
         // ERROR must never wear a green ✓. The loop paints this correctly while
         // it owns the turn, but a revisited conversation (or a node swap that
@@ -1371,7 +1750,11 @@
         // itself, so it stays correct without any loop state.
         if (phase === "done" && next && P.isUserItem(next)) {
           const nt = P.classifyText(next, ".zs-chip");
-          if (ZSParse.isInjectedFeedback(nt) && /^\s*ERROR\b/.test(nt)) {
+          // feedbackIsError also catches an MCP tool's in-body error (the result
+          // reads "Output of '…': Error executing code…", which our ERROR prefix
+          // test would miss - the Blender case), so a revisited conversation
+          // re-settles it red, matching what the loop painted live.
+          if (ZSParse.isInjectedFeedback(nt) && feedbackIsError(nt)) {
             phase = "err"; detail = "error";
             if (item.dataset.zphase !== "err") diag("chip.errSettle", { name: ZSParse.toolNameFromText(txt) });
           }
@@ -1392,19 +1775,54 @@
                  // forever (Arena code-block markup).
                  !e.querySelector(".zs-tool-hide") &&
                  ZSParse.hasCommandShape(e.textContent || ""));
-        if (item.dataset.zphase !== phase || chipGone || rawVisible) {
+        // A tool learned to return images gets the "screen" chip even though its
+        // name alone wouldn't reveal it (parity with Roblox screen_capture). The
+        // fact can land AFTER this turn first settled (imageTools loads from
+        // storage async, or the result turn below is classified later the same
+        // pass), so repaint when the current chip's category is stale too - the
+        // phase-only guard would otherwise freeze it on the generic wrench.
+        const nm = ZSParse.toolNameFromText(txt);
+        const cat = A.imageTools.has(bareToolName(nm)) ? "screen" : undefined;
+        const chipNow = item.querySelector(".zs-chip");
+        const catStale = cat === "screen" && chipNow && !chipNow.classList.contains("cat-screen");
+        // Chip drift for chipAppend providers (Kimi): the RUN chip is painted by
+        // the SWEEP (owned=false, no zloop) until the loop takes over at
+        // tool.start ~2s later, so ensureOwnedChip's drift fix (zloop-only) does
+        // NOT run during that window. Meanwhile Vue mounts the copy/regenerate
+        // toolbar (chipTrailRef) and inserts it ABOVE our chip node, flashing the
+        // action buttons over the chip until something repaints it. Detect that
+        // drift here too so the sweep re-seats the chip (chip() re-anchors before
+        // trailRef) without waiting for the loop. Mirrors ensureOwnedChip.
+        let drifted = false;
+        if (P.chipAtItemLevel && P.chipAppend && chipNow) {
+          const anchor = (P.chipAnchor && P.chipAnchor(item)) || item;
+          const trailRef = P.chipTrailRef ? P.chipTrailRef(item) : null;
+          drifted = chipNow.parentElement === anchor && chipNow.nextElementSibling !== trailRef;
+        }
+        if (item.dataset.zphase !== phase || chipGone || rawVisible || catStale || drifted) {
           // Tracker: WHY the sweep chose this phase (only when it changes -
           // chipGone/rawVisible repaints of the same phase stay silent).
           if (item.dataset.zphase !== phase) {
+            // Extra suspicion flag: a command that settled ✓ done while it is
+            // still the LAST assistant with NO injected result below it - the
+            // exact shape of the "chip shows done but the model is still writing"
+            // report. genDebug() (if the provider exposes it) breaks isGenerating
+            // into its sub-signals so we can see WHICH one flickered false.
+            const suspectDone = phase === "done" &&
+              item === P.lastAssistant() && !resultAfter;
             diag("chip.why", {
-              name: ZSParse.toolNameFromText(txt), to: phase,
-              stopped, live, isLast: item === P.lastAssistant(),
-              gen: P.isGenerating(), run: A.running,
+              name: nm, to: phase,
+              stopped, live, inFlight, resumeGrace, pendingExec,
+              isLast: item === P.lastAssistant(), resultAfter,
+              gen: P.isGenerating(), run: A.running, starting: A.starting,
               zStopped: item.dataset.zStopped === "1",
               remembered: isRememberedHalted(item, txt),
+              lastGenAgoMs: Date.now() - A.lastGenAt,
+              suspectDone,
+              ...(P.genDebug ? { g: P.genDebug() } : {}),
             });
           }
-          this.toolBox(item, ZSParse.toolNameFromText(txt), phase, detail, false);
+          this.toolBox(item, nm, phase, detail, false, undefined, cat);
         }
         return;
       }
@@ -1473,7 +1891,7 @@
   const ui = (() => {
     let root, bar, dot, brandEl, stateEl, actionBtn, stopBtn, switchBtn, supportBtn, discordEl, menuEl, unstableEl;
     let cover, coverRaf, barRaf;
-    let bridgeOk = false, studioDown = false, placeDown = false, appDown = false;
+    let bridgeOk = false, studioDown = false, placeDown = false, appDown = false, addonOk = false;
     let wasConnected = false, bridgeBannerEl = null;
 
     function build() {
@@ -1487,7 +1905,7 @@
       root.innerHTML = `
         <div id="zs-bar">
           <span id="zs-dot" class="off" title=""></span>
-          <span id="zs-brand">ZeroScript <span class="zs-free">Free</span></span>
+          <span id="zs-brand">ZeroScript <span class="zs-free">v${EXT_VERSION}</span></span>
           <span id="zs-state"></span>
           <button id="zs-action"></button>
           <button id="zs-stop" hidden>■ Stop</button>
@@ -1566,7 +1984,7 @@
     // (set by renderBar via actionBtn.dataset.kind).
     function onActionClick() {
       const kind = actionBtn.dataset.kind;
-      if (kind === "start") startSession();
+      if (kind === "start" || kind === "start-degraded") startSession();
     }
 
     // ── Custom prompt (persisted) ───────────────────────────────────────────
@@ -1704,7 +2122,7 @@
         mcpList += `<div class="zs-mcp-item"><span class="zs-mcp-health zs-mcp-health-${healthClass}" title="${healthTitle}"></span><div class="zs-mcp-info"><span class="zs-mcp-name">${esc(s.name)}</span><span class="zs-mcp-url">${esc(s.command || s.id)}</span></div><button class="zs-mcp-remove" data-id="${esc(s.id)}" title="Remove">✕</button></div>`;
       });
       menuEl.innerHTML =
-        `<div class="zs-menu-head"><span class="zs-menu-logo">ZeroScript</span><span class="zs-menu-tag">Free</span></div>
+        `<div class="zs-menu-head"><span class="zs-menu-logo">ZeroScript</span><span class="zs-menu-tag">v${EXT_VERSION}</span></div>
          <section class="zs-menu-sec">
            <div class="zs-sec-label"><span>Switch AI</span></div>
            ${sites}
@@ -1897,15 +2315,16 @@
         msg = `Starting the Roblox agent…`;
         label = "Starting…"; kind = "starting"; disabled = true;
       } else if (A.started) {
-        // Prefer the ADVERTISED list length (A.toolList - already filtered by the
-        // vision/blocked gate, so it matches what the model actually has: e.g.
-        // screen_capture is absent on non-vision providers like Kimi). Fall back
-        // to the bridge's raw catalogue count only before the list is loaded.
-        // Roblox-only count: A.toolList is already the Roblox catalogue (vision/
-        // blocked-filtered). Fall back to the Roblox server's own tool count from
-        // per-server health, NOT the aggregate that would include addon servers.
-        const robloxHealth = A.bridge && (A.bridge.servers || []).find((x) => x.id === "roblox");
-        const tools = A.toolList.length || (robloxHealth && robloxHealth.tools) || (A.bridge && A.bridge.tools) || 0;
+        // Prefer the ADVERTISED list length (A.toolList - the AGGREGATE catalogue
+        // across every connected MCP server, already filtered by the vision/blocked
+        // gate so it matches what the model actually has: e.g. screen_capture is
+        // absent on non-vision providers like Kimi). After a page reload A.toolList
+        // is empty until the next list_tools, so fall back to the sum of every
+        // server's per-server health count (Roblox + addons like Blender) - NOT the
+        // Roblox-only count, which made the total drop to just 27 after a reload.
+        const healthTotal = A.bridge &&
+          (A.bridge.servers || []).reduce((n, x) => n + (x.tools || 0), 0);
+        const tools = A.toolList.length || healthTotal || (A.bridge && A.bridge.tools) || 0;
         // "N tools" only means StudioMCP itself is up - it advertises its full
         // catalogue even with no Studio/place attached (see probe_studio() in
         // bridge.py), so showing it while Studio/place isn't actually usable
@@ -1942,6 +2361,16 @@
         if (bridgeOk) {
           toneClass = "standby";
           msg = `Standby. Start the agent, or just chat.`;
+          label = "▶ Start Roblox agent"; kind = "start";
+        } else if (addonOk) {
+          // Roblox is down but another MCP server is live: allow a DEGRADED start
+          // (yellow). The agent runs on the other server(s); Roblox tools stay
+          // unavailable until Studio is back. Button enabled, but visibly warned.
+          toneClass = "warn"; warn = true;
+          msg = !A.bridge.connected
+            ? `Run the <b>ZeroScript bridge</b> on your PC.`
+            : `<b>Roblox Studio offline</b> - start with your other MCP server(s).`;
+          label = "▶ Start agent (Roblox offline)"; kind = "start-degraded";
         } else {
           toneClass = "warn"; warn = true;
           msg = !A.bridge.connected
@@ -1953,8 +2382,9 @@
                 : studioDown
                   ? `Open <b>Roblox Studio</b> &amp; enable its MCP server.`
                   : `Open <b>Roblox Studio</b> for the tools.`;
+          label = "▶ Start Roblox agent"; kind = "start";
         }
-        label = "▶ Start Roblox agent"; kind = "start"; disabled = !bridgeOk;
+        disabled = !bridgeOk && !addonOk;
       } else {
         toneClass = "noagent";
         msg = `No agent here. Open a new chat to start one.`;
@@ -1969,7 +2399,7 @@
         const modeWarn = P.modeWarning();
         if (modeWarn) {
           toneClass = "warn"; warn = true; msg = modeWarn;
-          if (kind === "start") disabled = true;
+          if (kind === "start" || kind === "start-degraded") disabled = true;
         }
       }
       // Only touch the DOM when something actually changed. renderBar runs on
@@ -2021,8 +2451,14 @@
       // back to the aggregate signals they do send (mcpAlive / total tools).
       const roblox = servers.find((x) => x.id === "roblox");
       const mcpUp = roblox ? !!roblox.alive : (!!s.mcpAlive || servers.some((x) => x.alive));
-      const mcpTools = roblox ? (roblox.tools || 0) : (s.tools || 0);
-      const mcpOk = s.connected && (mcpUp || mcpTools > 0);
+      // Roblox-only count drives the connectivity gate (the dot must never look
+      // green off an addon while Roblox itself is down)...
+      const robloxTools = roblox ? (roblox.tools || 0) : (s.tools || 0);
+      const mcpOk = s.connected && (mcpUp || robloxTools > 0);
+      // ...but the DISPLAYED count is the aggregate across every server (Roblox +
+      // addons like Blender), so it stays consistent with the bar and doesn't
+      // under-report when addon servers are loaded.
+      const totalTools = servers.reduce((n, x) => n + (x.tools || 0), 0) || s.tools || robloxTools;
       // studio === false means the MCP server answered but the Studio is not USABLE
       // (no place loaded). studioApp tells the two sub-cases apart:
       //   studioApp === false → no Studio connected at all (app closed OR its MCP
@@ -2042,12 +2478,17 @@
       else if (noPlace) txt = "Roblox Studio is open but no place is loaded - open a place";
       else if (noApp) txt = "Roblox Studio not connected - open it and enable its MCP server";
       else if (studioOff) txt = "Studio not connected, enable the MCP server in Roblox Studio";
-      else txt = `Connected · ${mcpTools} Roblox tools ready`;
+      else txt = `Connected · ${totalTools} tools ready`;
       dot.title = txt; // full bridge detail on hover over the status dot
       bridgeOk = ok;
       studioDown = studioOff;
       placeDown = noPlace;
       appDown = noApp;
+      // A non-Roblox MCP (Blender, Sketchfab, ...) that is actually alive. When
+      // Roblox itself is down but such a server is present, the session can still
+      // start in a DEGRADED mode - the agent just can't touch Roblox until Studio
+      // is back. Gated on s.connected so a dropped bridge never reads as usable.
+      addonOk = !!s.connected && servers.some((x) => x.id !== "roblox" && x.alive && (x.tools || 0) > 0);
       // Bridge-drop alert: a clear, persistent red banner the moment a
       // previously-connected bridge goes offline. Clears on reconnect.
       if (wasConnected && !s.connected) bridgeAlert(true);
@@ -2571,6 +3012,10 @@
     // signal): a SHORT command after a long reasoning phase shows its stop
     // square for only a frame or two - too briefly for this 200ms sampler.
     if (gen) A.lastGenAt = Date.now();
+    // Slide the regenerate grace anchor while generation is still (intermittently)
+    // active, so the chip stays "run" across gen-false blips right up to the moment
+    // the watchdog re-owns the tool (see regenResume).
+    if (A.resumeArmed && gen) A.resumeArmedAt = Date.now();
     const hardGen = A.started && P.isHardGenerating();
 
     // Regenerate-as-resume: after a manual stop (A.userStopped) the agent stays
@@ -2604,24 +3049,62 @@
         A.started && A.userStopped && !A.running && !A.injecting && !A.stopping &&
         hardGen && _prevHardGen === false) {
       // Gate on ACTUAL user intent: a real regenerate is always a trusted click
-      // moments before the new generation, and never right after the Stop (the
-      // stop click itself is trusted - the 3s grace keeps it from qualifying).
-      // Without these gates DeepSeek's own post-stop behaviour (aborted
-      // reasoning restarting as an answer phase, stop-button re-mount flicker)
-      // raised this edge with no user action and un-stopped the halted turn.
+      // moments before the new generation, and never the Stop click itself.
+      // Distinguish the two by ORDER, not a fixed delay: require the latest
+      // trusted click to fall clearly AFTER the Stop (clickAfterStop). A native
+      // stop click lands ~at A.stopAt, so it fails this and can't self-resume;
+      // the extension's own "■ Stop" is inside #zs-root and never updates
+      // _userClickAt at all, so only the later regenerate qualifies. This
+      // replaces the old absolute `stopAge > 3000` grace, which also blocked a
+      // user who regenerated quickly (~1.5s) after Stop - the real bug seen live.
+      // DeepSeek's post-stop phantom generations carry no fresh trusted click,
+      // so they still fail the gate.
       const clickAge = Date.now() - _userClickAt;
       const stopAge = Date.now() - (A.stopAt || 0);
-      if (clickAge < 2500 && stopAge > 3000) {
+      const clickAfterStop = _userClickAt - (A.stopAt || 0);
+      if (clickAge < 2500 && clickAfterStop > 400) {
         A.userStopped = false;
         const it = P.lastAssistant();
         if (it) {
           delete it.dataset.zStopped; delete it.dataset.zResume;
           delete it.dataset.zResumeLen; delete it.dataset.zloop;
           forgetHalted(it);
+          // Strip the OLD command's chip immediately. The regenerate reuses this
+          // turn node, and without this the previous execute_luau chip (with its
+          // spinner/settled state) lingers for ~200ms until the sweep repaints the
+          // node - the visible "it keeps running the old call for a beat before
+          // restarting" flash reported on Kimi. resetDecoration clears the chip and
+          // every marker so the regenerated reply classifies fresh.
+          resetDecoration(it);
+          // Kimi (and other node-reusing sites) leave the OLD command text in the
+          // reply DOM for ~2s after regenerate starts, before wiping it and
+          // streaming the new reply. resetDecoration only removes OUR chip - the
+          // sweep then re-derives a fresh "run" chip from that stale old command
+          // (old token count and all) until the content is replaced: the "red
+          // stopped chip turns into a grey spinner on the OLD call" flash reported
+          // live. Capture the old text length so the sweep can tell the DOM still
+          // holds the stale command and keep the coherent red "stopped" look until
+          // Kimi actually replaces it (see the zRegenLen guard in classify).
+          try {
+            it.dataset.zRegenLen = String(P.classifyText(it, ".zs-chip").length);
+            it.dataset.zRegenAt = String(Date.now());
+          } catch {}
         }
-        diag("regenResume", { clickAge, stopAge });
+        // Bridge the gap until the auto-resume watchdog (1s interval) re-owns the
+        // tool: regenResume only CLEARS the stop latch, it does not start the loop
+        // (the regenerated command hasn't finished streaming yet, so there's
+        // nothing to dispatch). In that ~1s window A.running is still false and
+        // Gemini's generation signal blips false between reasoning and command
+        // settle, so the sweep painted the chip a premature ✓ "done" before the
+        // real execution began. Arm a grace anchor the sweep honours as "live"; it
+        // slides while generation blips (refreshed in the meter loop) and expires
+        // shortly after generation truly stops, by which point the watchdog has
+        // taken over (A.running) or the reply was plain text with no tool.
+        A.resumeArmed = true;
+        A.resumeArmedAt = Date.now();
+        diag("regenResume", { clickAge, stopAge, clickAfterStop });
       } else {
-        diag("regenEdge.ignored", { clickAge, stopAge });
+        diag("regenEdge.ignored", { clickAge, stopAge, clickAfterStop });
       }
     }
     _prevHardGen = hardGen;
@@ -2885,6 +3368,7 @@
       // auto-resume.
       A.userStopped = true;
       A.stop = true;
+      A.resumeArmed = false; // a stop overrides any pending regenerate grace
       A.stopAt = Date.now(); // grace anchor for the regenerate-as-resume gates
       // If our loop is live, mirror the same "Stopping…" feedback as our own
       // Stop button so the bar reflects the wind-down instead of flickering.
@@ -2928,6 +3412,11 @@
     if (P.turnHalted(item)) return;                     // this turn was stopped → leave it
     const txt = P.itemText(item);
     if (!ZSParse.hasToolSignature(txt)) return;
+    // Node-independent dedupe: this turn's command was already dispatched (by the
+    // loop or a prior resume). The dataset guards below are wiped when the site
+    // recreates the node on scroll, so without this off-DOM check the watchdog
+    // re-runs a historical tool with no live generation. See the `executed` map.
+    if (isRememberedExecuted(item, txt)) return;
     // Resume only when a COMPLETE, parseable command is present - and re-attempt
     // if the turn has GROWN since our last try.
     if (!ZSParse.parseToolCalls(txt).length) return;
@@ -2935,6 +3424,7 @@
     if (item.dataset.zResume && Number(item.dataset.zResumeLen || 0) >= len) return;
     item.dataset.zResume = "1";
     item.dataset.zResumeLen = String(len);
+    rememberExecuted(item);
     diag("autoResume", { len });
     // The reply turn is ALREADY present - act on it immediately. Null token makes
     // the identity-based newReply test unconditionally true (any current id != null).
