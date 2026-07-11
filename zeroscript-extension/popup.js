@@ -1,5 +1,36 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 const KOFI_URL = "https://ko-fi.com/sebattfg";
+const PROVIDERS = ["deepseek", "gemini", "kimi", "glm", "qwen", "arena"];
+
+for (const id of ["writer", "reviewer"]) {
+  const el = document.getElementById(id);
+  for (const p of PROVIDERS) {
+    const o = document.createElement("option");
+    o.value = p;
+    o.textContent = `${id === "writer" ? "Builder" : "Reviewer"}: ${p[0].toUpperCase() + p.slice(1)}`;
+    el.appendChild(o);
+  }
+}
+
+function renderTeam(team) {
+  team = team || { config: {}, agents: [] };
+  document.getElementById("teamEnabled").checked = !!team.config.enabled;
+  document.getElementById("writer").value = team.config.writer || "deepseek";
+  document.getElementById("reviewer").value = team.config.reviewer || "gemini";
+  const online = (team.agents || []).map((a) => a.provider).filter((v, i, a) => a.indexOf(v) === i);
+  document.getElementById("teamState").textContent = team.config.enabled
+    ? `${online.length} model tab${online.length === 1 ? "" : "s"} online${team.writer ? ` · ${team.writer.provider} writing` : " · Studio unlocked"}`
+    : "Single-model mode";
+}
+
+function saveTeam() {
+  chrome.runtime.sendMessage({ type: "team_config", config: {
+    enabled: document.getElementById("teamEnabled").checked,
+    writer: document.getElementById("writer").value,
+    reviewer: document.getElementById("reviewer").value,
+  }}, (r) => r && renderTeam(r.team));
+}
+["teamEnabled", "writer", "reviewer"].forEach((id) => document.getElementById(id).addEventListener("change", saveTeam));
 
 function render(s) {
   const dot = document.getElementById("dot");
@@ -21,6 +52,7 @@ function render(s) {
   servers.textContent = s.connected
     ? list.map((x) => `${x.alive ? "●" : "○"} ${x.id} (${x.alive ? x.tools + " tools" : "down"})`).join("\n")
     : "";
+  renderTeam(s.team);
 }
 
 function refresh() {
@@ -43,6 +75,7 @@ document.getElementById("kofi").addEventListener("click", () => {
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg && msg.type === "zs-status") render(msg);
+  if (msg && msg.type === "zs-team-status") renderTeam(msg.team);
 });
 refresh();
 setInterval(refresh, 2000);

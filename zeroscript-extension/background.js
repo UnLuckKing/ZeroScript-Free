@@ -52,6 +52,42 @@ let studioApp = null;
 // "open Roblox Studio" wording completely fails to convey.
 let studioProc = null;
 
+// Shared coordination for every supported AI tab. The bridge remains the one
+// Studio connection; this lease prevents concurrent MCP calls from different
+// models from observing or mutating conflicting state.
+const TEAM_DEFAULTS = { enabled: false, writer: "deepseek", reviewer: "gemini" };
+let teamConfig = { ...TEAM_DEFAULTS };
+const teamAgents = new Map();
+let writerLease = null;
+const WRITE_LEASE_MS = 150000;
+
+chrome.storage.local.get("zsTeamConfig", (r) => {
+  if (r && r.zsTeamConfig) teamConfig = { ...TEAM_DEFAULTS, ...r.zsTeamConfig };
+});
+
+function cleanTeamState() {
+  const now = Date.now();
+  for (const [id, agent] of teamAgents) if (now - agent.lastSeen > 20000) teamAgents.delete(id);
+  if (writerLease && writerLease.expiresAt <= now) writerLease = null;
+}
+
+function teamObj() {
+  cleanTeamState();
+  return {
+    config: teamConfig,
+    agents: [...teamAgents.entries()].map(([tabId, a]) => ({ tabId, ...a })),
+    writer: writerLease && { tabId: writerLease.tabId, provider: writerLease.provider, expiresAt: writerLease.expiresAt },
+  };
+}
+
+function broadcastTeam() {
+  const msg = { type: "zs-team-status", team: teamObj() };
+  chrome.runtime.sendMessage(msg).catch(() => {});
+  chrome.tabs.query({ url: PROVIDER_URLS }, (tabs) => {
+    for (const t of tabs) chrome.tabs.sendMessage(t.id, msg).catch(() => {});
+  });
+}
+
 function log(...a) {
   console.log("[zs-bg]", ...a);
 }
@@ -286,7 +322,7 @@ function failAllPending(reason) {
 
 // ── status push to any open DeepSeek tab + popup ─────────────────────────
 function statusObj() {
-  return { type: "zs-status", connected, mcpAlive, studio: studioConnected, studioApp, studioProc, tools: toolsCache.length, servers: serversCache };
+  return { type: "zs-status", connected, mcpAlive, studio: studioConnected, studioApp, studioProc, tools: toolsCache.length, servers: serversCache, team: teamObj() };
 }
 
 function broadcastStatus() {
@@ -297,7 +333,7 @@ function broadcastStatus() {
 }
 
 // ── messages from content.js / popup.js ─────────────────────────────────
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     switch (msg.type) {
       case "status":
@@ -312,12 +348,58 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "call_tool": {
+        if (teamConfig.enabled) {
+          cleanTeamState();
+          const tabId = sender.tab && sender.tab.id;
+          if (!msg.team_token || !writerLease || writerLease.token !== msg.team_token || writerLease.tabId !== tabId) {
+            sendResponse({ ok: false, kind: "team_lock", error: "Another model owns the Roblox Studio lock. Wait and retry." });
+            break;
+          }
+          writerLease.expiresAt = Date.now() + WRITE_LEASE_MS;
+        }
         const timeout = (msg.timeout || 120000) + 10000;
         const r = await send(
           { type: "call_tool", name: msg.name, arguments: msg.arguments, timeout: msg.timeout },
           timeout
         );
         sendResponse(r);
+        break;
+      }
+      case "team_register": {
+        if (sender.tab && sender.tab.id != null) {
+          teamAgents.set(sender.tab.id, { provider: msg.provider || "unknown", title: sender.tab.title || "", lastSeen: Date.now() });
+          broadcastTeam();
+        }
+        sendResponse({ ok: true, team: teamObj() });
+        break;
+      }
+      case "team_config": {
+        teamConfig = { ...TEAM_DEFAULTS, ...(msg.config || {}) };
+        await chrome.storage.local.set({ zsTeamConfig: teamConfig });
+        if (!teamConfig.enabled) writerLease = null;
+        broadcastTeam();
+        sendResponse({ ok: true, team: teamObj() });
+        break;
+      }
+      case "team_acquire": {
+        const tabId = sender.tab && sender.tab.id;
+        cleanTeamState();
+        if (!teamConfig.enabled) { sendResponse({ ok: true, token: null, disabled: true }); break; }
+        if (writerLease && writerLease.tabId !== tabId) {
+          sendResponse({ ok: false, busy: true, writer: writerLease.provider });
+          break;
+        }
+        const token = writerLease && writerLease.tabId === tabId ? writerLease.token : `${tabId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        writerLease = { tabId, provider: msg.provider || "unknown", token, expiresAt: Date.now() + WRITE_LEASE_MS };
+        broadcastTeam();
+        sendResponse({ ok: true, token });
+        break;
+      }
+      case "team_release": {
+        const tabId = sender.tab && sender.tab.id;
+        if (writerLease && writerLease.tabId === tabId && (!msg.token || msg.token === writerLease.token)) writerLease = null;
+        broadcastTeam();
+        sendResponse({ ok: true });
         break;
       }
       case "restart_mcp": {

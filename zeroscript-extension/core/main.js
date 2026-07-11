@@ -17,6 +17,16 @@
   const T = P.timings;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const log = (...a) => console.log("[zeroscript]", ...a);
+  let teamToken = null;
+
+  // Every provider tab announces itself to the shared service worker. The
+  // heartbeat expires automatically, so closing a model tab removes it from
+  // the team display without any special unload handling.
+  function registerTeamAgent() {
+    try { chrome.runtime.sendMessage({ type: "team_register", provider: P.id }, () => void chrome.runtime.lastError); } catch {}
+  }
+  registerTeamAgent();
+  setInterval(registerTeamAgent, 7000);
 
   // ── Anti-bot mitigation (EXPERIMENTAL) ──────────────────────────────────
   // Suspected contributor to Arena's captcha: the agentic loop sends turns
@@ -782,6 +792,12 @@
     // it can only be right. (It still needs the game RUNNING; that's documented.)
     if ((bareName === "user_keyboard_input" || bareName === "user_mouse_input") && !args.datamodel_type)
       args.datamodel_type = "Client";
+    const lease = await bg({ type: "team_acquire", provider: P.id });
+    if (lease && lease.busy) {
+      return `TEAM BUSY: ${lease.writer || "another model"} is currently using Roblox Studio. Wait briefly and retry this exact command. Do not invent a result.`;
+    }
+    if (!lease || !lease.ok) return "TEAM ERROR: could not acquire the Roblox Studio lock. Retry shortly.";
+    teamToken = lease.token || null;
     const timeout = name === "execute_luau" ? 20000 : 120000;
     // Hard watchdog: even if the background worker never answers, the loop
     // gets a definitive result and continues.
@@ -796,8 +812,12 @@
     const stopWatch = new Promise((res) => {
       stopTimer = setInterval(() => { if (A.stop) res({ ok: false, kind: "stopped" }); }, 150);
     });
-    let r = await Promise.race([bg({ type: "call_tool", name, arguments: args, timeout }), hardCap, stopWatch]);
+    let r = await Promise.race([bg({ type: "call_tool", name, arguments: args, timeout, team_token: teamToken }), hardCap, stopWatch]);
     clearInterval(stopTimer);
+    if (teamToken && r && r.kind !== "stopped" && r.kind !== "timeout") {
+      await bg({ type: "team_release", token: teamToken });
+      teamToken = null;
+    }
     if (r && r.kind === "stopped") return "(stopped by user)";
     if (!r) return ZS.FEEDBACK.bridgeOffline;
     // The MCP server answers SUCCESSFULLY (ok:true) when no Studio is attached
