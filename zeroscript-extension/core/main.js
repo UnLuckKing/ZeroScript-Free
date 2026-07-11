@@ -230,6 +230,18 @@
         tries++;
       }
       if (messageSent) diag("send.cleared", { tries });
+      // All retries exhausted with NO evidence the message landed (textarea never
+      // cleared, no new turn). Silently returning here left the loop waiting for
+      // a reply that will never come (~60s "empty" timeout) with zero explanation
+      // - the reported "the tool result just never gets injected" symptom. Tell
+      // the user what actually happened so they can nudge the conversation
+      // themselves instead of watching a stuck bar.
+      if (!messageSent && !landed() && !A.stop) {
+        diag("send.failed", { tries });
+        ui.banner("warn", "Message could not be sent",
+          `${P.displayName} did not accept the injected message after ${tries} attempts. ` +
+          `Send a short message yourself (e.g. "continue") to resume the agent.`);
+      }
       return base;
     } finally {
       // During Starting Up / the agent loop, the bootstrap or loop owns the cover
@@ -281,6 +293,16 @@
     };
     let preStartSilent = 0; // nothing produced AND not generating
     let curItem = null, sawContent = false, warmSince = 0; // per-turn "warming up"
+    // Last NON-EMPTY reply read for the CURRENT turn. Sites re-render a turn's
+    // subtree (React/Monaco churn) and a read can come back "" for a frame at
+    // the exact moment the watcher finalizes - the turn then ended as
+    // kind:"empty" even though a (possibly cut-off) command was sitting there a
+    // tick earlier, leaving a DEAD turn: no parse_error feedback, and the
+    // autoResume dedupe (zResume) blocks any later retry (validated live on a
+    // Qwen post-stop regenerate, 2026-07). Classify on this fallback instead of
+    // declaring empty. Reset whenever the turn NODE changes so a new turn can
+    // never inherit the previous turn's text.
+    let lastGoodReply = "";
     let reasonSince = 0; // reasoning written but no answer yet (loading phase)
     let noTurnSince = 0; // finalize attempted before this send's reply turn exists
     let unsettledSince = 0; // command-shaped reply whose read is not yet stable
@@ -314,14 +336,25 @@
       // (~30s) before finalising a multi_edit - the "input box stuck until I scroll
       // up" symptom (scrolling re-attached old turns and bumped the count).
       const curTok = P.lastAssistantId ? P.lastAssistantId() : undefined;
-      const newReply = (curTok !== undefined)
-        ? (curTok != null && curTok !== A.sendToken)
+      // A NULL token means the provider could not read an identity for the
+      // CURRENT last turn (not that the provider lacks ids - that's undefined).
+      // Treating null as "no new reply" wedged the watcher on Qwen: a
+      // REGENERATED turn is rebuilt WITHOUT the id attribute the normal turns
+      // carry, so curTok stayed null, `started` never latched, and the loop
+      // sat in the pre-start branch for the full 60s before ending "empty" -
+      // the regenerated command (complete in the net tap) was never run and
+      // zResume then blocked any retry (validated live via empty.why, 2026-07).
+      // Fall back to the count test instead, exactly as for a provider with no
+      // lastAssistantId at all.
+      const newReply = (curTok !== undefined && curTok !== null)
+        ? (curTok !== A.sendToken)
         : P.assistantCount() > base;
 
       // Track whether the CURRENT turn has produced anything. Reset when the
       // turn node changes (the PREVIOUS turn's content never counts).
-      if (d.item !== curItem) { curItem = d.item; sawContent = false; warmSince = 0; }
+      if (d.item !== curItem) { curItem = d.item; sawContent = false; warmSince = 0; lastGoodReply = ""; }
       if ((d.reply && d.reply.length) || (d.thinking && d.thinking.length)) sawContent = true;
+      if (d.reply && d.reply.length) lastGoodReply = d.reply;
 
       if (!started) {
         // CRITICAL: a bare count increase is NOT enough - the empty turn
@@ -333,7 +366,10 @@
           // The site can be slow to even CREATE the reply turn. Keep waiting -
           // only give up after a long fully-silent window.
           if (!preStartSilent) preStartSilent = Date.now();
-          if (Date.now() - preStartSilent > 60000) return { kind: "empty" };
+          // diag: WHICH empty-branch fired matters - a dead post-regenerate turn
+          // on Qwen kept ending "empty" with a complete command in the net tap,
+          // and without the branch name the cause was unfindable from the log.
+          if (Date.now() - preStartSilent > 60000) { diag("empty.why", { branch: "preStart", rep: (d.reply||"").length }); return { kind: "empty" }; }
           await sleep(200);
           continue;
         }
@@ -422,6 +458,7 @@
       if (!sawContent) {
         if (!warmSince) warmSince = Date.now();
         if (Date.now() - warmSince < WARMUP_MS) { await sleep(200); continue; }
+        diag("empty.why", { branch: "warmup", rep: (d.reply||"").length, lastGood: lastGoodReply.length });
         return { kind: "empty" };
       }
 
@@ -435,7 +472,10 @@
         reasonSince = 0;
       }
 
-      const r = d.reply;
+      // Blank-read guard: if THIS read came back empty but the same turn had
+      // real text a tick ago, classify that text - see lastGoodReply above.
+      let r = d.reply;
+      if (!r && lastGoodReply) { r = lastGoodReply; diag("reply.blankReadFallback", { len: r.length }); }
       // "Conversation too long" / "server busy" notices are always SHORT system
       // messages; gating on a short reply stops the model's own long output
       // (which may quote those phrases) from tripping them.
@@ -548,7 +588,7 @@
       // The site caps output length and shows a native "Continue" button when it
       // truncates. We try clicking it directly (same turn) in the loop.
       if (P.findContinueBtn()) return { kind: "truncated", text: r, item: d.item };
-      if (r === "") return { kind: "empty" };
+      if (r === "") { diag("empty.why", { branch: "finalBlank" }); return { kind: "empty" }; }
       return { kind: "text", text: r };
     }
     return { kind: "timeout" };
@@ -1204,6 +1244,11 @@
     A.stop = true;
     A.stopping = true;
     A.stopAt = Date.now(); // grace anchor for the regenerate-as-resume gates
+    // Baseline for the stop-retry growth gate (see the self-heal in the meter
+    // loop): a retry is only allowed if the reply keeps growing PAST this,
+    // proving the first stop click was swallowed. Without it, retries clicked a
+    // wedged (already-stopped) stop button and Gemini killed the NEXT turn.
+    A.stopStreamLen = P.streamLen ? P.streamLen() : 0;
     A.userStopped = true; // suppress auto-resume until the next user message
     A.resumeArmed = false; // a stop overrides any pending regenerate grace
     // Disarm any pending optimistic pre-hide (armed in submitAndGetBase for the
@@ -1601,7 +1646,15 @@
       }
 
       // 3. Assistant command turns → live loading while streaming, ✓ when done.
-      if (P.isAssistantItem(item) && ZSParse.hasCommandShape(txt)) {
+      // ONLY in a real ZeroScript session (started or bootstrapping). Without
+      // this gate, a plain never-started chat where the model merely EXPLAINS
+      // the command format (a {"command":...} example in its answer) got the
+      // example MASKED behind a tool chip - hiding genuine content the user
+      // asked for. Same principle as domHasZsSignal: a command shape alone is
+      // not proof of a session. (Branches 1/2 above key off OUR OWN injected
+      // markers, which only exist in real sessions, so they need no gate.)
+      if (P.isAssistantItem(item) && ZSParse.hasCommandShape(txt) &&
+          (A.started || A.starting)) {
         // Regenerate transition (see zRegenLen capture in regenResume): the site is
         // still showing the OLD command text after a post-stop regenerate, before it
         // wipes and re-streams. Keep the coherent red "stopped" look instead of
@@ -1891,7 +1944,7 @@
   const ui = (() => {
     let root, bar, dot, brandEl, stateEl, actionBtn, stopBtn, switchBtn, supportBtn, discordEl, menuEl, unstableEl;
     let cover, coverRaf, barRaf;
-    let bridgeOk = false, studioDown = false, placeDown = false, appDown = false, addonOk = false;
+    let bridgeOk = false, studioDown = false, placeDown = false, appDown = false, addonOk = false, studioProcUp = false;
     let wasConnected = false, bridgeBannerEl = null;
 
     function build() {
@@ -2292,6 +2345,13 @@
 
     function refreshSetup(bridgeConnected) {
       if (setupSeen || bridgeConnected) { hideSetup(); return; }
+      // Bridge is down, but if the user is just READING an existing
+      // conversation with no ZeroScript session (the "No agent here" state),
+      // a "bridge down" onboarding popup is pure noise - they may not want an
+      // agent here at all (user request). Keep it for the states where the
+      // bridge actually matters: a fresh/empty chat (the Start affordance is
+      // showing) or a conversation with a live/starting session.
+      if (!A.started && !A.starting && !P.chatIsEmpty()) { hideSetup(); return; }
       showSetup();
     }
 
@@ -2337,12 +2397,24 @@
           // stale "N tools" text below, reading as if nothing was wrong.
           toneClass = "warn"; warn = true;
           msg = `<b>Agent active</b> · bridge offline, run the ZeroScript bridge`;
+        } else if ((placeDown || appDown || studioDown) && addonOk) {
+          // DEGRADED session by CHOICE: the user started the agent with Roblox
+          // down but other MCP server(s) alive (the "Start agent (Roblox
+          // offline)" path) - they may only want the addon tools (e.g. Blender).
+          // Keep the YELLOW dot as the honest health signal, but do NOT keep the
+          // red imperative "open Roblox Studio" nag on screen for the whole
+          // session (warn=false → no zs-state-warn red text). The full nag
+          // still shows when NO server is usable (the branches below).
+          toneClass = "warn";
+          msg = `<b>Agent active</b>${tools ? ` · ${tools} tools` : ""} · Roblox offline`;
         } else if (placeDown) {
           toneClass = "warn"; warn = true;
           msg = `<b>Agent active</b> · open a place in Roblox Studio`;
         } else if (appDown || studioDown) {
           toneClass = "warn"; warn = true;
-          msg = `<b>Agent active</b> · open Roblox Studio & enable its MCP server`;
+          msg = studioProcUp
+            ? `<b>Agent active</b> · Studio is open but not connected - open <b>Assistant Settings &gt; MCP Servers</b> in Studio`
+            : `<b>Agent active</b> · open Roblox Studio & enable its MCP server`;
         } else {
           toneClass = "active";
           // No inline dot here: the leading status dot already shows green, two
@@ -2369,7 +2441,9 @@
           toneClass = "warn"; warn = true;
           msg = !A.bridge.connected
             ? `Run the <b>ZeroScript bridge</b> on your PC.`
-            : `<b>Roblox Studio offline</b> - start with your other MCP server(s).`;
+            : studioProcUp
+              ? `<b>Studio open but not connected</b> - open <b>Assistant Settings &gt; MCP Servers</b> in Studio, or start without it.`
+              : `<b>Roblox Studio offline</b> - start with your other MCP server(s).`;
           label = "▶ Start agent (Roblox offline)"; kind = "start-degraded";
         } else {
           toneClass = "warn"; warn = true;
@@ -2377,11 +2451,13 @@
             ? `Run the <b>ZeroScript bridge</b> on your PC.`
             : placeDown
               ? `Open a <b>place</b> in Roblox Studio.`
-              : appDown
-                ? `Open <b>Roblox Studio</b> &amp; enable its MCP server.`
-                : studioDown
+              : (appDown || studioDown) && studioProcUp
+                ? `Studio is open but not connected - open <b>Assistant Settings &gt; MCP Servers</b> in Studio.`
+                : appDown
                   ? `Open <b>Roblox Studio</b> &amp; enable its MCP server.`
-                  : `Open <b>Roblox Studio</b> for the tools.`;
+                  : studioDown
+                    ? `Open <b>Roblox Studio</b> &amp; enable its MCP server.`
+                    : `Open <b>Roblox Studio</b> for the tools.`;
           label = "▶ Start Roblox agent"; kind = "start";
         }
         disabled = !bridgeOk && !addonOk;
@@ -2472,11 +2548,22 @@
       const noPlace = studioOff && s.studioApp === true;
       const ok = mcpOk && !studioOff;
       dot.className = s.connected ? (ok ? "on" : "warn") : "off";
+      // Studio PROCESS running on the machine (bridge-side tasklist check).
+      // Splits noApp into its two truly different situations: Studio not
+      // launched at all vs Studio OPEN but its MCP plugin never registered
+      // with the bridge. The plugin only attempts to register ONCE (at Studio
+      // boot or on a panel/toggle interaction) and never retries by itself,
+      // so for the second case "open Roblox Studio" is dead-end advice - the
+      // action that actually works (validated live 3x, 2026-07-11) is opening
+      // Assistant Settings > MCP Servers inside the already-open Studio.
+      const procUp = s.studioProc === true;
       let txt;
       if (!s.connected) txt = "Bridge offline, run the ZeroScript bridge";
       else if (!mcpOk) txt = "Bridge OK, open Roblox Studio";
       else if (noPlace) txt = "Roblox Studio is open but no place is loaded - open a place";
-      else if (noApp) txt = "Roblox Studio not connected - open it and enable its MCP server";
+      else if (noApp) txt = procUp
+        ? "Studio is open but not connected - in Studio, open Assistant Settings > MCP Servers (or toggle its MCP server off/on)"
+        : "Roblox Studio not connected - open it and enable its MCP server";
       else if (studioOff) txt = "Studio not connected, enable the MCP server in Roblox Studio";
       else txt = `Connected · ${totalTools} tools ready`;
       dot.title = txt; // full bridge detail on hover over the status dot
@@ -2484,6 +2571,7 @@
       studioDown = studioOff;
       placeDown = noPlace;
       appDown = noApp;
+      studioProcUp = procUp;
       // A non-Roblox MCP (Blender, Sketchfab, ...) that is actually alive. When
       // Roblox itself is down but such a server is present, the session can still
       // start in a DEGRADED mode - the agent just can't touch Roblox until Studio
@@ -3126,10 +3214,32 @@
     // "■ Stop" the user has to press again is exactly the bounce we're killing.
     if (A.stopping && !A.running && !A.toolRunning) {
       if (A.started && P.isHardGenerating()) {
-        if (Date.now() - (A.stopRetryAt || 0) > 800) {
+        // CRITICAL: only re-click the native stop if the reply has ACTUALLY kept
+        // growing since the last stop click. On Gemini (and GLM) the stop button
+        // WEDGES visible for up to ~10s after a successful stop, so the old
+        // unconditional retry clicked a stop with NO live stream behind it -
+        // and Gemini queues that stray abort against the conversation, then
+        // KILLS THE NEXT reply the instant it starts ("Vous avez interrompu
+        // cette réponse" on a message the user never stopped - validated live,
+        // 2026-07: two stray stop.retry clicks after a ZS Stop made the next
+        // two user turns die instantly; with no stray clicks the same flow
+        // worked). A swallowed first click - the case this retry exists for -
+        // always shows up as the stream STILL writing, i.e. growth past the
+        // baseline captured at stop time (A.stopStreamLen, set in stopLoop /
+        // onNativeStop and re-based after each retry so every retry needs
+        // fresh growth of its own).
+        const grown = (P.streamLen ? P.streamLen() : 0) > (A.stopStreamLen || 0) + 24;
+        if (grown && Date.now() - (A.stopRetryAt || 0) > 800) {
           A.stopRetryAt = Date.now();
+          A.stopStreamLen = P.streamLen ? P.streamLen() : 0;
           try { P.stopGeneration(); } catch {}
           diag("stop.retry");
+        } else if (!grown && Date.now() - (A.stopAt || 0) > 2500) {
+          // Wedged stop button on a dead stream (text frozen since the stop):
+          // the site is effectively quiet - release "Stopping…" instead of
+          // holding it for the whole wedge window.
+          A.stopping = false;
+          diag("stop.quiet", { wedged: true });
         }
       } else {
         A.stopping = false;
@@ -3168,7 +3278,7 @@
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg && msg.type === "zs-status") {
-      ui.setStatus({ connected: msg.connected, mcpAlive: msg.mcpAlive, studio: msg.studio, studioApp: msg.studioApp, tools: msg.tools, servers: msg.servers });
+      ui.setStatus({ connected: msg.connected, mcpAlive: msg.mcpAlive, studio: msg.studio, studioApp: msg.studioApp, studioProc: msg.studioProc, tools: msg.tools, servers: msg.servers });
     }
   });
 
@@ -3210,7 +3320,19 @@
       const txt = it.textContent || "";
       if (txt.includes(ZS.SYS_MARKER)) return true;
       if (/(^|\n)\s*Output of '[^']+':/.test(txt) || txt.includes("(System note:")) return true;
-      if (P.isAssistantItem(it) && ZSParse.hasCommandShape(txt)) return true;
+      // Deliberately NO bare command-shape test here. An assistant turn that
+      // merely CONTAINS {"command":...} / ###LUA### is NOT proof of a session:
+      // in a plain, never-started chat the model can simply EXPLAIN the format
+      // (docs, examples, the user pasting our README) - that false positive
+      // flipped A.started on, which armed the auto-resume watchdog, EXECUTED
+      // the quoted JSON as a real command and injected its result into a chat
+      // that had no agent at all (user-reported). A command only counts as a
+      // session signal once it was actually RUN - and an executed command is
+      // always followed by our injected "Output of '...'" feedback turn, which
+      // the test above already catches. Virtualization (the marker turns
+      // scrolling out of the DOM) is covered by the persisted per-conversation
+      // key set (startedSessions / zsStartedSessions in rememberSession), not
+      // by this heuristic.
     }
     return false;
   }
@@ -3370,6 +3492,9 @@
       A.stop = true;
       A.resumeArmed = false; // a stop overrides any pending regenerate grace
       A.stopAt = Date.now(); // grace anchor for the regenerate-as-resume gates
+      // Same growth baseline as stopLoop: the stop-retry self-heal must only
+      // re-click if the stream keeps writing past this point (see stop.retry).
+      A.stopStreamLen = P.streamLen ? P.streamLen() : 0;
       // If our loop is live, mirror the same "Stopping…" feedback as our own
       // Stop button so the bar reflects the wind-down instead of flickering.
       if (A.running && !A.stopping) { A.stopping = true; ui.markStopping(); }

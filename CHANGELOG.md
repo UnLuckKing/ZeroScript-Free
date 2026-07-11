@@ -2,6 +2,77 @@
 
 All notable changes to ZeroScript Free are documented here.
 
+## [1.4.1] - 2026-07-11
+
+Robustness release focused on the Roblox Studio connection lifecycle. Every
+fix below was reproduced and validated live against a real Studio + Blender
+setup, including the Roblox-side bugs reported on the devforum (StudioMCP
+stale-pipe disconnects, MCP toggle turning off after a Studio update).
+
+### Fixed
+- **Phantom "Studio connected" state**: leftover `StudioMCP.exe` processes
+  from a previous session or a Studio crash kept answering the bridge as if a
+  Studio were attached, so the terminal and the extension showed green with
+  Studio fully closed. The bridge now kills orphaned `StudioMCP.exe` at boot
+  (only when no real Studio window exists, so a live connection can never be
+  hit), and the boot banner re-confirms a positive probe before announcing a
+  connection.
+- **Status dot stuck green with Studio closed**: when StudioMCP advertised an
+  empty tool catalogue (Studio closed at launch), the connectivity probe
+  returned "unknown" instead of "disconnected", and the extension's
+  don't-degrade-on-unknown rule kept the dot green forever. An alive Roblox
+  proxy with an empty catalogue is now an authoritative "not connected".
+- **Studio opened after the bridge was never detected** (yellow until a full
+  bridge restart): two combined causes. (1) Nothing ever re-asked for the
+  tool catalogue once the launch-time retry window expired - the watcher now
+  re-polls `tools/list` while the catalogue is empty, so a late-attaching
+  Studio is picked up within seconds. (2) Studio's MCP plugin registers with
+  the MCP channel exactly ONCE (late in Studio's boot, or when the Assistant
+  Settings > MCP Servers panel is opened/toggled) and never retries; the
+  bridge's own recovery restarts could kill the MCP listener at that exact
+  moment, permanently orphaning the plugin. The bridge no longer restarts the
+  Roblox proxy while a Studio window is running, and both the terminal and
+  the extension now say the one thing that actually fixes an orphaned
+  plugin: open Assistant Settings > MCP Servers in Studio (validated three
+  times live; a proxy-side restart provably cannot repair it).
+- **Watcher crash silently disabling all Studio monitoring**: an unbound
+  variable in the place-churn detector could kill the background watcher
+  right after a reconnect, silently stopping every status update until the
+  next bridge restart. Fixed, and both watchers are now supervised: a crash
+  is logged in red and the watcher restarts itself in 5 seconds.
+- Boot/connection messages no longer blame the merged multi-server tool count
+  on Roblox ("49 tools loaded but NO Roblox Studio connected" when 22 of
+  those were Blender's): every Roblox-specific message now uses the
+  Roblox-only count.
+
+### Added
+- **Fast startup with addon servers**: MCP servers now launch in parallel and
+  the extension-facing socket opens immediately, so a slow or absent Roblox
+  Studio no longer delays Blender (or any addon) by up to a minute. The
+  Roblox diagnostic continues in the background and the bridge pushes status
+  updates to already-connected extensions as servers come up - previously an
+  extension that connected early could keep a stale "addon offline" snapshot
+  forever (greyed Start button instead of the orange degraded start).
+- **Self-healing for Roblox's own disconnect bugs**: sustained loss of the
+  Studio connection (stale named-pipe state, periodic silent disconnects)
+  now auto-restarts the Roblox proxy - but only when no Studio window is
+  running, where it is safe and effective.
+- **Studio-update detection**: when a disconnect coincides with a new Studio
+  version folder appearing, the terminal says Studio likely turned its MCP
+  toggle off after updating (a known Roblox bug) and points at the exact
+  setting, instead of retrying a recovery that cannot work.
+- Extension messages distinguish "Roblox Studio is not running" from "Studio
+  is running but not connected" (new `studio_proc` status field), each with
+  its own corrective step.
+- Terminal spinner during slow startup phases (server launch, Studio
+  attach), so the console never looks frozen; only one spinner animates at a
+  time.
+- start.bat hardening: refuses to run from an unextracted ZIP, handles
+  missing winget, rescans install folders after a winget install (PATH not
+  refreshed), prints the Python version and the bridge's exit code on
+  screen, and logs the Windows build - so a single screenshot of the
+  terminal carries enough context for support.
+
 ## [1.4.0] - 2026-07-08
 
 ### Added

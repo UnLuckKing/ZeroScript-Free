@@ -43,6 +43,14 @@ let studioConnected = null;
 // unknown. studioApp=true with studioConnected=false means "Studio open but no
 // place"; studioApp=false means "Studio closed OR its MCP option disabled".
 let studioApp = null;
+// true/false = a Roblox Studio WINDOW/PROCESS exists on this machine (checked
+// bridge-side via tasklist); null = unknown/old bridge. Distinguishes the two
+// studioApp=false sub-cases the UI must word differently: Studio genuinely not
+// launched ("open Roblox Studio") vs Studio OPEN but its MCP plugin never
+// registered with the bridge - the documented fix for the latter is opening
+// Assistant Settings > MCP Servers inside Studio (validated live 3x), which
+// "open Roblox Studio" wording completely fails to convey.
+let studioProc = null;
 
 function log(...a) {
   console.log("[zs-bg]", ...a);
@@ -87,6 +95,7 @@ function connect() {
     mcpAlive = false;
     studioConnected = null;
     studioApp = null;
+    studioProc = null;
     serversCache = [];
     stopHeartbeat();
     failAllPending("bridge connection closed");
@@ -205,6 +214,9 @@ function handleBridgeMessage(msg) {
   if ("studio_app" in msg && (typeof msg.studio_app === "boolean" || msg.studio_app === null)) {
     studioApp = msg.studio_app;
   }
+  if ("studio_proc" in msg && (typeof msg.studio_proc === "boolean" || msg.studio_proc === null)) {
+    studioProc = msg.studio_proc;
+  }
   if (msg.type === "studio_status") {
     resolvePending(msg.id, { ok: true, studio: studioConnected });
     broadcastStatus();
@@ -274,7 +286,7 @@ function failAllPending(reason) {
 
 // ── status push to any open DeepSeek tab + popup ─────────────────────────
 function statusObj() {
-  return { type: "zs-status", connected, mcpAlive, studio: studioConnected, studioApp, tools: toolsCache.length, servers: serversCache };
+  return { type: "zs-status", connected, mcpAlive, studio: studioConnected, studioApp, studioProc, tools: toolsCache.length, servers: serversCache };
 }
 
 function broadcastStatus() {
