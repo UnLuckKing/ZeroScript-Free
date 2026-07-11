@@ -11,6 +11,20 @@ Control Roblox Studio with AI directly from your browser - read/edit scripts, ru
 
 Six AI providers are supported: **DeepSeek** (chat.deepseek.com, recommended), **Google Gemini** (gemini.google.com), **Kimi** (kimi.com, Moonshot AI), **GLM** (chat.z.ai, Z.ai), **Qwen** (chat.qwen.ai) and **Arena** (arena.ai, a multi-model playground). Gemini and Kimi can be unstable: Gemini tends to stop using the Roblox tools in long sessions, and Kimi sometimes uses its own native tools instead of the Roblox commands. On Arena, use **Direct** mode (ZeroScript only supports Direct; it blocks Start in Battle / Side-by-Side / Agent modes). DeepSeek is the recommended provider.
 
+## Multi-model team mode (1.5 preview)
+
+Open the ZeroScript extension popup and enable **Multi-model team**. Choose a
+builder and reviewer, then keep each selected provider open in its own browser
+tab. The popup shows which model tabs are online and which model currently owns
+the Studio lock.
+
+Team mode routes every provider through one shared coordinator. Only one model
+may call Roblox Studio tools at a time; other models receive a retry instruction
+instead of modifying the place concurrently. This makes it safe to use one tab
+for implementation and another for review/debugging while sharing the same MCP
+bridge and project memory. Disable team mode to restore the original independent
+single-model behavior.
+
 > 💬 **Stuck? Join the [Discord community](https://discord.gg/9aNyZsMWcb)** get help, share feedback, and follow updates.
 
 > *Also known as: ZeroScript Roblox, ZeroScript free download, Roblox DeepSeek agent, Roblox Gemini agent, Roblox Kimi agent, Roblox GLM agent, Roblox Qwen agent, Roblox Arena agent, Roblox Studio AI automation, Luau AI, MCP Roblox, lemonade alternative free, lemonade.gg alternative, free Roblox AI agent, free lemonade roblox alternative*
