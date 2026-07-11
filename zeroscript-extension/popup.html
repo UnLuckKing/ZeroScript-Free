@@ -13,6 +13,10 @@
     .dot.on { background: #34d399; box-shadow: 0 0 8px #34d399; }
     .dot.warn { background: #fbbf24; box-shadow: 0 0 8px #fbbf24; }
     .row { font-size: 12px; opacity: 0.85; margin: 6px 0; }
+    .team { margin: 12px 0 8px; padding: 10px; border-radius: 9px; background: rgba(255,255,255,.06); }
+    .team label { display:flex; align-items:center; justify-content:space-between; font-size:12px; font-weight:600; }
+    .team input { width:auto; }
+    .team select { width:100%; margin-top:6px; padding:6px; border-radius:6px; color:#e8e8ec; background:#24242a; border:1px solid #3b3b44; }
     button { width: 100%; margin-top: 8px; padding: 8px; border: 0; border-radius: 8px; cursor: pointer; font-size: 12px; }
     .ghost { background: rgba(255,255,255,0.08); color: #e8e8ec; }
     .kofi { background: rgba(255,105,135,.16); color: #ff8fa3; border: 1px solid rgba(255,105,135,.4) !important; font-weight: 700; }
@@ -25,6 +29,12 @@
     <div class="row" id="state">Bridge: …</div>
     <div class="row" id="tools"></div>
     <div class="row" id="servers" style="white-space:pre-line; font-family:ui-monospace,monospace; opacity:0.75"></div>
+    <div class="team">
+      <label>Multi-model team <input type="checkbox" id="teamEnabled"></label>
+      <select id="writer" title="Primary builder"></select>
+      <select id="reviewer" title="Review model"></select>
+      <div class="row" id="teamState">Single-model mode</div>
+    </div>
     <button class="ghost" id="reconnect">↻ Reconnect bridge</button>
     <button class="ghost" id="restart">⟳ Restart Roblox server</button>
     <button class="kofi" id="kofi">♥ Tip the developer on Ko-fi</button>
