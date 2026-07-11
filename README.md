@@ -25,6 +25,16 @@ for implementation and another for review/debugging while sharing the same MCP
 bridge and project memory. Disable team mode to restore the original independent
 single-model behavior.
 
+### Automatic team workflow (1.6)
+
+The popup also accepts one complete goal and runs it through three guarded
+phases: **Builder → Reviewer → QA / Playtest**. Each role may use a different
+free web model. The reviewer independently inspects and fixes the real Studio
+state; QA runs the experience, reads Output, checks the feature and requests a
+screen capture when vision is available. Task state survives extension worker
+restarts, and the popup provides Retry and Cancel controls when a provider tab
+is offline, busy, rate-limited, or missing a started ZeroScript session.
+
 > 💬 **Stuck? Join the [Discord community](https://discord.gg/9aNyZsMWcb)** get help, share feedback, and follow updates.
 
 > *Also known as: ZeroScript Roblox, ZeroScript free download, Roblox DeepSeek agent, Roblox Gemini agent, Roblox Kimi agent, Roblox GLM agent, Roblox Qwen agent, Roblox Arena agent, Roblox Studio AI automation, Luau AI, MCP Roblox, lemonade alternative free, lemonade.gg alternative, free Roblox AI agent, free lemonade roblox alternative*

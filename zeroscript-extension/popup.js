@@ -2,12 +2,12 @@
 const KOFI_URL = "https://ko-fi.com/sebattfg";
 const PROVIDERS = ["deepseek", "gemini", "kimi", "glm", "qwen", "arena"];
 
-for (const id of ["writer", "reviewer"]) {
+for (const id of ["writer", "reviewer", "qa"]) {
   const el = document.getElementById(id);
   for (const p of PROVIDERS) {
     const o = document.createElement("option");
     o.value = p;
-    o.textContent = `${id === "writer" ? "Builder" : "Reviewer"}: ${p[0].toUpperCase() + p.slice(1)}`;
+    o.textContent = `${id === "writer" ? "Builder" : id === "reviewer" ? "Reviewer" : "QA / Playtest"}: ${p[0].toUpperCase() + p.slice(1)}`;
     el.appendChild(o);
   }
 }
@@ -17,9 +17,11 @@ function renderTeam(team) {
   document.getElementById("teamEnabled").checked = !!team.config.enabled;
   document.getElementById("writer").value = team.config.writer || "deepseek";
   document.getElementById("reviewer").value = team.config.reviewer || "gemini";
+  document.getElementById("qa").value = team.config.qa || "qwen";
   const online = (team.agents || []).map((a) => a.provider).filter((v, i, a) => a.indexOf(v) === i);
+  const task = team.task;
   document.getElementById("teamState").textContent = team.config.enabled
-    ? `${online.length} model tab${online.length === 1 ? "" : "s"} online${team.writer ? ` · ${team.writer.provider} writing` : " · Studio unlocked"}`
+    ? (task ? `${task.status.toUpperCase()} · ${task.phase} · ${task.provider || "unassigned"}${task.error ? `\n${task.error}` : ""}` : `${online.length} model tab${online.length === 1 ? "" : "s"} online${team.writer ? ` · ${team.writer.provider} writing` : " · Studio unlocked"}`)
     : "Single-model mode";
 }
 
@@ -28,9 +30,20 @@ function saveTeam() {
     enabled: document.getElementById("teamEnabled").checked,
     writer: document.getElementById("writer").value,
     reviewer: document.getElementById("reviewer").value,
+    qa: document.getElementById("qa").value,
   }}, (r) => r && renderTeam(r.team));
 }
-["teamEnabled", "writer", "reviewer"].forEach((id) => document.getElementById(id).addEventListener("change", saveTeam));
+["teamEnabled", "writer", "reviewer", "qa"].forEach((id) => document.getElementById(id).addEventListener("change", saveTeam));
+
+document.getElementById("startTask").addEventListener("click", () => {
+  const goal = document.getElementById("teamGoal").value.trim();
+  if (!goal) return;
+  document.getElementById("teamEnabled").checked = true;
+  saveTeam();
+  setTimeout(() => chrome.runtime.sendMessage({ type: "team_task_start", goal }, (r) => r && renderTeam(r.team)), 100);
+});
+document.getElementById("retryTask").addEventListener("click", () => chrome.runtime.sendMessage({ type: "team_task_retry" }, (r) => r && renderTeam(r.team)));
+document.getElementById("cancelTask").addEventListener("click", () => chrome.runtime.sendMessage({ type: "team_task_cancel" }, (r) => r && renderTeam(r.team)));
 
 function render(s) {
   const dot = document.getElementById("dot");
