@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ZeroScript Free × Roblox Studio Agent",
-  "version": "1.4.1",
-  "description": "Turn DeepSeek, Gemini, Kimi, GLM, Qwen or Arena into a Roblox Studio agent that drives Studio through a local bridge.",
+  "version": "1.5.0",
+  "description": "Connect multiple AI models safely to Roblox Studio through one coordinated bridge.",
   "permissions": ["storage"],
   "host_permissions": [
     "https://chat.deepseek.com/*",
