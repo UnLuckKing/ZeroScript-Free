@@ -55,14 +55,19 @@ let studioProc = null;
 // Shared coordination for every supported AI tab. The bridge remains the one
 // Studio connection; this lease prevents concurrent MCP calls from different
 // models from observing or mutating conflicting state.
-const TEAM_DEFAULTS = { enabled: false, writer: "deepseek", reviewer: "gemini" };
+const TEAM_DEFAULTS = { enabled: false, writer: "deepseek", reviewer: "gemini", qa: "qwen", maxRepairRounds: 2 };
 let teamConfig = { ...TEAM_DEFAULTS };
 const teamAgents = new Map();
 let writerLease = null;
 const WRITE_LEASE_MS = 150000;
+let teamTask = null;
 
 chrome.storage.local.get("zsTeamConfig", (r) => {
   if (r && r.zsTeamConfig) teamConfig = { ...TEAM_DEFAULTS, ...r.zsTeamConfig };
+});
+chrome.storage.local.get("zsTeamTask", (r) => {
+  if (r && r.zsTeamTask && !["done", "cancelled"].includes(r.zsTeamTask.status))
+    teamTask = { ...r.zsTeamTask, status: "waiting", error: "Extension restarted; press Retry to continue." };
 });
 
 function cleanTeamState() {
@@ -77,7 +82,49 @@ function teamObj() {
     config: teamConfig,
     agents: [...teamAgents.entries()].map(([tabId, a]) => ({ tabId, ...a })),
     writer: writerLease && { tabId: writerLease.tabId, provider: writerLease.provider, expiresAt: writerLease.expiresAt },
+    task: teamTask,
   };
+}
+
+function agentFor(provider) {
+  cleanTeamState();
+  return [...teamAgents.entries()].find(([, a]) => a.provider === provider);
+}
+
+function phaseProvider(phase) {
+  return phase === "builder" ? teamConfig.writer : phase === "reviewer" ? teamConfig.reviewer : teamConfig.qa;
+}
+
+function phasePrompt(task) {
+  const shared = `TEAM TASK ${task.id}\nOriginal goal: ${task.goal}\n\nYou are the ${task.phase.toUpperCase()} in a coordinated Roblox Studio team. Use ZeroScript tools, act directly in Studio, and do not merely explain.`;
+  if (task.phase === "builder") return `${shared}\nInspect relevant instances and scripts first. Create a safe Studio checkpoint where available, implement the complete goal, preserve working systems, and test the main path.`;
+  if (task.phase === "reviewer") return `${shared}\nBuilder report:\n${task.lastReport || "No report supplied."}\nIndependently inspect the actual Studio state. Find and directly fix verified functional, security, data-loss, race-condition, mobile UI, and maintainability problems. Do not change correct work merely for style.`;
+  return `${shared}\nPrevious report:\n${task.lastReport || "No report supplied."}\nRun a real playtest, read Output, exercise the feature, and use screen_capture if supported. Fix runtime errors and obvious UI overflow, contrast, or alignment issues, then re-test. Finish only when the tested path is clean or a genuine user-only blocker remains.`;
+}
+
+async function dispatchTask() {
+  if (!teamTask || ["done", "failed", "cancelled"].includes(teamTask.status)) return;
+  const provider = phaseProvider(teamTask.phase);
+  const hit = agentFor(provider);
+  if (!hit) {
+    teamTask.status = "waiting";
+    teamTask.error = `Open and start a ZeroScript session in ${provider}.`;
+    teamTask.updatedAt = Date.now();
+    broadcastTeam();
+    return;
+  }
+  const [tabId] = hit;
+  teamTask.status = "running";
+  teamTask.provider = provider;
+  teamTask.error = null;
+  teamTask.updatedAt = Date.now();
+  await chrome.storage.local.set({ zsTeamTask: teamTask });
+  broadcastTeam();
+  chrome.tabs.sendMessage(tabId, { type: "zs-team-assignment", task: { ...teamTask, prompt: phasePrompt(teamTask) } }).catch((e) => {
+    teamTask.status = "waiting";
+    teamTask.error = String(e && e.message || e);
+    broadcastTeam();
+  });
 }
 
 function broadcastTeam() {
@@ -369,6 +416,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (sender.tab && sender.tab.id != null) {
           teamAgents.set(sender.tab.id, { provider: msg.provider || "unknown", title: sender.tab.title || "", lastSeen: Date.now() });
           broadcastTeam();
+          if (teamTask && teamTask.status === "waiting" && phaseProvider(teamTask.phase) === msg.provider) dispatchTask();
         }
         sendResponse({ ok: true, team: teamObj() });
         break;
@@ -400,6 +448,51 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (writerLease && writerLease.tabId === tabId && (!msg.token || msg.token === writerLease.token)) writerLease = null;
         broadcastTeam();
         sendResponse({ ok: true });
+        break;
+      }
+      case "team_task_start": {
+        const goal = String(msg.goal || "").trim();
+        if (!goal) { sendResponse({ ok: false, error: "Enter a goal first." }); break; }
+        teamTask = { id: `task-${Date.now()}`, goal, phase: "builder", status: "queued", provider: null, round: 0, lastReport: "", error: null, createdAt: Date.now(), updatedAt: Date.now() };
+        await chrome.storage.local.set({ zsTeamTask: teamTask });
+        sendResponse({ ok: true, team: teamObj() });
+        dispatchTask();
+        break;
+      }
+      case "team_task_done": {
+        if (!teamTask || msg.task_id !== teamTask.id || msg.phase !== teamTask.phase) { sendResponse({ ok: false, error: "Stale task result ignored." }); break; }
+        teamTask.lastReport = String(msg.report || "").slice(0, 12000);
+        if (teamTask.phase === "builder") teamTask.phase = "reviewer";
+        else if (teamTask.phase === "reviewer") teamTask.phase = "qa";
+        else { teamTask.phase = "complete"; teamTask.status = "done"; }
+        teamTask.updatedAt = Date.now();
+        await chrome.storage.local.set({ zsTeamTask: teamTask });
+        sendResponse({ ok: true, team: teamObj() });
+        broadcastTeam();
+        if (teamTask.status !== "done") dispatchTask();
+        break;
+      }
+      case "team_task_error": {
+        if (teamTask && msg.task_id === teamTask.id) {
+          teamTask.status = "waiting";
+          teamTask.error = String(msg.error || "Model tab could not run the task.");
+          teamTask.updatedAt = Date.now();
+          await chrome.storage.local.set({ zsTeamTask: teamTask });
+          broadcastTeam();
+        }
+        sendResponse({ ok: true });
+        break;
+      }
+      case "team_task_retry": {
+        if (teamTask) { teamTask.status = "queued"; teamTask.error = null; dispatchTask(); }
+        sendResponse({ ok: !!teamTask, team: teamObj() });
+        break;
+      }
+      case "team_task_cancel": {
+        if (teamTask) { teamTask.status = "cancelled"; teamTask.updatedAt = Date.now(); await chrome.storage.local.set({ zsTeamTask: teamTask }); }
+        writerLease = null;
+        broadcastTeam();
+        sendResponse({ ok: true, team: teamObj() });
         break;
       }
       case "restart_mcp": {
