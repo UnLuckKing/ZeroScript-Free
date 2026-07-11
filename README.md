@@ -73,6 +73,12 @@ Go to https://chat.deepseek.com (recommended), https://gemini.google.com, https:
 - Control play-testing
 - **Remember your project across sessions** persistent project memory saved inside your place
 
+## New in 1.4.1
+
+- **Much more reliable Roblox Studio connection:** the bridge now recovers on its own from the connection issues Studio itself can cause - a stuck/orphaned MCP process, Studio opened after the bridge, or Studio's MCP toggle losing its registration. When it can't fix something automatically (e.g. Studio's MCP plugin needs a manual nudge), the status bar tells you exactly what to click instead of leaving you guessing or forcing a bridge restart.
+- **Faster startup with addon servers:** the bridge no longer waits on Roblox Studio before other MCP servers (like Blender) become usable - addons are ready in seconds instead of up to a minute.
+- **Sturdier bridge:** background monitoring can no longer silently stop working after an error; start.bat is hardened against more first-run edge cases (missing winget, an unextracted ZIP, stale installs).
+
 ## New in 1.4.0
 
 - **Connect other MCP servers alongside Roblox Studio (experimental):** add an addon MCP server (Blender, Sketchfab, or any local MCP command) from the panel's menu. Roblox Studio stays the always-on primary connection; addons are optional extras the AI reaches for only when the task actually needs them, and a Roblox outage never gets confused with an addon outage. When Roblox is down but an addon is still alive, the agent can start in a degraded mode instead of refusing to start at all.
@@ -130,3 +136,7 @@ Go to https://chat.deepseek.com (recommended), https://gemini.google.com, https:
 ## Support
 
 ZeroScript is free. If it saves you time: [Ko-fi](https://ko-fi.com/sebattfg) - Robux tip passes available in the extension panel
+
+---
+
+Credit: the idea for connecting other MCP servers (Blender, Sketchfab, etc.) alongside Roblox Studio came from [javnpa](https://github.com/javnpa).
