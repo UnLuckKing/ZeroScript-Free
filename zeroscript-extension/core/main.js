@@ -965,6 +965,8 @@
                         // Stop click that landed before this loop actually started
     A.loopKey = null; // pinned by syncSessionState once this chat has an id + content
     let truncCount = 0;
+    let finalText = "";
+    let loopError = "";
     const MAX_TRUNC = 6;
     // Re-send the command list after this many successful tool calls. Kept high
     // so the reminder does not bloat the context too often.
@@ -1043,7 +1045,7 @@
           base = await submitAndGetBase(ZS.FEEDBACK.parseError(res.reason, failName));
           continue;
         }
-        if (res.kind === "text") break; // final answer
+        if (res.kind === "text") { finalText = res.text || ""; break; } // final answer
 
         if (res.kind === "tool") {
           const calls = res.calls;
@@ -1153,6 +1155,7 @@
         }
       }
     } catch (e) {
+      loopError = String((e && e.message) || e);
       diag("loop.error", { msg: String((e && e.message) || e) });
       ui.banner("warn", "Internal loop error", String((e && e.message) || e));
     } finally {
@@ -1173,6 +1176,13 @@
       A.loopKey = null;
       ui.showStop(false);
       ui.inputCover(false); // lift the "Agent is working" cover when the loop ends
+      if (A.teamTask) {
+        const task = A.teamTask;
+        A.teamTask = null;
+        bg(loopError || !finalText
+          ? { type: "team_task_error", task_id: task.id, phase: task.phase, error: loopError || "The model stopped without a final report." }
+          : { type: "team_task_done", task_id: task.id, phase: task.phase, report: finalText });
+      }
       P.setInputLock(false); // always unlock, even on error or stop
       diag("loop.end");
     }
@@ -3299,6 +3309,30 @@
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg && msg.type === "zs-status") {
       ui.setStatus({ connected: msg.connected, mcpAlive: msg.mcpAlive, studio: msg.studio, studioApp: msg.studioApp, studioProc: msg.studioProc, tools: msg.tools, servers: msg.servers });
+    }
+    if (msg && msg.type === "zs-team-assignment" && msg.task) {
+      (async () => {
+        const task = msg.task;
+        if (!A.started) {
+          await bg({ type: "team_task_error", task_id: task.id, phase: task.phase, error: `Start a ZeroScript session in ${P.displayName}, then retry.` });
+          return;
+        }
+        if (A.running || A.starting || A.injecting || A.teamTask) {
+          await bg({ type: "team_task_error", task_id: task.id, phase: task.phase, error: `${P.displayName} is busy in another turn.` });
+          return;
+        }
+        A.teamTask = { id: task.id, phase: task.phase };
+        A.userStopped = false;
+        captureSendToken();
+        const base = P.assistantCount();
+        try {
+          await P.typeAndSend(task.prompt);
+          setTimeout(() => { if (!A.running && A.teamTask) agentLoop(base); }, 300);
+        } catch (e) {
+          A.teamTask = null;
+          await bg({ type: "team_task_error", task_id: task.id, phase: task.phase, error: String((e && e.message) || e) });
+        }
+      })();
     }
   });
 
