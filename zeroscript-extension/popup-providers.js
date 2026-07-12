@@ -75,11 +75,16 @@
       if (!current || Number(agent.lastSeen || 0) > Number(current.lastSeen || 0)) byProvider.set(agent.provider, agent);
     }
 
-    const all = ["deepseek", "gemini", "qwen", "kimi", "glm", "arena", ...EXTRA_PROVIDERS.map((provider) => provider.id)];
+    const all = ["deepseek", "gemini", "qwen", "kimi", "glm", "arena", "local", ...EXTRA_PROVIDERS.map((provider) => provider.id)];
     const lines = all.map((id) => {
       const agent = byProvider.get(id);
       const health = teamState.providerHealth && teamState.providerHealth[id];
       if (health) return `✕ ${id}: ${health.status}`;
+      if (id === "local" && teamState.localModel && teamState.localModel.config && teamState.localModel.config.enabled) {
+        return teamState.localModel.ready
+          ? `✓ local: ready (${teamState.localModel.model || "loaded model"})`
+          : `✕ local: ${teamState.localModel.error || "unavailable"}`;
+      }
       if (agent && agent.ready) return `✓ ${id}: ready`;
       if (agent) return `○ ${id}: tab open, session not started`;
       return `· ${id}: closed`;
@@ -101,13 +106,17 @@
   refresh();
   setInterval(refresh, 2000);
 
-  // popup-manager.js is parsed after this file. Load the specialist action pack
-  // on window load so the manager dashboard is guaranteed to exist first.
+  // popup-manager.js is parsed after this file. Load manager add-ons on window
+  // load so the dashboard and base controls are guaranteed to exist first.
   window.addEventListener("load", () => {
-    if (document.querySelector('script[data-zs-manager-actions]')) return;
-    const script = document.createElement("script");
-    script.src = chrome.runtime.getURL("popup-manager-actions.js");
-    script.dataset.zsManagerActions = "1";
-    document.documentElement.appendChild(script);
+    const load = (src, marker) => {
+      if (document.querySelector(`script[data-${marker}]`)) return;
+      const script = document.createElement("script");
+      script.src = chrome.runtime.getURL(src);
+      script.setAttribute(`data-${marker}`, "1");
+      document.documentElement.appendChild(script);
+    };
+    load("popup-manager-actions.js", "zs-manager-actions");
+    load("popup-local.js", "zs-local-settings");
   }, { once: true });
 })();
