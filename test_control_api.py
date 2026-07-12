@@ -5,10 +5,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from control_api import ALLOWED_ACTIONS, ControlState, load_or_create_token
+from control_api import ALLOWED_ACTIONS, ControlState, VERSION, load_or_create_token
 
 
 class ControlApiTests(unittest.TestCase):
+    def test_version(self) -> None:
+        self.assertEqual(VERSION, "1.28.0")
+
     def test_token_is_created_and_reused(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "token.txt"
@@ -35,6 +38,9 @@ class ControlApiTests(unittest.TestCase):
             "enqueue_task", "queue_pause", "queue_resume", "queue_clear", "queue_remove", "build_index",
             "output_watch", "ui_audit", "security_audit", "datastore_lab", "economy_simulator",
             "marketplace_scan", "release_check", "multiplayer_test", "record_test",
+            "diagnose_fix", "decompose_task", "set_automation", "context_compact", "emergency_stop",
+            "clear_notifications", "clear_error_groups", "restore_instances", "visual_ui_compare",
+            "button_test", "remote_fuzzer", "instance_rollback_test", "auto_profile_setup",
         )
         for action in actions:
             self.assertIn(action, ALLOWED_ACTIONS)
