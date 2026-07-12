@@ -4,8 +4,8 @@ chcp 65001 >nul
 cd /d "%~dp0"
 title ZeroScript Hub
 
-if not exist "%~dp0zeroscript_hub.py" (
-  echo ERROR: zeroscript_hub.py bulunamadi.
+if not exist "%~dp0zeroscript_hub_launcher.py" (
+  echo ERROR: ZeroScript Hub dosyalari bulunamadi.
   echo Tum ZIP dosyasini cikardigindan emin ol.
   pause
   exit /b 1
@@ -13,25 +13,25 @@ if not exist "%~dp0zeroscript_hub.py" (
 
 where pyw >nul 2>nul
 if not errorlevel 1 (
-  start "" pyw -3 "%~dp0zeroscript_hub.py"
+  start "" pyw -3 "%~dp0zeroscript_hub_launcher.py"
   exit /b 0
 )
 
 where pythonw >nul 2>nul
 if not errorlevel 1 (
-  start "" pythonw "%~dp0zeroscript_hub.py"
+  start "" pythonw "%~dp0zeroscript_hub_launcher.py"
   exit /b 0
 )
 
 where py >nul 2>nul
 if not errorlevel 1 (
-  py -3 "%~dp0zeroscript_hub.py"
+  py -3 "%~dp0zeroscript_hub_launcher.py"
   exit /b %errorlevel%
 )
 
 where python >nul 2>nul
 if not errorlevel 1 (
-  python "%~dp0zeroscript_hub.py"
+  python "%~dp0zeroscript_hub_launcher.py"
   exit /b %errorlevel%
 )
 
