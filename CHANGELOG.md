@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.19.7
+
+- Added Map/UI Build Mode templates for popular-game map polish, premium simulator UI, full presentation pass, onboarding, and monetization polish.
+- Strengthened the map specialist prompt with compact popular Roblox lobby requirements: spawn view, central action, readable zones, signage, lighting, VFX, traversal, and performance.
+- Strengthened the UI specialist prompt with premium simulator/RNG layout requirements: currency bar, bottom action bar, left menu, result card, feed, panels, feedback states, and mobile-safe sizing.
+- Improved automatic phase selection for presentation, onboarding, shop, gamepass, upgrade, index, and monetization tasks.
+
 ## 1.19.6
 
 - Added a DeepSeek send mode setting: Fast, Safe, and Ultra Safe.
