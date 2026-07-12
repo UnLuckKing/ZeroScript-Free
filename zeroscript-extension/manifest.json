@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ZeroScript Free × Roblox Studio Agent",
-  "version": "1.23.0",
+  "version": "1.23.1",
   "description": "Connect multiple AI models safely to Roblox Studio through one coordinated bridge.",
   "permissions": ["storage", "clipboardWrite"],
   "host_permissions": [
@@ -81,7 +81,13 @@
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://chatgpt.com/*", "https://claude.ai/*", "https://copilot.microsoft.com/*", "https://chat.mistral.ai/*"],
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["core/config.js", "core/parser.js", "providers/browser-chat.js", "providers/chatgpt-fix.js", "core/catastrophic-guard.js", "core/team-reliability.js", "core/main.js"],
+      "css": ["overlay.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://claude.ai/*", "https://copilot.microsoft.com/*", "https://chat.mistral.ai/*"],
       "js": ["core/config.js", "core/parser.js", "providers/browser-chat.js", "core/catastrophic-guard.js", "core/team-reliability.js", "core/main.js"],
       "css": ["overlay.css"],
       "run_at": "document_idle"
