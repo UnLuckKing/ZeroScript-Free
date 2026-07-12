@@ -18,12 +18,13 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const log = (...a) => console.log("[zeroscript]", ...a);
   let teamToken = null;
+  let teamReady = false;
 
   // Every provider tab announces itself to the shared service worker. The
   // heartbeat expires automatically, so closing a model tab removes it from
   // the team display without any special unload handling.
   function registerTeamAgent() {
-    try { chrome.runtime.sendMessage({ type: "team_register", provider: P.id }, () => void chrome.runtime.lastError); } catch {}
+    try { chrome.runtime.sendMessage({ type: "team_register", provider: P.id, ready: teamReady }, () => void chrome.runtime.lastError); } catch {}
   }
   registerTeamAgent();
   setInterval(registerTeamAgent, 7000);
@@ -1390,6 +1391,8 @@
         if (A.stop || readyRes.kind === "stopped") { diag("start.aborted", { kind: readyRes.kind }); return; }
       }
       A.started = true;
+      teamReady = true;
+      registerTeamAgent();
       rememberSession(P.conversationKey()); // survives virtualization AND reloads
       ui.setStarted(true);
       ui.toast(`Agent ready. Ask ${P.displayName} to build something in Roblox.`);
@@ -3457,6 +3460,8 @@
     }
     if (has !== A.started) {
       A.started = has;
+      teamReady = has;
+      registerTeamAgent();
       ui.setStarted(has);
     }
   }

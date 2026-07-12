@@ -33,10 +33,11 @@ function renderTeam(team) {
   document.getElementById("qa").value = team.config.qa || "qwen";
   document.getElementById("approvalMode").value = team.config.approvalMode || "autonomous";
   const online = (team.agents || []).map((a) => a.provider).filter((v, i, a) => a.indexOf(v) === i);
+  const ready = (team.agents || []).filter((a) => a.ready).map((a) => a.provider).filter((v, i, a) => a.indexOf(v) === i);
   const unhealthy = Object.entries(team.providerHealth || {}).map(([p, h]) => `${p}: ${h.status}`).join(", ");
   const task = team.task;
   document.getElementById("teamState").textContent = team.config.enabled
-    ? (task ? `${task.status.toUpperCase()} · ${task.phase} · ${task.provider || "unassigned"}${task.error ? `\n${task.error}` : ""}` : `${online.length} model tab${online.length === 1 ? "" : "s"} online${team.writer ? ` · ${team.writer.provider} writing` : " · Studio unlocked"}`)
+    ? (task ? `${task.status.toUpperCase()} · ${task.phase} · ${task.provider || "unassigned"}${task.error ? `\n${task.error}` : ""}\nModels: ${ready.length} ready / ${online.length} open` : `${ready.length} ready / ${online.length} open model tabs${team.writer ? ` · ${team.writer.provider} writing` : " · Studio unlocked"}`)
     : "Single-model mode";
   if (unhealthy) document.getElementById("teamState").textContent += `\nUnavailable: ${unhealthy}`;
   if (team.checkpoint && team.checkpoint.latest) document.getElementById("teamState").textContent += `\nCheckpoint: ${team.checkpoint.status} · ${team.checkpoint.latest}`;
