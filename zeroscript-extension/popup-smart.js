@@ -19,8 +19,13 @@
   routeState.id = "smartRouteState";
   routeState.className = "row";
   routeState.style.whiteSpace = "pre-wrap";
+  routeState.style.padding = "7px 8px";
+  routeState.style.borderRadius = "7px";
+  routeState.style.background = "rgba(52,211,153,.10)";
+  routeState.style.border = "1px solid rgba(52,211,153,.22)";
   routeState.style.color = "#a7f3d0";
-  routeState.textContent = "Smart router waiting for a task.";
+  routeState.style.fontWeight = "600";
+  routeState.textContent = "ROUTER · waiting for a task";
   const teamState = document.getElementById("teamState");
   teamState.parentNode.insertBefore(routeState, teamState);
 
@@ -62,13 +67,13 @@
     applyRoutingMode(!team.config || team.config.smartRouting !== false);
     const task = team.task;
     if (!task) {
-      routeState.textContent = smartToggle.checked ? "Smart router waiting for a task." : "Manual provider routing enabled.";
+      routeState.textContent = smartToggle.checked ? "ROUTER · waiting for a task" : "ROUTER · manual provider selection";
       return;
     }
 
-    routeState.textContent = task.routingReason || (smartToggle.checked
-      ? `Smart route preparing · ${task.phase || "unknown phase"}`
-      : "Manual provider routing enabled.");
+    routeState.textContent = task.routingReason
+      ? `ROUTER · ${task.routingReason.replace(/^Smart route:\s*/i, "")}`
+      : (smartToggle.checked ? `ROUTER · preparing ${task.phase || "task"}` : "ROUTER · manual provider selection");
 
     const report = String(task.finalReport || task.lastReport || "").trim();
     const reportEl = document.getElementById("teamFinalReport");
