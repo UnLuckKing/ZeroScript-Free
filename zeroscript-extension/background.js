@@ -63,6 +63,7 @@ const WRITE_LEASE_MS = 150000;
 let teamTask = null;
 let teamHistory = [];
 let providerHealth = {};
+let checkpointState = { latest: null, status: "idle", detail: "" };
 
 chrome.storage.local.get("zsTeamConfig", (r) => {
   if (r && r.zsTeamConfig) teamConfig = { ...TEAM_DEFAULTS, ...r.zsTeamConfig };
@@ -76,6 +77,9 @@ chrome.storage.local.get("zsTeamHistory", (r) => {
 });
 chrome.storage.local.get("zsProviderHealth", (r) => {
   if (r && r.zsProviderHealth && typeof r.zsProviderHealth === "object") providerHealth = r.zsProviderHealth;
+});
+chrome.storage.local.get("zsCheckpointState", (r) => {
+  if (r && r.zsCheckpointState) checkpointState = r.zsCheckpointState;
 });
 
 function cleanTeamState() {
@@ -94,6 +98,7 @@ function teamObj() {
     task: teamTask,
     history: teamHistory.slice(-10),
     providerHealth,
+    checkpoint: checkpointState,
   };
 }
 
@@ -139,6 +144,39 @@ function phasePrompt(task) {
   if (task.phase === "ui") return `${shared}\nAct as the UI Designer. Inspect every relevant ScreenGui and capture the running UI when possible. Implement a professional, consistent, responsive desktop/mobile interface with clear hierarchy, feedback states, safe-area handling and working buttons. Preserve the project's visual identity and test interactions in play mode.`;
   if (task.phase === "reviewer") return `${shared}\nBuilder report:\n${task.lastReport || "No report supplied."}\nIndependently inspect the actual Studio state. Find and directly fix verified functional, security, data-loss, race-condition, mobile UI, and maintainability problems. Do not change correct work merely for style.`;
   return `${shared}\nPrevious report:\n${task.lastReport || "No report supplied."}\nRun a real playtest, read Output, exercise the feature, and use screen_capture if supported. Fix runtime errors and obvious UI overflow, contrast, or alignment issues, then re-test. Finish only when the tested path is clean or a genuine user-only blocker remains.`;
+}
+
+function robloxTool(bare) {
+  return toolsCache.find((t) => String(t.name || "").split("/").pop() === bare);
+}
+
+async function createCheckpoint(id) {
+  const tool = robloxTool("execute_luau");
+  if (!tool || !connected || studioConnected === false) return { ok: false, error: "Studio or execute_luau is unavailable." };
+  checkpointState = { latest: checkpointState.latest, status: "saving", detail: id };
+  broadcastTeam();
+  const code = `local ServerStorage=game:GetService("ServerStorage")\nlocal HttpService=game:GetService("HttpService")\nlocal ChangeHistoryService=game:GetService("ChangeHistoryService")\nlocal root=ServerStorage:FindFirstChild("ZeroScriptCheckpoints") or Instance.new("Folder")\nroot.Name="ZeroScriptCheckpoints" root.Parent=ServerStorage\nlocal old=root:FindFirstChild(${JSON.stringify(id)}) if old then old:Destroy() end\nlocal cp=Instance.new("Folder") cp.Name=${JSON.stringify(id)} cp.Parent=root cp:SetAttribute("CreatedAt",os.time())\nlocal count=0\nlocal function parts(inst) local out={} local cur=inst while cur and cur~=game do table.insert(out,1,cur.Name) cur=cur.Parent end return out end\nfor _,inst in game:GetDescendants() do\n if inst:IsA("LuaSourceContainer") and not inst:IsDescendantOf(root) then\n  local ok,source=pcall(function() return inst.Source end)\n  if ok then count+=1 local v=Instance.new("StringValue") v.Name=string.format("%06d",count) v.Value=source v:SetAttribute("PathJson",HttpService:JSONEncode(parts(inst))) v:SetAttribute("ZSClass",inst.ClassName) if inst:IsA("BaseScript") then v:SetAttribute("Disabled",inst.Disabled) end v.Parent=cp end\n end\nend\npcall(function() ChangeHistoryService:SetWaypoint("ZeroScript checkpoint ${id}") end)\nreturn "CHECKPOINT_OK:"..cp.Name..":"..count`;
+  const r = await send({ type: "call_tool", name: tool.name, arguments: { code, datamodel_type: "Edit" }, timeout: 60000 }, 70000);
+  const ok = !!(r && r.ok && /CHECKPOINT_OK:/.test(r.text || ""));
+  checkpointState = { latest: ok ? id : checkpointState.latest, status: ok ? "saved" : "error", detail: ok ? (r.text || "") : ((r && r.error) || (r && r.text) || "Checkpoint failed") };
+  await chrome.storage.local.set({ zsCheckpointState: checkpointState });
+  broadcastTeam();
+  return { ok, id, error: ok ? null : checkpointState.detail };
+}
+
+async function restoreCheckpoint(id) {
+  const tool = robloxTool("execute_luau");
+  if (!id || !tool || !connected || studioConnected === false) return { ok: false, error: "No usable checkpoint or Studio connection." };
+  if (writerLease) return { ok: false, error: `Studio is busy with ${writerLease.provider}. Stop the task first.` };
+  checkpointState = { latest: id, status: "restoring", detail: id };
+  broadcastTeam();
+  const code = `local ServerStorage=game:GetService("ServerStorage")\nlocal HttpService=game:GetService("HttpService")\nlocal ChangeHistoryService=game:GetService("ChangeHistoryService")\nlocal root=ServerStorage:FindFirstChild("ZeroScriptCheckpoints") local cp=root and root:FindFirstChild(${JSON.stringify(id)}) if not cp then return "ROLLBACK_ERROR:checkpoint not found" end\nlocal originals={} local entries={}\nfor _,v in cp:GetChildren() do if v:IsA("StringValue") then local p=v:GetAttribute("PathJson") if p then originals[p]=true table.insert(entries,v) end end end\nlocal function parts(inst) local out={} local cur=inst while cur and cur~=game do table.insert(out,1,cur.Name) cur=cur.Parent end return out end\nlocal removed=0\nfor _,inst in game:GetDescendants() do if inst:IsA("LuaSourceContainer") and not inst:IsDescendantOf(root) then local key=HttpService:JSONEncode(parts(inst)) if not originals[key] then inst:Destroy() removed+=1 end end end\nlocal restored,missing=0,0\nfor _,v in entries do local path=HttpService:JSONDecode(v:GetAttribute("PathJson")) local ok,cur=pcall(function() return game:GetService(path[1]) end) if not ok then cur=nil end for i=2,#path-1 do cur=cur and cur:FindFirstChild(path[i]) end if cur then local inst=cur:FindFirstChild(path[#path]) local class=v:GetAttribute("ZSClass") if inst and inst.ClassName~=class then inst:Destroy() inst=nil end if not inst then inst=Instance.new(class) inst.Name=path[#path] inst.Parent=cur end local wrote=pcall(function() inst.Source=v.Value if inst:IsA("BaseScript") then inst.Disabled=v:GetAttribute("Disabled")==true end end) if wrote then restored+=1 else missing+=1 end else missing+=1 end end\npcall(function() ChangeHistoryService:SetWaypoint("ZeroScript rollback ${id}") end)\nreturn "ROLLBACK_OK:"..restored..":removed="..removed..":missing="..missing`;
+  const r = await send({ type: "call_tool", name: tool.name, arguments: { code, datamodel_type: "Edit" }, timeout: 60000 }, 70000);
+  const ok = !!(r && r.ok && /ROLLBACK_OK:/.test(r.text || ""));
+  checkpointState = { latest: id, status: ok ? "restored" : "error", detail: ok ? (r.text || "") : ((r && r.error) || (r && r.text) || "Rollback failed") };
+  await chrome.storage.local.set({ zsCheckpointState: checkpointState });
+  broadcastTeam();
+  return { ok, error: ok ? null : checkpointState.detail, detail: checkpointState.detail };
 }
 
 async function dispatchTask() {
@@ -495,6 +533,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!goal) { sendResponse({ ok: false, error: "Enter a goal first." }); break; }
         const phases = phasesForGoal(goal);
         teamTask = { id: `task-${Date.now()}`, goal, phases, phaseIndex: 0, phase: phases[0], status: "queued", provider: null, round: 0, lastReport: "", error: null, createdAt: Date.now(), updatedAt: Date.now() };
+        const checkpoint = await createCheckpoint(teamTask.id);
+        teamTask.checkpoint = checkpoint.ok ? checkpoint.id : null;
+        if (!checkpoint.ok) teamTask.error = `Checkpoint warning: ${checkpoint.error}`;
         await chrome.storage.local.set({ zsTeamTask: teamTask });
         sendResponse({ ok: true, team: teamObj() });
         dispatchTask();
@@ -571,6 +612,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         writerLease = null;
         broadcastTeam();
         sendResponse({ ok: true, team: teamObj() });
+        break;
+      }
+      case "team_checkpoint_restore": {
+        const id = msg.id || checkpointState.latest;
+        const r = await restoreCheckpoint(id);
+        sendResponse({ ...r, team: teamObj() });
         break;
       }
       case "restart_mcp": {
