@@ -13,6 +13,15 @@ dist/
 probe.py
 logs/
 
+# ZeroScript local state
+control_token.txt
+hub_settings.json
+hub_profiles.json
+hub_task_templates.json
+zeroscript_memory.db
+zeroscript_memory.db-wal
+zeroscript_memory.db-shm
+
 # System and Python files
 .DS_Store
 Thumbs.db
