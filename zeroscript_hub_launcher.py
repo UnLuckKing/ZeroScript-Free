@@ -22,7 +22,7 @@ ttk.Frame.columnconfigure = _safe_columnconfigure
 
 import zeroscript_hub as hub  # noqa: E402
 
-hub.VERSION = "1.28.0"
+hub.VERSION = "1.29.0"
 hub.QUALITY_LABELS = {
     "Akıllı otomatik": "auto",
     "Turbo": "turbo",
@@ -75,7 +75,7 @@ def _run_updater(self) -> None:
         return
     if not messagebox.askyesno(
         "ZeroScript Güncelle",
-        "Güncel master sürümü indirilecek. Token, Hub ayarları, oyun profilleri, görev şablonları ve MCP config dosyan korunacak. Devam edilsin mi?",
+        "Güncel master sürümü indirilecek. Token, Hub ayarları, oyun profilleri, görev şablonları, öğrenme veritabanı ve MCP config dosyan korunacak. Devam edilsin mi?",
     ):
         return
     try:
@@ -235,10 +235,14 @@ hub.ZeroScriptHub.repair = _safe_repair
 from hub_productivity_ui import install as install_productivity_ui  # noqa: E402
 from hub_workflow_extras import install as install_workflow_extras  # noqa: E402
 from hub_automation_ui import install as install_automation_ui  # noqa: E402
+from hub_learning_ui import install as install_learning_ui  # noqa: E402
+from hub_modern_ui import install as install_modern_ui  # noqa: E402
 
 install_productivity_ui(hub)
 install_workflow_extras(hub)
 install_automation_ui(hub)
+install_learning_ui(hub)
+install_modern_ui(hub)
 
 
 if __name__ == "__main__":
