@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-VERSION = "1.26.0"
+VERSION = "1.27.0"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 17614
 ALLOWED_ACTIONS = {
@@ -34,6 +34,21 @@ ALLOWED_ACTIONS = {
     "set_config",
     "repair_connection",
     "open_provider",
+    "enqueue_task",
+    "queue_pause",
+    "queue_resume",
+    "queue_clear",
+    "queue_remove",
+    "build_index",
+    "output_watch",
+    "ui_audit",
+    "security_audit",
+    "datastore_lab",
+    "economy_simulator",
+    "marketplace_scan",
+    "release_check",
+    "multiplayer_test",
+    "record_test",
 }
 
 
@@ -63,8 +78,8 @@ class ControlState:
             "updatedAt": int(time.time() * 1000),
             "runtime": {"state": "idle", "detail": "Waiting for browser extension"},
         }
-        self.actions: deque[dict[str, Any]] = deque(maxlen=150)
-        self.studio_events: deque[dict[str, Any]] = deque(maxlen=200)
+        self.actions: deque[dict[str, Any]] = deque(maxlen=250)
+        self.studio_events: deque[dict[str, Any]] = deque(maxlen=250)
         self.pair_until = 0.0
 
     def publish(self, payload: dict[str, Any]) -> None:
@@ -80,7 +95,6 @@ class ControlState:
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
             current = json.loads(json.dumps(self.status))
-            # An extension that has not published for 15 seconds is considered stale.
             if int(time.time() * 1000) - int(current.get("updatedAt", 0)) > 15_000:
                 current["extensionConnected"] = False
             return current
