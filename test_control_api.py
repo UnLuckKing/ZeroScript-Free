@@ -30,12 +30,22 @@ class ControlApiTests(unittest.TestCase):
 
     def test_actions_are_fifo_and_consumed_once(self) -> None:
         state = ControlState()
-        for action in ("stop", "retry", "rollback"):
+        actions = ("stop", "retry", "rollback", "start_task", "set_config", "repair_connection", "open_provider")
+        for action in actions:
             self.assertIn(action, ALLOWED_ACTIONS)
-            state.add_action(action)
+            state.add_action(action, {"sample": True})
         first = state.take_actions()
-        self.assertEqual([item["action"] for item in first], ["stop", "retry", "rollback"])
+        self.assertEqual([item["action"] for item in first], list(actions))
         self.assertEqual(state.take_actions(), [])
+
+    def test_pairing_window_opens_and_closes(self) -> None:
+        state = ControlState()
+        self.assertFalse(state.pairing_active())
+        seconds = state.open_pairing(1)
+        self.assertEqual(seconds, 20)
+        self.assertTrue(state.pairing_active())
+        state.pair_until = 0
+        self.assertFalse(state.pairing_active())
 
     def test_studio_events_are_consumed_once(self) -> None:
         state = ControlState()
