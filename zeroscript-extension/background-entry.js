@@ -4,6 +4,47 @@
 // cross-model context, and a reconnect-aware status response.
 
 let zsLastHealthyAt = 0;
+const ZS_SETUP_ERROR_RE = /start a zeroscript session|not started|busy in another turn/i;
+const ZS_BUSY_COOLDOWN_MS = 30000;
+
+function zsRememberSharedError(msg) {
+  if (typeof teamTask === "undefined" || !teamTask || msg.task_id !== teamTask.id) return;
+  const reason = String(msg.error || "Unknown model error");
+  const provider = String(teamTask.provider || msg.provider || "unknown");
+
+  // A tab being busy/not-started is routing state, not project knowledge. Do not
+  // poison the next model's shared memory with the same transient line every
+  // seven-second heartbeat. Cool that provider down so another ready model gets
+  // the phase immediately; if none is ready, the task remains WAITING cleanly.
+  if (ZS_SETUP_ERROR_RE.test(reason)) {
+    providerHealth[provider] = {
+      status: "busy",
+      reason: reason.slice(0, 240),
+      until: Date.now() + ZS_BUSY_COOLDOWN_MS,
+    };
+    chrome.storage.local.set({ zsProviderHealth: providerHealth }).catch(() => {});
+    return;
+  }
+
+  teamTask.sharedReports = Array.isArray(teamTask.sharedReports) ? teamTask.sharedReports : [];
+  const report = `PHASE_ERROR: ${reason}`;
+  const duplicate = teamTask.sharedReports.some((item) =>
+    item.phase === String(msg.phase || teamTask.phase || "unknown") &&
+    item.provider === provider &&
+    item.report === report &&
+    Date.now() - Number(item.at || 0) < 60000
+  );
+  if (!duplicate) {
+    teamTask.sharedReports.push({
+      phase: String(msg.phase || teamTask.phase || "unknown"),
+      provider,
+      report,
+      at: Date.now(),
+    });
+    teamTask.sharedReports = teamTask.sharedReports.slice(-12);
+    chrome.storage.local.set({ zsTeamTask: teamTask }).catch(() => {});
+  }
+}
 
 // Register first so shared reports are attached to the task before the original
 // team_task_done handler advances to the next phase.
@@ -46,17 +87,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.storage.local.set({ zsTeamTask: teamTask }).catch(() => {});
   }
 
-  if (msg.type === "team_task_error" && typeof teamTask !== "undefined" && teamTask && msg.task_id === teamTask.id) {
-    teamTask.sharedReports = Array.isArray(teamTask.sharedReports) ? teamTask.sharedReports : [];
-    teamTask.sharedReports.push({
-      phase: String(msg.phase || teamTask.phase || "unknown"),
-      provider: String(teamTask.provider || msg.provider || "unknown"),
-      report: `PHASE_ERROR: ${String(msg.error || "Unknown model error")}`,
-      at: Date.now(),
-    });
-    teamTask.sharedReports = teamTask.sharedReports.slice(-12);
-    chrome.storage.local.set({ zsTeamTask: teamTask }).catch(() => {});
-  }
+  if (msg.type === "team_task_error") zsRememberSharedError(msg);
 });
 
 importScripts("background.js");
@@ -108,16 +139,19 @@ function zsProviderScore(provider, phase, goal) {
   let score = weights[provider] || 0;
   const text = String(goal || "").toLowerCase();
 
-  if (/\b(ui|gui|hud|menu|panel|mobile|responsive|visual|vfx|map|world|lobby|lighting|arayüz|harita)\b/.test(text)) {
+  // Visual words commonly occur in broad inspection prompts (StarterGui,
+  // Workspace, mobile checks). They must not overpower the analyst/reviewer
+  // ranking. Apply visual specialization only in actual map/UI phases.
+  if (["map", "ui"].includes(phase) && /\b(ui|gui|hud|menu|panel|mobile|responsive|visual|vfx|map|world|lobby|lighting|arayüz|harita)\b/.test(text)) {
     if (provider === "gemini") score += 5;
     if (["qwen", "kimi"].includes(provider)) score += 2;
   }
-  if (/\b(luau|script|server|remote|datastore|profile|security|exploit|runtime|error|economy|inventory)\b/.test(text)) {
-    if (["deepseek", "qwen"].includes(provider)) score += 4;
-    if (provider === "glm") score += 2;
+  if (["analyst", "builder", "reviewer", "qa"].includes(phase) && /\b(luau|script|server|remote|datastore|profile|security|exploit|runtime|error|economy|inventory|inspect|playtest)\b/.test(text)) {
+    if (["deepseek", "qwen"].includes(provider)) score += 3;
+    if (provider === "glm") score += 1;
   }
 
-  const reports = teamTask && Array.isArray(teamTask.sharedReports) ? teamTask.sharedReports : [];
+  const reports = teamTask && Array.isArray(teamTask.sharedReports) ? teamTask.sharedReports.filter((item) => !/^PHASE_ERROR:/i.test(String(item.report || ""))) : [];
   const previous = reports.length ? reports[reports.length - 1].provider : null;
   if (["reviewer", "qa"].includes(phase) && provider === previous && zsReadyProviders().length > 1) score -= 6;
   return score;
@@ -140,7 +174,7 @@ phaseProvider = function zsPhaseProvider(phase) {
 };
 
 function zsReportsForPrompt(task) {
-  const reports = Array.isArray(task.sharedReports) && task.sharedReports.length
+  const source = Array.isArray(task.sharedReports) && task.sharedReports.length
     ? task.sharedReports
     : (Array.isArray(task.events) ? task.events.map((event) => ({
         phase: event.phase,
@@ -148,7 +182,11 @@ function zsReportsForPrompt(task) {
         report: event.report,
         at: event.at,
       })) : []);
-  if (!reports.length) return "No earlier phase report. Inspect the actual Studio state before acting.";
+  const reports = source.filter((item) => {
+    const text = String(item.report || "").trim();
+    return text && !/^PHASE_ERROR:/i.test(text);
+  });
+  if (!reports.length) return "No completed earlier phase report. Inspect the actual Studio state before acting.";
   return reports.slice(-6).map((item, index) => {
     const text = String(item.report || "").slice(0, 3500);
     return `REPORT ${index + 1} — ${String(item.phase || "phase").toUpperCase()} / ${item.provider || "unknown"}\n${text}`;
@@ -176,7 +214,7 @@ phasePrompt = function zsPhasePrompt(task) {
   const sharedReports = zsReportsForPrompt(task);
   const objective = zsPhaseObjective(task.phase);
 
-  return `TEAM TASK ${task.id}\nORIGINAL GOAL\n${task.goal}\n\nCURRENT PHASE\n${String(task.phase || "unknown").toUpperCase()}\n${task.routingReason || "Smart routing is active."}\n\nPHASE OBJECTIVE\n${objective}\n\nSHARED TEAM MEMORY — work already performed by other models\n${sharedReports}\n\nLOCAL PROJECT SCAN\n${audit}\n\nCHECKPOINT\n${task.checkpoint || (checkpointState && checkpointState.latest) || "none"}\n\nACTUAL ROBLOX TOOL NAMES CURRENTLY EXPOSED\n${toolText}\n\nOPERATING RULES\n- Continue from the shared reports; do not behave as though earlier models did nothing.\n- Inspect the current Studio state before changing anything because earlier reports can be incomplete or stale.\n- Use only exact tool names from the live list above or from list_commands. Never invent a tool name.\n- Do not repeat changes already verified unless inspection proves they are broken.\n- Perform the work directly in Studio when tools are available; do not return a handoff instead.\n- All important gameplay state must remain server-authoritative.\n- End with a concrete report containing inspected state, exact changes, test evidence, remaining work, and one verdict line.\n- Use TEAM_VERDICT: PASS when this phase is complete. Reviewer or QA may use TEAM_VERDICT: FIX builder, TEAM_VERDICT: FIX map, or TEAM_VERDICT: FIX ui only for a verified unresolved defect.`;
+  return `TEAM TASK ${task.id}\nORIGINAL GOAL\n${task.goal}\n\nCURRENT PHASE\n${String(task.phase || "unknown").toUpperCase()}\n${task.routingReason || "Smart routing is active."}\n\nPHASE OBJECTIVE\n${objective}\n\nSHARED TEAM MEMORY — completed work from other models\n${sharedReports}\n\nLOCAL PROJECT SCAN\n${audit}\n\nCHECKPOINT\n${task.checkpoint || (checkpointState && checkpointState.latest) || "none"}\n\nACTUAL ROBLOX TOOL NAMES CURRENTLY EXPOSED\n${toolText}\n\nOPERATING RULES\n- Continue from completed shared reports; transient routing errors are not project work.\n- Inspect the current Studio state before changing anything because earlier reports can be incomplete or stale.\n- Use only exact tool names from the live list above or from list_commands. Never invent a tool name.\n- Do not repeat changes already verified unless inspection proves they are broken.\n- Perform the work directly in Studio when tools are available; do not return a handoff instead.\n- All important gameplay state must remain server-authoritative.\n- End with a concrete report containing inspected state, exact changes, test evidence, remaining work, and one verdict line.\n- Use TEAM_VERDICT: PASS when this phase is complete. Reviewer or QA may use TEAM_VERDICT: FIX builder, TEAM_VERDICT: FIX map, or TEAM_VERDICT: FIX ui only for a verified unresolved defect.`;
 };
 
 // Persist the new default immediately so old installations switch to automatic
