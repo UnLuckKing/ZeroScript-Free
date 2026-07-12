@@ -5,7 +5,9 @@ const path = require("path");
 const vm = require("vm");
 
 const source = fs.readFileSync(path.join(__dirname, "background-speed-pack.js"), "utf8");
+const fixes = fs.readFileSync(path.join(__dirname, "background-speed-fixes.js"), "utf8");
 const stored = {};
+const listeners = [];
 const context = {
   console,
   Date,
@@ -57,12 +59,16 @@ const context = {
       sendMessage: (_id, _message, callback) => callback(null),
       update: () => Promise.resolve(),
     },
-    runtime: { lastError: null },
+    runtime: {
+      lastError: null,
+      onMessage: { addListener: (listener) => listeners.push(listener) },
+    },
   },
 };
 
 vm.createContext(context);
 vm.runInContext(source, context, { filename: "background-speed-pack.js" });
+vm.runInContext(fixes, context, { filename: "background-speed-fixes.js" });
 
 (async () => {
   let info = context.zsSpeedGoalInfo("fix the coin text formatting", "auto");
@@ -70,6 +76,9 @@ vm.runInContext(source, context, { filename: "background-speed-pack.js" });
 
   info = context.zsSpeedGoalInfo("Run the Release Manager for the complete project", "auto");
   assert.strictEqual(info.effective, "best");
+
+  info = context.zsSpeedGoalInfo("oyunu komple tamamla", "auto");
+  assert.strictEqual(info.effective, "best", "short broad goals must not be mistaken for tiny fixes");
 
   info = context.zsSpeedGoalInfo("fix DataStore saving", "turbo");
   assert.strictEqual(info.effective, "balanced", "unsafe Turbo work must auto-escalate");
@@ -89,6 +98,10 @@ vm.runInContext(source, context, { filename: "background-speed-pack.js" });
   const prompt = context.phasePrompt({ id: "t1", goal: "fix typo", phase: "builder", performanceMode: "turbo", lastReport: "" });
   assert.match(prompt, /TEST_EVIDENCE/);
   assert.match(prompt, /OUTPUT_ERRORS/);
+
+  assert.ok(listeners.length >= 1, "direct config compatibility listener should be registered");
+  listeners.forEach((listener) => listener({ type: "suite_set_config", qualityMode: "turbo" }));
+  assert.strictEqual(context.zsSuite.qualityMode, "turbo");
 
   console.log("speed pack tests passed");
 })().catch((error) => {
