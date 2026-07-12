@@ -61,6 +61,7 @@ const teamAgents = new Map();
 let writerLease = null;
 const WRITE_LEASE_MS = 150000;
 let teamTask = null;
+let teamHistory = [];
 
 chrome.storage.local.get("zsTeamConfig", (r) => {
   if (r && r.zsTeamConfig) teamConfig = { ...TEAM_DEFAULTS, ...r.zsTeamConfig };
@@ -68,6 +69,9 @@ chrome.storage.local.get("zsTeamConfig", (r) => {
 chrome.storage.local.get("zsTeamTask", (r) => {
   if (r && r.zsTeamTask && !["done", "cancelled"].includes(r.zsTeamTask.status))
     teamTask = { ...r.zsTeamTask, status: "waiting", error: "Extension restarted; press Retry to continue." };
+});
+chrome.storage.local.get("zsTeamHistory", (r) => {
+  if (r && Array.isArray(r.zsTeamHistory)) teamHistory = r.zsTeamHistory.slice(-50);
 });
 
 function cleanTeamState() {
@@ -83,6 +87,7 @@ function teamObj() {
     agents: [...teamAgents.entries()].map(([tabId, a]) => ({ tabId, ...a })),
     writer: writerLease && { tabId: writerLease.tabId, provider: writerLease.provider, expiresAt: writerLease.expiresAt },
     task: teamTask,
+    history: teamHistory.slice(-10),
   };
 }
 
@@ -122,7 +127,7 @@ function phasesForGoal(goal) {
 }
 
 function phasePrompt(task) {
-  const shared = `TEAM TASK ${task.id}\nOriginal goal: ${task.goal}\n\nYou are the ${task.phase.toUpperCase()} in a coordinated Roblox Studio team. Use ZeroScript tools, act directly in Studio, and do not merely explain.`;
+  const shared = `TEAM TASK ${task.id}\nOriginal goal: ${task.goal}\n\nYou are the ${task.phase.toUpperCase()} in a coordinated Roblox Studio team. Use ZeroScript tools, act directly in Studio, and do not merely explain. End your final report with exactly TEAM_VERDICT: PASS when your phase is complete. Reviewer/QA may instead end with TEAM_VERDICT: FIX builder, TEAM_VERDICT: FIX map, or TEAM_VERDICT: FIX ui when a verified unresolved problem must return to that specialist.`;
   if (task.phase === "builder") return `${shared}\nInspect relevant instances and scripts first. Create a safe Studio checkpoint where available, implement the complete goal, preserve working systems, and test the main path.`;
   if (task.phase === "map") return `${shared}\nAct as the Map Designer. Inspect the existing world before editing. Build or improve only the environments required by the goal: layout, spawn safety, navigation, zones, lighting, terrain and appropriate Creator Store assets. Keep gameplay paths clear, performance reasonable, and preserve correct existing work. Playtest traversal after changes.`;
   if (task.phase === "ui") return `${shared}\nAct as the UI Designer. Inspect every relevant ScreenGui and capture the running UI when possible. Implement a professional, consistent, responsive desktop/mobile interface with clear hierarchy, feedback states, safe-area handling and working buttons. Preserve the project's visual identity and test interactions in play mode.`;
@@ -491,15 +496,40 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       case "team_task_done": {
         if (!teamTask || msg.task_id !== teamTask.id || msg.phase !== teamTask.phase) { sendResponse({ ok: false, error: "Stale task result ignored." }); break; }
+        const completedPhase = teamTask.phase;
         teamTask.lastReport = String(msg.report || "").slice(0, 12000);
-        teamTask.phaseIndex = Number.isInteger(teamTask.phaseIndex) ? teamTask.phaseIndex + 1 : 1;
-        if (Array.isArray(teamTask.phases) && teamTask.phaseIndex < teamTask.phases.length) teamTask.phase = teamTask.phases[teamTask.phaseIndex];
-        else { teamTask.phase = "complete"; teamTask.status = "done"; }
+        teamTask.events = Array.isArray(teamTask.events) ? teamTask.events : [];
+        teamTask.events.push({ phase: completedPhase, provider: teamTask.provider, at: Date.now(), report: teamTask.lastReport.slice(0, 1000) });
+        const fix = /TEAM_VERDICT:\s*FIX\s+(builder|map|ui)/i.exec(teamTask.lastReport);
+        if (fix && ["reviewer", "qa"].includes(completedPhase)) {
+          teamTask.round = (teamTask.round || 0) + 1;
+          if (teamTask.round > (teamConfig.maxRepairRounds || 2)) {
+            teamTask.status = "failed";
+            teamTask.error = `Repair limit reached after ${teamTask.round - 1} rounds.`;
+          } else {
+            teamTask.phase = fix[1].toLowerCase();
+            teamTask.repairReturn = completedPhase;
+            teamTask.status = "queued";
+          }
+        } else if (teamTask.repairReturn && ["builder", "map", "ui"].includes(completedPhase)) {
+          teamTask.phase = teamTask.repairReturn;
+          teamTask.repairReturn = null;
+          teamTask.status = "queued";
+        } else {
+          teamTask.phaseIndex = Number.isInteger(teamTask.phaseIndex) ? teamTask.phaseIndex + 1 : 1;
+          if (Array.isArray(teamTask.phases) && teamTask.phaseIndex < teamTask.phases.length) teamTask.phase = teamTask.phases[teamTask.phaseIndex];
+          else { teamTask.phase = "complete"; teamTask.status = "done"; }
+        }
         teamTask.updatedAt = Date.now();
+        if (["done", "failed"].includes(teamTask.status)) {
+          teamHistory.push({ id: teamTask.id, goal: teamTask.goal, status: teamTask.status, rounds: teamTask.round || 0, createdAt: teamTask.createdAt, completedAt: Date.now(), events: (teamTask.events || []).slice(-20) });
+          teamHistory = teamHistory.slice(-50);
+          await chrome.storage.local.set({ zsTeamHistory: teamHistory });
+        }
         await chrome.storage.local.set({ zsTeamTask: teamTask });
         sendResponse({ ok: true, team: teamObj() });
         broadcastTeam();
-        if (teamTask.status !== "done") dispatchTask();
+        if (!["done", "failed"].includes(teamTask.status)) dispatchTask();
         break;
       }
       case "team_task_error": {
