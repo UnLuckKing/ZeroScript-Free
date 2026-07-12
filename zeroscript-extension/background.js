@@ -155,7 +155,7 @@ function phasePrompt(task) {
   if (task.phase === "map") return `${shared}\nAct as the Map Designer. Inspect the existing world before editing. Build or improve only the environments required by the goal: layout, spawn safety, navigation, zones, lighting, terrain and appropriate Creator Store assets. Keep gameplay paths clear, performance reasonable, and preserve correct existing work. Playtest traversal after changes.`;
   if (task.phase === "ui") return `${shared}\nAct as the UI Designer. Inspect every relevant ScreenGui and capture the running UI when possible. Implement a professional, consistent, responsive desktop/mobile interface with clear hierarchy, feedback states, safe-area handling and working buttons. Preserve the project's visual identity and test interactions in play mode.`;
   if (task.phase === "reviewer") return `${shared}\nBuilder report:\n${task.lastReport || "No report supplied."}\nIndependently inspect the actual Studio state. Find and directly fix verified functional, security, data-loss, race-condition, mobile UI, and maintainability problems. Do not change correct work merely for style.`;
-  return `${shared}\nPrevious report:\n${task.lastReport || "No report supplied."}\nRun a real playtest, read Output, exercise the feature, and use screen_capture if supported. Fix runtime errors and obvious UI overflow, contrast, or alignment issues, then re-test. Finish only when the tested path is clean or a genuine user-only blocker remains.`;
+  return `${shared}\nPrevious report:\n${task.lastReport || "No report supplied."}\nRun a real playtest, read Output, exercise the feature, and use screen_capture if supported. Fix runtime errors and obvious UI overflow, contrast, or alignment issues, then re-test. Your report MUST include a TEST_EVIDENCE: line describing the exact tested path and an OUTPUT_ERRORS: line containing NONE or the remaining errors. Finish only when the tested path is clean or a genuine user-only blocker remains.`;
 }
 
 function needsWriteApproval(name) {
@@ -205,6 +205,26 @@ async function scanAndPersistProject() {
   await chrome.storage.local.set({ zsProjectAudit: projectAudit });
   broadcastTeam();
   return { ok, audit: projectAudit, team: teamObj() };
+}
+
+async function collectQAEvidence(report) {
+  const evidence = {
+    reportHasTest: /TEST_EVIDENCE:\s*\S+/i.test(report || ""),
+    reportHasOutput: /OUTPUT_ERRORS:\s*(NONE|\S+)/i.test(report || ""),
+    consoleChecked: false,
+    consoleClean: null,
+    consoleText: "",
+    checkedAt: Date.now(),
+  };
+  const tool = robloxTool("get_console_output");
+  if (tool && connected && studioConnected !== false) {
+    const r = await send({ type: "call_tool", name: tool.name, arguments: {}, timeout: 30000 }, 40000);
+    evidence.consoleChecked = !!(r && r.ok);
+    evidence.consoleText = String(r && (r.text || r.error) || "").slice(0, 8000);
+    if (evidence.consoleChecked) evidence.consoleClean = !/(\[error\]|error:|traceback|stack begin|attempt to|infinite yield)/i.test(evidence.consoleText);
+  }
+  evidence.passed = evidence.reportHasTest && evidence.reportHasOutput && evidence.consoleClean !== false;
+  return evidence;
 }
 
 function robloxTool(bare) {
@@ -637,10 +657,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           await chrome.storage.local.set({ zsProviderHealth: providerHealth });
         }
         teamTask.lastReport = String(msg.report || "").slice(0, 12000);
+        if (completedPhase === "qa") {
+          teamTask.qaEvidence = await collectQAEvidence(teamTask.lastReport);
+          if (!teamTask.qaEvidence.passed) {
+            teamTask.qaRetries = (teamTask.qaRetries || 0) + 1;
+            if (teamTask.qaRetries <= 2) {
+              const missing = [
+                !teamTask.qaEvidence.reportHasTest && "TEST_EVIDENCE",
+                !teamTask.qaEvidence.reportHasOutput && "OUTPUT_ERRORS",
+                teamTask.qaEvidence.consoleClean === false && "clean Studio Output",
+              ].filter(Boolean).join(", ");
+              teamTask.status = "queued";
+              teamTask.error = `QA evidence rejected; repeat the playtest and provide ${missing || "verifiable evidence"}.`;
+              teamTask.lastReport += `\n\nAUTOMATIC QA GATE: ${teamTask.error}\nCaptured Output:\n${teamTask.qaEvidence.consoleText.slice(0, 2500)}`;
+              teamTask.updatedAt = Date.now();
+              await chrome.storage.local.set({ zsTeamTask: teamTask });
+              sendResponse({ ok: true, retrying: true, team: teamObj() });
+              broadcastTeam();
+              dispatchTask();
+              break;
+            }
+            teamTask.status = "failed";
+            teamTask.error = "QA evidence gate failed after two automatic retries.";
+          }
+        }
         teamTask.events = Array.isArray(teamTask.events) ? teamTask.events : [];
         teamTask.events.push({ phase: completedPhase, provider: teamTask.provider, at: Date.now(), report: teamTask.lastReport.slice(0, 1000) });
         const fix = /TEAM_VERDICT:\s*FIX\s+(builder|map|ui)/i.exec(teamTask.lastReport);
-        if (fix && ["reviewer", "qa"].includes(completedPhase)) {
+        if (teamTask.status !== "failed" && fix && ["reviewer", "qa"].includes(completedPhase)) {
           teamTask.round = (teamTask.round || 0) + 1;
           if (teamTask.round > (teamConfig.maxRepairRounds || 2)) {
             teamTask.status = "failed";
@@ -654,14 +698,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           teamTask.phase = teamTask.repairReturn;
           teamTask.repairReturn = null;
           teamTask.status = "queued";
-        } else {
+        } else if (teamTask.status !== "failed") {
           teamTask.phaseIndex = Number.isInteger(teamTask.phaseIndex) ? teamTask.phaseIndex + 1 : 1;
           if (Array.isArray(teamTask.phases) && teamTask.phaseIndex < teamTask.phases.length) teamTask.phase = teamTask.phases[teamTask.phaseIndex];
           else { teamTask.phase = "complete"; teamTask.status = "done"; }
         }
         teamTask.updatedAt = Date.now();
         if (["done", "failed"].includes(teamTask.status)) {
-          teamHistory.push({ id: teamTask.id, goal: teamTask.goal, status: teamTask.status, rounds: teamTask.round || 0, createdAt: teamTask.createdAt, completedAt: Date.now(), events: (teamTask.events || []).slice(-20) });
+          teamHistory.push({ id: teamTask.id, goal: teamTask.goal, status: teamTask.status, rounds: teamTask.round || 0, qaEvidence: teamTask.qaEvidence || null, createdAt: teamTask.createdAt, completedAt: Date.now(), events: (teamTask.events || []).slice(-20) });
           teamHistory = teamHistory.slice(-50);
           await chrome.storage.local.set({ zsTeamHistory: teamHistory });
         }
