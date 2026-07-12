@@ -52,6 +52,10 @@ importScripts("background-task-start-policy.js");
 importScripts("background-speed-pack.js");
 importScripts("background-speed-fixes.js");
 
+// Persistent task queue, project index, Output watcher, scoped checkpoints,
+// compact context, progress estimates and faster stuck-provider recovery.
+importScripts("background-productivity-pack.js");
+
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
     for (const tab of tabs || []) {
