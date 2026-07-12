@@ -201,5 +201,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+// The popup writes configuration directly to chrome.storage to avoid a race
+// with the legacy background message listener. Reload it immediately here so
+// the service worker starts/stops synchronization without requiring a restart.
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !changes[ZS_STUDIO_PANEL_KEY]) return;
+  zsStudioPanel = {
+    ...ZS_STUDIO_PANEL_DEFAULTS,
+    ...((changes[ZS_STUDIO_PANEL_KEY] && changes[ZS_STUDIO_PANEL_KEY].newValue) || {}),
+  };
+  broadcastTeam();
+  if (zsStudioPanel.enabled && String(zsStudioPanel.token || "").trim()) {
+    zsStudioPanelSync().catch(() => {});
+  }
+});
+
 setInterval(() => zsStudioPanelSync().catch(() => {}), 2000);
 setTimeout(() => zsStudioPanelSync().catch(() => {}), 3000);
