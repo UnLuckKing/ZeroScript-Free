@@ -91,6 +91,7 @@ const ZSProvider = (() => {
     STABLE_MS: 9000,         // generating-flag stuck ON but text frozen → done
     RESPONSE_TIMEOUT_MS: 300000,
   };
+  const SAFE_SEND_DELAY_MS = [650, 1600];
 
   // ── Turn classification (multi-signal, virtualization-safe) ──────────────
   function isUserItem(item) {
@@ -563,15 +564,25 @@ const ZSProvider = (() => {
     if (!editor) throw new Error("DeepSeek input box not found");
     editor.focus();
     setTextareaValue(editor, text);
+    // DeepSeek's React composer can lag behind synthetic value writes when the
+    // extension sends tool feedback back-to-back. Wait until the composer really
+    // reflects our text before touching the send button; otherwise the click can
+    // land while the button is still disabled or while the previous value is in
+    // React's queue, which looks like "ZeroScript typed too fast".
+    await waitFor(() => editorText() === String(text), 2500);
     // Attach images LAST, right before the send click - see gemini.js's
     // typeAndSend for why (attaching before retyping the text can sever the
     // site's binding between the pending upload and the message being sent).
     if (images && images.length) { try { await attachImages(images); } catch {} }
-    // Wait for React to re-enable the send button (poll up to 800ms).
+    // Wait for React to re-enable the send button. Use a longer window than the
+    // generic providers because DeepSeek sometimes redraws the footer controls
+    // after mode switches / long pasted MCP results.
     await waitFor(() => {
       const btn = document.querySelector(S.sendBtn);
-      return btn && btn.getAttribute("aria-disabled") !== "true" && !isStopBtn(btn);
-    }, 800);
+      return btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true" && !isStopBtn(btn);
+    }, 2500);
+    const [lo, hi] = SAFE_SEND_DELAY_MS;
+    await sleep(lo + Math.random() * (hi - lo));
     if (!clickSendButton() && !isBusyNow()) {
       pressEnter(editor);
     }
