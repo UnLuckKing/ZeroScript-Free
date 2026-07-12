@@ -2,22 +2,29 @@ name: Export OneMind source
 
 on:
   push:
-    branches: [master]
-  pull_request:
-    branches: [master]
-  workflow_dispatch:
+    branches: [export-onemind-snapshot]
+    paths-ignore:
+      - '.onemind-export.b64'
+
+permissions:
+  contents: write
 
 jobs:
   export:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Remove git metadata
-        run: rm -rf .git
-      - name: Upload repository snapshot
-        uses: actions/upload-artifact@v4
         with:
-          name: onemind-source
-          path: .
-          include-hidden-files: true
-          retention-days: 1
+          ref: export-onemind-snapshot
+      - name: Build repository snapshot
+        run: |
+          rm -f .onemind-export.b64
+          tar --exclude=.git --exclude=.onemind-export.b64 -czf /tmp/onemind-source.tar.gz .
+          base64 -w 0 /tmp/onemind-source.tar.gz > .onemind-export.b64
+      - name: Commit snapshot to temporary branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .onemind-export.b64
+          git commit -m "chore: generate temporary OneMind source snapshot"
+          git push origin HEAD:export-onemind-snapshot
