@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ZeroScript Free × Roblox Studio Agent",
-  "version": "1.26.0",
+  "version": "1.27.0",
   "description": "Connect multiple AI models safely to Roblox Studio through one coordinated bridge.",
   "permissions": ["storage", "clipboardWrite", "notifications"],
   "host_permissions": [
