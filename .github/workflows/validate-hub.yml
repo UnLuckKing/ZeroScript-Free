@@ -40,6 +40,7 @@ jobs:
           node zeroscript-extension/test-parser.js
           node zeroscript-extension/test-control-suite.js
           node zeroscript-extension/test-task-start-policy.js
+          node zeroscript-extension/test-speed-pack.js
       - name: Manifest version parity
         shell: python
         run: |
@@ -48,4 +49,4 @@ jobs:
           bridge = pathlib.Path('bridge.py').read_text('utf-8')
           match = re.search(r'^BRIDGE_VERSION = "([^"]+)"', bridge, re.M)
           assert match and match.group(1) == version, (version, match.group(1) if match else None)
-          assert version == '1.25.1'
+          assert version == '1.26.0'
