@@ -46,6 +46,7 @@ jobs:
           node zeroscript-extension/test-speed-pack.js
           node zeroscript-extension/test-productivity-pack.js
           node zeroscript-extension/test-automation-pack.js
+          node zeroscript-extension/test-automation-fixes.js
       - name: Manifest version parity
         shell: python
         run: |
