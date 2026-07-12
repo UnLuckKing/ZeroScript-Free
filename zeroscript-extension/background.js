@@ -66,6 +66,7 @@ let providerHealth = {};
 let checkpointState = { latest: null, status: "idle", detail: "" };
 let pendingApprovals = [];
 let projectAudit = { status: "idle", report: "", scannedAt: 0 };
+let taskStarting = false;
 
 chrome.storage.local.get("zsTeamConfig", (r) => {
   if (r && r.zsTeamConfig) teamConfig = { ...TEAM_DEFAULTS, ...r.zsTeamConfig };
@@ -192,7 +193,7 @@ for _,inst in game:GetDescendants() do
 end
 if not game:GetService("ServerScriptService"):FindFirstChildWhichIsA("LuaSourceContainer",true) then warn("missing_server","ServerScriptService","No server script found") end
 return "PREFLIGHT_OK:"..HttpService:JSONEncode(report)`;
-  const r = await send({ type: "call_tool", name: tool.name, arguments: { code, datamodel_type: "Edit" }, timeout: 60000 }, 70000);
+  const r = await send({ type: "call_tool", name: tool.name, arguments: { code, datamodel_type: "Edit" }, timeout: 25000 }, 30000);
   return r && r.ok ? String(r.text || "PREFLIGHT_OK:empty") : `PREFLIGHT_ERROR:${String(r && r.error || "scan failed")}`;
 }
 
@@ -513,18 +514,33 @@ function handleBridgeMessage(msg) {
 async function startTeamTask(goal) {
   goal = String(goal || "").trim();
   if (!goal) return { ok: false, error: "Enter a goal first." };
+  if (taskStarting) return { ok: false, error: "A task is already being prepared." };
+  taskStarting = true;
   const phases = phasesForGoal(goal);
   teamTask = { id: `task-${Date.now()}`, goal, phases, phaseIndex: 0, phase: phases[0], status: "scanning", provider: null, round: 0, lastReport: "", error: null, createdAt: Date.now(), updatedAt: Date.now() };
-  const checkpoint = await createCheckpoint(teamTask.id);
-  teamTask.checkpoint = checkpoint.ok ? checkpoint.id : null;
-  if (!checkpoint.ok) teamTask.error = `Checkpoint warning: ${checkpoint.error}`;
-  const audit = await scanAndPersistProject();
-  teamTask.auditReport = audit.audit.report;
-  teamTask.status = "queued";
   await chrome.storage.local.set({ zsTeamTask: teamTask });
   broadcastTeam();
-  dispatchTask();
-  return { ok: true, team: teamObj() };
+  try {
+    const checkpoint = await createCheckpoint(teamTask.id);
+    teamTask.checkpoint = checkpoint.ok ? checkpoint.id : null;
+    if (!checkpoint.ok) teamTask.error = `Checkpoint warning: ${checkpoint.error}`;
+    const audit = await scanAndPersistProject();
+    teamTask.auditReport = audit.audit.report;
+    teamTask.status = "queued";
+    await chrome.storage.local.set({ zsTeamTask: teamTask });
+    broadcastTeam();
+    dispatchTask();
+    return { ok: true, team: teamObj() };
+  } catch (error) {
+    teamTask.status = "queued";
+    teamTask.error = `Preflight skipped: ${String(error && error.message || error)}`;
+    await chrome.storage.local.set({ zsTeamTask: teamTask });
+    broadcastTeam();
+    dispatchTask();
+    return { ok: true, warning: teamTask.error, team: teamObj() };
+  } finally {
+    taskStarting = false;
+  }
 }
 
 function resolvePending(id, value) {
@@ -642,7 +658,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       case "team_task_start": {
         const goal = String(msg.goal || "").trim();
-        sendResponse(await startTeamTask(goal));
+        if (!goal) { sendResponse({ ok: false, error: "Enter a goal first." }); break; }
+        if (taskStarting) { sendResponse({ ok: false, error: "A task is already being prepared.", team: teamObj() }); break; }
+        sendResponse({ ok: true, preparing: true, team: teamObj() });
+        startTeamTask(goal).catch((error) => console.error("[zeroscript] task preparation failed", error));
         break;
       }
       case "team_project_scan": {
