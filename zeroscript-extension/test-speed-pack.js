@@ -83,9 +83,18 @@ vm.runInContext(fixes, context, { filename: "background-speed-fixes.js" });
   info = context.zsSpeedGoalInfo("fix DataStore saving", "turbo");
   assert.strictEqual(info.effective, "balanced", "unsafe Turbo work must auto-escalate");
 
+  info = context.zsSpeedGoalInfo("build a complete inventory system", "turbo");
+  assert.strictEqual(info.effective, "balanced", "broad builds must not run as a one-phase Turbo task");
+
   context.zsSuite.qualityMode = "auto";
   let phases = context.phasesForGoal("fix one UI button");
   assert.deepStrictEqual(Array.from(phases), ["ui"]);
+
+  phases = context.phasesForGoal("Improve the existing UI responsiveness across desktop and mobile");
+  assert.deepStrictEqual(Array.from(phases), ["ui", "qa"], "pure UI work should not pay for an unrelated builder phase");
+
+  phases = context.phasesForGoal("Improve the current map lighting and spawn route");
+  assert.deepStrictEqual(Array.from(phases), ["map", "qa"], "pure map work should not pay for an unrelated builder phase");
 
   phases = context.phasesForGoal("audit DataStore security and purchases");
   assert.ok(phases.includes("reviewer"));
