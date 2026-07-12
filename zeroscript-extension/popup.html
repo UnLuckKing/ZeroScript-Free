@@ -20,6 +20,7 @@
     .team textarea { box-sizing:border-box; width:100%; margin-top:8px; min-height:64px; resize:vertical; padding:7px; border-radius:6px; color:#e8e8ec; background:#24242a; border:1px solid #3b3b44; font:11px "Segoe UI",sans-serif; }
     .task-actions { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
     .task-actions button { margin-top:6px; }
+    .doctor { white-space:pre-wrap; max-height:150px; overflow:auto; padding:8px; border-radius:8px; background:rgba(0,0,0,.18); }
     details.advanced { margin-top:8px; border-top:1px solid rgba(255,255,255,.08); padding-top:7px; }
     details.advanced summary { cursor:pointer; font-size:11px; color:#a1a1aa; user-select:none; }
     button { width: 100%; margin-top: 8px; padding: 8px; border: 0; border-radius: 8px; cursor: pointer; font-size: 12px; }
@@ -56,6 +57,8 @@
       <textarea id="teamGoal" placeholder="Describe the complete Roblox feature or fix..."></textarea>
       <button id="startTask">▶ Start automatic team task</button>
       <button class="ghost" id="scanProject">⌕ Scan current project</button>
+      <button class="ghost" id="connectionDoctor">🩺 Connection Doctor</button>
+      <div class="row doctor" id="doctorReport">Doctor has not run yet.</div>
       <div class="task-actions"><button class="ghost" id="retryTask">↻ Retry</button><button class="ghost" id="cancelTask">■ Cancel</button></div>
       <button class="ghost" id="rollbackTask">↶ Rollback latest checkpoint</button>
       <div class="row" id="teamState">Single-model mode</div>
