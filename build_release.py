@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist"
 ROOT_FILES = [
     "bridge.py", "bridge_core.py", "launch_studio_mcp.py", "start.bat", "start_with_panel.bat",
-    "ZeroScript Hub.bat", "zeroscript_hub.py", "control_api.py",
+    "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py", "control_api.py",
     "install_studio_panel.py", "install_studio_panel.bat",
     "config.json", "LICENSE", "README.md", "CHANGELOG.md",
 ]
@@ -54,6 +54,7 @@ def validate() -> None:
         "launch_studio_mcp.py",
         "control_api.py",
         "zeroscript_hub.py",
+        "zeroscript_hub_launcher.py",
         "install_studio_panel.py",
         "build_release.py",
     )
@@ -75,7 +76,7 @@ def validate() -> None:
             raise RuntimeError(f"Required release file is missing: {required}")
     if not (ROOT / "roblox-plugin" / "ZeroScriptControlPanel.lua").exists():
         raise RuntimeError("Native Studio panel source is missing")
-    for required in ("zeroscript_hub.py", "ZeroScript Hub.bat"):
+    for required in ("zeroscript_hub.py", "zeroscript_hub_launcher.py", "ZeroScript Hub.bat"):
         if not (ROOT / required).exists():
             raise RuntimeError(f"ZeroScript Hub release file is missing: {required}")
 
