@@ -20,6 +20,8 @@
     .team textarea { box-sizing:border-box; width:100%; margin-top:8px; min-height:64px; resize:vertical; padding:7px; border-radius:6px; color:#e8e8ec; background:#24242a; border:1px solid #3b3b44; font:11px "Segoe UI",sans-serif; }
     .task-actions { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
     .task-actions button { margin-top:6px; }
+    details.advanced { margin-top:8px; border-top:1px solid rgba(255,255,255,.08); padding-top:7px; }
+    details.advanced summary { cursor:pointer; font-size:11px; color:#a1a1aa; user-select:none; }
     button { width: 100%; margin-top: 8px; padding: 8px; border: 0; border-radius: 8px; cursor: pointer; font-size: 12px; }
     .ghost { background: rgba(255,255,255,0.08); color: #e8e8ec; }
     .kofi { background: rgba(255,105,135,.16); color: #ff8fa3; border: 1px solid rgba(255,105,135,.4) !important; font-weight: 700; }
@@ -60,16 +62,19 @@
       <div class="row" id="teamHistory"></div>
       <div class="row" id="auditReport" style="white-space:pre-wrap;max-height:130px;overflow:auto"></div>
       <div class="row" id="approvalQueue"></div>
-      <select id="handoffTarget" title="Send context to another assistant">
-        <option value="chatgpt">Handoff: ChatGPT</option>
-        <option value="claude">Handoff: Claude</option>
-        <option value="copilot">Handoff: Microsoft Copilot</option>
-        <option value="mistral">Handoff: Mistral Le Chat</option>
-        <option value="perplexity">Handoff: Perplexity</option>
-        <option value="poe">Handoff: Poe</option>
-        <option value="roblox">Handoff: Roblox Assistant</option>
-      </select>
-      <button class="ghost" id="handoffTask">⇧ Copy context and open assistant</button>
+      <details class="advanced">
+        <summary>Fallback handoff tools</summary>
+        <select id="handoffTarget" title="Send context to another assistant">
+          <option value="chatgpt">Handoff: ChatGPT</option>
+          <option value="claude">Handoff: Claude</option>
+          <option value="copilot">Handoff: Microsoft Copilot</option>
+          <option value="mistral">Handoff: Mistral Le Chat</option>
+          <option value="perplexity">Handoff: Perplexity</option>
+          <option value="poe">Handoff: Poe</option>
+          <option value="roblox">Handoff: Roblox Assistant</option>
+        </select>
+        <button class="ghost" id="handoffTask">⇧ Copy fallback context</button>
+      </details>
     </div>
     <button class="ghost" id="reconnect">↻ Reconnect bridge</button>
     <button class="ghost" id="restart">⟳ Restart Roblox server</button>
