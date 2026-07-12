@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.19.6
+
+- Added a DeepSeek send mode setting: Fast, Safe, and Ultra Safe.
+- DeepSeek injection timing now adapts value-wait, send-button wait, and final send delay based on the selected mode.
+- Safe remains the default; Ultra Safe is available for sessions where DeepSeek drops fast injected turns.
+
 ## 1.19.5
 
 - Added optional Auto-start when ready.
