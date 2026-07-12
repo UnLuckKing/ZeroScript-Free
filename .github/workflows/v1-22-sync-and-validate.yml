@@ -1,0 +1,102 @@
+name: ZeroScript 1.22 sync and validation
+
+on:
+  push:
+    paths:
+      - '.github/workflows/v1-22-sync-and-validate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Sync bridge version and changelog
+        run: |
+          python - <<'PY'
+          import json
+          import pathlib
+          import re
+
+          root = pathlib.Path('.')
+          manifest = json.loads((root / 'zeroscript-extension' / 'manifest.json').read_text(encoding='utf-8'))
+          version = manifest['version']
+
+          bridge = root / 'bridge.py'
+          text = bridge.read_text(encoding='utf-8')
+          text, count = re.subn(r'BRIDGE_VERSION = "[^"]+"', f'BRIDGE_VERSION = "{version}"', text, count=1)
+          if count != 1:
+              raise SystemExit('Could not locate BRIDGE_VERSION in bridge.py')
+          bridge.write_text(text, encoding='utf-8')
+
+          changelog = root / 'CHANGELOG.md'
+          current = changelog.read_text(encoding='utf-8')
+          heading = f'## {version}'
+          if heading not in current:
+              notes = f'''# Changelog
+
+{heading}
+
+- Added the adaptive AI Team Manager with dynamic task plans instead of a fixed phase chain.
+- Added structured cross-model project memory, persistent regression tests, and context-recovery summaries.
+- Added learned provider routing based on completion rate, tool/context failures, repair requests, and phase history.
+- Added stuck-task recovery with checkpoint preservation and automatic provider failover.
+- Added deterministic post-task script diffing, large-change risk warnings, and rollback recommendations.
+- Added a catastrophic bulk-change guard for core Roblox containers and large destructive edits.
+- Added release-readiness scoring, blockers, task timeline, provider performance, and manager controls in the popup.
+- Added Release Manager and Regression QA one-click tasks.
+
+'''
+              if current.startswith('# Changelog'):
+                  current = notes + current[len('# Changelog\n\n'):]
+              else:
+                  current = notes + current
+              changelog.write_text(current, encoding='utf-8')
+          PY
+
+      - name: Validate JavaScript
+        run: |
+          node --check zeroscript-extension/background.js
+          node --check zeroscript-extension/background-entry.js
+          node --check zeroscript-extension/background-providers.js
+          node --check zeroscript-extension/background-manager.js
+          node --check zeroscript-extension/popup.js
+          node --check zeroscript-extension/popup-smart.js
+          node --check zeroscript-extension/popup-providers.js
+          node --check zeroscript-extension/popup-manager.js
+          node --check zeroscript-extension/core/main.js
+          node --check zeroscript-extension/core/team-reliability.js
+          node --check zeroscript-extension/core/catastrophic-guard.js
+          node --check zeroscript-extension/providers/browser-chat.js
+          node zeroscript-extension/test-parser.js
+
+      - name: Validate Python and release package
+        run: |
+          python -m py_compile bridge.py build_release.py launch_studio_mcp.py
+          python build_release.py
+
+      - name: Commit synchronized release metadata
+        run: |
+          if git diff --quiet; then
+            echo 'No metadata changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add bridge.py CHANGELOG.md
+          git commit -m 'v1.22: sync bridge version and release notes'
+          git push
