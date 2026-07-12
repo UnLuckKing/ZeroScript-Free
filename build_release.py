@@ -15,9 +15,10 @@ ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist"
 ROOT_FILES = [
     "bridge.py", "bridge_core.py", "launch_studio_mcp.py", "start.bat", "start_with_panel.bat",
-    "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py", "hub_productivity_ui.py", "hub_workflow_extras.py", "control_api.py",
+    "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py",
+    "hub_productivity_ui.py", "hub_workflow_extras.py", "hub_automation_ui.py", "control_api.py",
     "install_studio_panel.py", "install_studio_panel.bat",
-    "config.json", "LICENSE", "README.md", "CHANGELOG.md", "RELEASE_NOTES_1.27.md",
+    "config.json", "LICENSE", "README.md", "CHANGELOG.md", "RELEASE_NOTES_1.28.md",
 ]
 PACKAGE_DIRS = ["zeroscript-extension", "roblox-plugin", "docs"]
 
@@ -47,6 +48,7 @@ def validate() -> None:
     run("node", "zeroscript-extension/test-task-start-policy.js")
     run("node", "zeroscript-extension/test-speed-pack.js")
     run("node", "zeroscript-extension/test-productivity-pack.js")
+    run("node", "zeroscript-extension/test-automation-pack.js")
     run(sys.executable, "-m", "unittest", "-v", "test_control_api.py")
     run(
         sys.executable,
@@ -60,6 +62,7 @@ def validate() -> None:
         "zeroscript_hub_launcher.py",
         "hub_productivity_ui.py",
         "hub_workflow_extras.py",
+        "hub_automation_ui.py",
         "install_studio_panel.py",
         "build_release.py",
     )
@@ -83,6 +86,7 @@ def validate() -> None:
         "background-productivity-pack.js",
         "background-productivity-fixes.js",
         "background-productivity-sync.js",
+        "background-automation-pack.js",
         "popup-simple.js",
     ):
         if not (extension / required).exists():
@@ -90,8 +94,8 @@ def validate() -> None:
     if not (ROOT / "roblox-plugin" / "ZeroScriptControlPanel.lua").exists():
         raise RuntimeError("Native Studio panel source is missing")
     for required in (
-        "zeroscript_hub.py", "zeroscript_hub_launcher.py", "hub_productivity_ui.py", "hub_workflow_extras.py", "ZeroScript Hub.bat",
-        "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "RELEASE_NOTES_1.27.md",
+        "zeroscript_hub.py", "zeroscript_hub_launcher.py", "hub_productivity_ui.py", "hub_workflow_extras.py", "hub_automation_ui.py",
+        "ZeroScript Hub.bat", "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "RELEASE_NOTES_1.28.md",
     ):
         if not (ROOT / required).exists():
             raise RuntimeError(f"ZeroScript Hub release file is missing: {required}")
@@ -143,6 +147,8 @@ def main() -> int:
     ext, bridge = versions()
     if ext != bridge:
         raise RuntimeError(f"Version mismatch: extension={ext}, bridge={bridge}")
+    if ext != "1.28.0":
+        raise RuntimeError(f"Unexpected release version: {ext}")
     print(f"ZeroScript {ext} local release builder")
     validate()
     archive, checksum, notes = build(ext)
