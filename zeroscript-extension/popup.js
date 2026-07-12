@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 const KOFI_URL = "https://ko-fi.com/sebattfg";
 const PROVIDERS = ["deepseek", "gemini", "kimi", "glm", "qwen", "arena"];
+let lastTeam = null;
+const HANDOFF_URLS = {
+  chatgpt: "https://chatgpt.com/",
+  claude: "https://claude.ai/new",
+  copilot: "https://copilot.microsoft.com/",
+  mistral: "https://chat.mistral.ai/chat",
+  perplexity: "https://www.perplexity.ai/",
+  poe: "https://poe.com/",
+};
 
 for (const id of ["writer", "mapDesigner", "uiDesigner", "reviewer", "qa"]) {
   const el = document.getElementById(id);
@@ -15,6 +24,7 @@ for (const id of ["writer", "mapDesigner", "uiDesigner", "reviewer", "qa"]) {
 
 function renderTeam(team) {
   team = team || { config: {}, agents: [] };
+  lastTeam = team;
   document.getElementById("teamEnabled").checked = !!team.config.enabled;
   document.getElementById("writer").value = team.config.writer || "deepseek";
   document.getElementById("mapDesigner").value = team.config.mapDesigner || "gemini";
@@ -75,6 +85,29 @@ document.getElementById("rollbackTask").addEventListener("click", (e) => {
     if (r && r.team) renderTeam(r.team);
     setTimeout(() => { e.target.textContent = original; }, 2200);
   });
+});
+
+function handoffPrompt(target) {
+  const team = lastTeam || {};
+  const task = team.task || {};
+  const recent = (team.history || []).slice(-3).map((h) => `- ${h.status}: ${h.goal}`).join("\n");
+  const role = target === "roblox"
+    ? "You are Roblox Studio Assistant. Act directly in the currently open place."
+    : "You are an expert Roblox/Luau development reviewer. Return a concrete implementation or diagnosis that a Studio-connected agent can apply.";
+  return `${role}\n\nCURRENT GOAL\n${task.goal || document.getElementById("teamGoal").value.trim() || "Inspect and improve the current Roblox project."}\n\nTEAM STATE\nPhase: ${task.phase || "not started"}\nStatus: ${task.status || "idle"}\nActive provider: ${task.provider || "none"}\nRepair rounds: ${task.round || 0}\nCheckpoint: ${(team.checkpoint && team.checkpoint.latest) || "none"}\n\nLAST TEAM REPORT\n${task.lastReport || "No report yet."}\n\nRECENT TASKS\n${recent || "None."}\n\nDo not invent project contents. Inspect the actual Studio state when tools are available. Preserve working systems, use secure server-authoritative Roblox patterns, and give exact next actions. If you can edit Studio, perform the work and playtest it; otherwise return a concise handoff for the connected ZeroScript builder.`;
+}
+
+document.getElementById("handoffTask").addEventListener("click", async (e) => {
+  const target = document.getElementById("handoffTarget").value;
+  const original = e.target.textContent;
+  try {
+    await navigator.clipboard.writeText(handoffPrompt(target));
+    e.target.textContent = target === "roblox" ? "✓ Copied · paste in Studio Assistant" : "✓ Copied · opening…";
+    if (HANDOFF_URLS[target]) chrome.tabs.create({ url: HANDOFF_URLS[target] });
+  } catch {
+    e.target.textContent = "Copy failed";
+  }
+  setTimeout(() => { e.target.textContent = original; }, 2400);
 });
 
 function render(s) {

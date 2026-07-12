@@ -53,6 +53,16 @@
       <button class="ghost" id="rollbackTask">↶ Rollback latest checkpoint</button>
       <div class="row" id="teamState">Single-model mode</div>
       <div class="row" id="teamHistory"></div>
+      <select id="handoffTarget" title="Send context to another assistant">
+        <option value="chatgpt">Handoff: ChatGPT</option>
+        <option value="claude">Handoff: Claude</option>
+        <option value="copilot">Handoff: Microsoft Copilot</option>
+        <option value="mistral">Handoff: Mistral Le Chat</option>
+        <option value="perplexity">Handoff: Perplexity</option>
+        <option value="poe">Handoff: Poe</option>
+        <option value="roblox">Handoff: Roblox Assistant</option>
+      </select>
+      <button class="ghost" id="handoffTask">⇧ Copy context and open assistant</button>
     </div>
     <button class="ghost" id="reconnect">↻ Reconnect bridge</button>
     <button class="ghost" id="restart">⟳ Restart Roblox server</button>
