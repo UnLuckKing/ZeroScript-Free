@@ -70,6 +70,16 @@ function renderTeam(team) {
 
 function esc(value) { return String(value || "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#39;" }[c])); }
 
+function renderDoctor(report) {
+  const box = document.getElementById("doctorReport");
+  if (!box || !report) return;
+  const lines = [report.summary || (report.ok ? "Ready." : "Blocked.")];
+  for (const row of report.rows || []) {
+    lines.push(`${row.ok ? "✓" : "✕"} ${row.label}: ${row.detail}`);
+  }
+  box.textContent = lines.join("\n");
+}
+
 function saveTeam() {
   chrome.runtime.sendMessage({ type: "team_config", config: {
     enabled: document.getElementById("teamEnabled").checked,
@@ -117,6 +127,20 @@ document.getElementById("scanProject").addEventListener("click", (e) => {
   chrome.runtime.sendMessage({ type: "team_project_scan" }, (r) => {
     e.target.disabled = false;
     e.target.textContent = r && r.ok ? "✓ Scan complete" : "Scan failed";
+    if (r && r.team) renderTeam(r.team);
+    setTimeout(() => { e.target.textContent = original; }, 2200);
+  });
+});
+document.getElementById("connectionDoctor").addEventListener("click", (e) => {
+  const original = e.target.textContent;
+  e.target.textContent = "Checking…";
+  e.target.disabled = true;
+  document.getElementById("doctorReport").textContent = "Checking bridge, Studio, tools, and model tabs…";
+  chrome.runtime.sendMessage({ type: "connection_doctor", repair: true }, (r) => {
+    e.target.disabled = false;
+    e.target.textContent = r && r.ok ? "✓ Doctor passed" : "Doctor found issues";
+    renderDoctor(r);
+    if (r && r.status) render(r.status);
     if (r && r.team) renderTeam(r.team);
     setTimeout(() => { e.target.textContent = original; }, 2200);
   });
