@@ -71,6 +71,7 @@ importScripts("background-learning-sync.js");
 // Deterministic intent/risk compiler, Project Genome, Shadow Guard, behavioral
 // contracts, Proof Engine, Model Jury coordination and opt-in self-healing.
 importScripts("background-superior-pack.js");
+importScripts("background-superior-fixes.js");
 
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
