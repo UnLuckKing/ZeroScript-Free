@@ -31,8 +31,10 @@ PALETTE = {
 
 def install(hub: Any) -> None:
     from hub_learning_extras import install as install_learning_extras
+    from hub_easy_runtime import install as install_easy_runtime
 
     install_learning_extras(hub)
+    install_easy_runtime(hub)
     previous_style = hub.ZeroScriptHub._build_style
     previous_ui = hub.ZeroScriptHub._build_ui
     previous_status_card = hub.ZeroScriptHub._status_card
