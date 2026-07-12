@@ -982,16 +982,19 @@
         if (A.stop || res.kind === "stopped") break;
 
         if (res.kind === "context_limit") {
+          loopError = `${P.displayName} context limit reached. ${res.detail || ""}`;
           ui.banner("limit", `${P.displayName} reached its context limit`,
             (res.detail || "") + "  -  open a new chat to start fresh.");
           break;
         }
         if (res.kind === "too_long") {
+          loopError = `${P.displayName} conversation is too long.`;
           ui.banner("limit", "Conversation too long",
             `${P.displayName} reports the conversation is getting too long. Start a new session.`);
           break;
         }
         if (res.kind === "timeout") {
+          loopError = `${P.displayName} timed out without a response.`;
           ui.banner("warn", `No response from ${P.displayName}`,
             `${P.displayName} did not respond in time. The loop has stopped.`);
           break;

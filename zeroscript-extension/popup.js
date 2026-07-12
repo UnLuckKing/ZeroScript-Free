@@ -22,10 +22,12 @@ function renderTeam(team) {
   document.getElementById("reviewer").value = team.config.reviewer || "gemini";
   document.getElementById("qa").value = team.config.qa || "qwen";
   const online = (team.agents || []).map((a) => a.provider).filter((v, i, a) => a.indexOf(v) === i);
+  const unhealthy = Object.entries(team.providerHealth || {}).map(([p, h]) => `${p}: ${h.status}`).join(", ");
   const task = team.task;
   document.getElementById("teamState").textContent = team.config.enabled
     ? (task ? `${task.status.toUpperCase()} · ${task.phase} · ${task.provider || "unassigned"}${task.error ? `\n${task.error}` : ""}` : `${online.length} model tab${online.length === 1 ? "" : "s"} online${team.writer ? ` · ${team.writer.provider} writing` : " · Studio unlocked"}`)
     : "Single-model mode";
+  if (unhealthy) document.getElementById("teamState").textContent += `\nUnavailable: ${unhealthy}`;
   const history = team.history || [];
   document.getElementById("teamHistory").textContent = history.length
     ? `Recent: ${history.slice(-3).reverse().map((h) => `${h.status === "done" ? "✓" : "!"} ${h.goal.slice(0, 34)}${h.rounds ? ` (${h.rounds} fixes)` : ""}`).join("\n")}`

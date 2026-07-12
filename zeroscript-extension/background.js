@@ -62,6 +62,7 @@ let writerLease = null;
 const WRITE_LEASE_MS = 150000;
 let teamTask = null;
 let teamHistory = [];
+let providerHealth = {};
 
 chrome.storage.local.get("zsTeamConfig", (r) => {
   if (r && r.zsTeamConfig) teamConfig = { ...TEAM_DEFAULTS, ...r.zsTeamConfig };
@@ -73,11 +74,15 @@ chrome.storage.local.get("zsTeamTask", (r) => {
 chrome.storage.local.get("zsTeamHistory", (r) => {
   if (r && Array.isArray(r.zsTeamHistory)) teamHistory = r.zsTeamHistory.slice(-50);
 });
+chrome.storage.local.get("zsProviderHealth", (r) => {
+  if (r && r.zsProviderHealth && typeof r.zsProviderHealth === "object") providerHealth = r.zsProviderHealth;
+});
 
 function cleanTeamState() {
   const now = Date.now();
   for (const [id, agent] of teamAgents) if (now - agent.lastSeen > 20000) teamAgents.delete(id);
   if (writerLease && writerLease.expiresAt <= now) writerLease = null;
+  for (const [provider, h] of Object.entries(providerHealth)) if (!h || h.until <= now) delete providerHealth[provider];
 }
 
 function teamObj() {
@@ -88,6 +93,7 @@ function teamObj() {
     writer: writerLease && { tabId: writerLease.tabId, provider: writerLease.provider, expiresAt: writerLease.expiresAt },
     task: teamTask,
     history: teamHistory.slice(-10),
+    providerHealth,
   };
 }
 
@@ -97,11 +103,11 @@ function agentFor(provider) {
 }
 
 function fallbackAgent(preferred, phase) {
-  const exact = agentFor(preferred);
-  if (exact) return { hit: exact, provider: preferred, fallback: false };
   cleanTeamState();
   const excluded = new Set(teamTask && Array.isArray(teamTask.failedProviders) ? teamTask.failedProviders : []);
-  const candidates = [...teamAgents.entries()].filter(([, a]) => !excluded.has(a.provider));
+  const exact = !excluded.has(preferred) && !providerHealth[preferred] ? agentFor(preferred) : null;
+  if (exact) return { hit: exact, provider: preferred, fallback: false };
+  const candidates = [...teamAgents.entries()].filter(([, a]) => !excluded.has(a.provider) && !providerHealth[a.provider]);
   if (!candidates.length) return null;
   // Prefer vision for QA, otherwise use the first live provider. Provider tabs
   // heartbeat every seven seconds, so this list contains only genuinely open tabs.
@@ -497,6 +503,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case "team_task_done": {
         if (!teamTask || msg.task_id !== teamTask.id || msg.phase !== teamTask.phase) { sendResponse({ ok: false, error: "Stale task result ignored." }); break; }
         const completedPhase = teamTask.phase;
+        if (teamTask.provider && providerHealth[teamTask.provider]) {
+          delete providerHealth[teamTask.provider];
+          await chrome.storage.local.set({ zsProviderHealth: providerHealth });
+        }
         teamTask.lastReport = String(msg.report || "").slice(0, 12000);
         teamTask.events = Array.isArray(teamTask.events) ? teamTask.events : [];
         teamTask.events.push({ phase: completedPhase, provider: teamTask.provider, at: Date.now(), report: teamTask.lastReport.slice(0, 1000) });
@@ -534,11 +544,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       case "team_task_error": {
         if (teamTask && msg.task_id === teamTask.id) {
-          teamTask.status = "waiting";
-          teamTask.error = String(msg.error || "Model tab could not run the task.");
+          const failed = teamTask.provider || msg.provider || "unknown";
+          const reason = String(msg.error || "Model tab could not run the task.");
+          teamTask.failedProviders = Array.isArray(teamTask.failedProviders) ? teamTask.failedProviders : [];
+          if (!teamTask.failedProviders.includes(failed)) teamTask.failedProviders.push(failed);
+          const limited = /quota|rate limit|context limit|too long|captcha|usage limit/i.test(reason);
+          providerHealth[failed] = { status: limited ? "limited" : "error", reason: reason.slice(0, 240), until: Date.now() + (limited ? 60 : 15) * 60 * 1000 };
+          await chrome.storage.local.set({ zsProviderHealth: providerHealth });
+          teamTask.status = "queued";
+          teamTask.error = `${failed} failed; selecting another model. ${reason}`;
           teamTask.updatedAt = Date.now();
           await chrome.storage.local.set({ zsTeamTask: teamTask });
           broadcastTeam();
+          dispatchTask();
         }
         sendResponse({ ok: true });
         break;
