@@ -39,13 +39,17 @@ jobs:
       - name: Python checks
         run: |
           python -m py_compile bridge.py build_release.py launch_studio_mcp.py
-          if [ -f control_api.py ]; then python -m py_compile control_api.py install_studio_panel.py; fi
+          if [ -f control_api.py ]; then
+            python -m py_compile control_api.py install_studio_panel.py
+            python -m unittest -v test_control_api.py
+          fi
       - name: Test optional Studio plugin installer
-        if: ${{ hashFiles('install_studio_panel.py') != '' }}
         shell: bash
         run: |
-          export LOCALAPPDATA="$RUNNER_TEMP/localappdata"
-          python install_studio_panel.py
-          test -s "$LOCALAPPDATA/Roblox/Plugins/ZeroScriptControlPanel.rbxmx"
+          if [ -f install_studio_panel.py ]; then
+            export LOCALAPPDATA="$RUNNER_TEMP/localappdata"
+            python install_studio_panel.py
+            test -s "$LOCALAPPDATA/Roblox/Plugins/ZeroScriptControlPanel.rbxmx"
+          fi
       - name: Build release package
         run: python build_release.py
