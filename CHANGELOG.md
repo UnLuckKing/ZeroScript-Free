@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.12.0
+
+- Added a local, Actions-free release builder for Windows.
+- The builder validates version parity, runs all JavaScript/Python/parser checks,
+  creates and verifies the ZIP, calculates SHA-256, and extracts release notes.
+
+## 1.11.0
+
+- Added automatic per-task Luau source checkpoints and Studio waypoints.
+- Added rollback for changed, deleted, and newly created scripts.
+
+## 1.10.0
+
+- Added provider health tracking and automatic task failover.
+
+## 1.9.0
+
+- Added bounded Reviewer/QA repair loops and persistent task history.
+
+## 1.8.0
+
+- Added smart Map Designer and UI Designer phases.
+
+## 1.7.0
+
+- Added automatic live-model fallback and production task templates.
+
 ## 1.6.0
 
 - Added an automatic Builder → Reviewer → QA / Playtest workflow.
