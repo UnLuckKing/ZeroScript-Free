@@ -1,6 +1,6 @@
 # ZeroScript 1.24 Control Center
 
-ZeroScript 1.24 hardens the multi-model workflow around the existing Studio bridge. It does not replace the proven tool loop; it adds observable state, readiness diagnostics, permissions, ownership, recovery, and support tooling around it.
+ZeroScript 1.24 hardens the multi-model workflow around the existing Studio bridge. It does not replace the proven tool loop; it adds observable state, readiness diagnostics, permissions, ownership, recovery, a native Studio panel, and support tooling around it.
 
 ## Runtime states
 
@@ -75,7 +75,29 @@ Active specialists claim high-level Studio domains:
 - Map: `Workspace`, `Lighting`, `Terrain`, `SoundService`
 - Builder: `ServerScriptService`, `ReplicatedStorage`, `ServerStorage`, `StarterPlayer`
 
-Claims expire automatically and are released when the task ends. Conflicting claims are recorded in the Control Center.
+Claims are renewed while the phase is running, expire after genuine staleness, and are released when the task ends. Conflicting claims are recorded in the Control Center.
+
+## Native Roblox Studio panel
+
+ZeroScript 1.24 includes an optional DockWidget backed by an authenticated local side-channel.
+
+1. Run `install_studio_panel.bat` once and restart Roblox Studio.
+2. Enable **Game Settings → Security → Allow HTTP Requests**.
+3. Run `start_with_panel.bat` instead of `start.bat`.
+4. Copy the value from `control_token.txt` into the Chrome popup and the Studio widget.
+5. Open **Plugins → ZeroScript → Control Center**.
+
+The side-channel binds only to `127.0.0.1:17614` and requires the random token for every status or action endpoint.
+
+The Studio panel displays:
+
+- task state, phase, provider, repair round, and error
+- bridge/Studio/tool health
+- latest risk score
+- release-readiness score
+- pending approval count
+
+It can request Stop, Retry, Cancel, checkpoint Rollback, provider probing, project scanning, and Release Manager. Retry, Cancel, and Rollback execute directly inside the service worker, so the Chrome popup does not need to remain open.
 
 ## Recovery and support
 
@@ -87,12 +109,11 @@ Claims expire automatically and are released when the task ends. Conflicting cla
 
 ## Deliberate limits
 
-These features require additional Roblox-side capabilities and are not falsely presented as complete in 1.24:
+These features require more Roblox-side capabilities and are not falsely presented as complete in 1.24:
 
-- recording arbitrary mouse/keyboard gameplay into deterministic Studio test scripts
+- recording arbitrary mouse/keyboard gameplay into deterministic semantic Studio test scripts
 - controlling multiple simultaneous Studio test clients when the active Studio MCP does not expose multi-client controls
 - property-level rollback of every non-script Instance without a larger serialized place snapshot
-- a native Studio DockWidget synchronized with the browser extension
 - pixel-difference visual QA across several emulated device resolutions
 
-The existing manager can assign specialist tasks for these areas, but genuine deterministic automation depends on corresponding Studio tools or a dedicated Roblox plugin/side-channel.
+The existing manager can assign specialist tasks for these areas, but genuine deterministic automation depends on corresponding Studio tools or further plugin development tracked in `PHASE_2_ROADMAP.md`.
