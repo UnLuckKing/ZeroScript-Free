@@ -16,9 +16,11 @@ echo  ==========================================
 echo          ZeroScript Tek Tik Guncelleme
 echo  ==========================================
 echo.
-echo Hub kapatiliyor ve GitHub master surumu indiriliyor...
+echo Eski Hub, Bridge ve kontrol servisleri kapatiliyor...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ports=17613,17614; foreach($port in $ports){Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | ForEach-Object {try{Stop-Process -Id $_.OwningProcess -Force -ErrorAction Stop}catch{}}}" >nul 2>nul
 timeout /t 2 /nobreak >nul
 
+echo GitHub master surumu indiriliyor...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ErrorActionPreference='Stop';" ^
   "$root=[IO.Path]::GetFullPath('%ROOT%');" ^
