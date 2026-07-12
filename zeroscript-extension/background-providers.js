@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Provider expansion layer. Loads the core orchestrator, then teaches it about
-// additional browser providers without modifying the upstream worker.
+// additional browser and local providers without modifying the upstream worker.
 
 importScripts("background-entry.js");
 
@@ -23,6 +23,11 @@ Object.assign(ZS_PROVIDER_WEIGHTS.qa,       { chatgpt: 9, claude: 9, mistral: 7,
 // release-readiness scoring.
 importScripts("background-manager.js");
 importScripts("background-manager-finalizer.js");
+
+// Optional free local provider. It runs LM Studio/Ollama through localhost and
+// executes the same iterative Roblox tool loop without a paid API.
+importScripts("background-local.js");
+importScripts("background-local-fixes.js");
 
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
