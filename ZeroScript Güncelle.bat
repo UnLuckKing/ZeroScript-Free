@@ -17,7 +17,10 @@ echo          ZeroScript Tek Tik Guncelleme
 echo  ==========================================
 echo.
 echo Eski Hub, Bridge ve kontrol servisleri kapatiliyor...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ports=17613,17614; foreach($port in $ports){Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | ForEach-Object {try{Stop-Process -Id $_.OwningProcess -Force -ErrorAction Stop}catch{}}}" >nul 2>nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$self=$PID;" ^
+  "Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {$_.ProcessId -ne $self -and $_.CommandLine -match 'zeroscript_hub_launcher\.py|zeroscript_hub\.py'} | ForEach-Object {try{Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop}catch{}};" ^
+  "$ports=17613,17614; foreach($port in $ports){Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | ForEach-Object {try{Stop-Process -Id $_.OwningProcess -Force -ErrorAction Stop}catch{}}}" >nul 2>nul
 timeout /t 2 /nobreak >nul
 
 echo GitHub master surumu indiriliyor...
