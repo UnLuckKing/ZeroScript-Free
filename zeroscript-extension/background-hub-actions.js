@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Convenience layer for the desktop Hub: a task can be submitted without first
-// opening and preparing an AI tab manually.
+// opening and preparing an AI tab manually. Provider preparation runs in
+// parallel with Studio checkpoint/preflight so one-click startup stays fast.
 
 const zsHubCoreHandleAction = zsStudioPanelHandleAction;
 
@@ -14,18 +15,22 @@ function zsHubSuggestedProvider(goal) {
 zsStudioPanelHandleAction = async function zsHubHandleAction(item) {
   const action = String(item && item.action || "").toLowerCase();
   const payload = item && item.payload && typeof item.payload === "object" ? item.payload : {};
+  let preparation = null;
+
   if (action === "start_task") {
     const ready = [...teamAgents.values()].some((agent) => agent && agent.ready);
     if (!ready && typeof zsSuitePrepareProvider === "function") {
       const provider = zsHubSuggestedProvider(payload.goal);
-      try {
-        await zsSuitePrepareProvider(provider);
-      } catch (error) {
+      preparation = zsSuitePrepareProvider(provider).catch((error) => {
         if (typeof zsSuiteLedger === "function") {
           zsSuiteLedger("hub_prepare", `Provider preparation needs user attention: ${String(error && error.message || error)}`, { provider });
         }
-      }
+        return null;
+      });
     }
   }
-  return zsHubCoreHandleAction(item);
+
+  const result = await zsHubCoreHandleAction(item);
+  if (preparation) await preparation;
+  return result;
 };
