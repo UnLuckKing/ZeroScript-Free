@@ -5,6 +5,7 @@ const path = require("path");
 const vm = require("vm");
 
 const source = fs.readFileSync(path.join(__dirname, "background-productivity-pack.js"), "utf8");
+const fixes = fs.readFileSync(path.join(__dirname, "background-productivity-fixes.js"), "utf8");
 const stored = {};
 const context = {
   console,
@@ -51,6 +52,7 @@ const context = {
 
 vm.createContext(context);
 vm.runInContext(source, context, { filename: "background-productivity-pack.js" });
+vm.runInContext(fixes, context, { filename: "background-productivity-fixes.js" });
 
 (async () => {
   const high = context.zsQueueAdd("high priority task", { priority: "high", qualityMode: "fast" });
@@ -81,6 +83,11 @@ vm.runInContext(source, context, { filename: "background-productivity-pack.js" }
 
   const services = Array.from(context.zsScopedCheckpointServices("fix the mobile UI button"));
   assert.deepStrictEqual(services, ["StarterGui", "StarterPlayer"]);
+
+  vm.runInContext(`zsProductivity.projectIndex={status:"ready",builtAt:1,error:"",report:{counts:{scripts:99},scripts:Array.from({length:30},(_,i)=>({path:"S"+i})),remotes:[],guis:[]}}`, context);
+  const publicState = context.zsProductivityPublic();
+  assert.strictEqual(publicState.projectIndex.counts.scripts, 99);
+  assert.strictEqual(publicState.projectIndex.samples.scripts.length, 12, "Hub sync must stay compact");
 
   console.log("productivity pack tests passed");
 })().catch((error) => {
