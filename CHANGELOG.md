@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.0
+
+- Fixed provider tabs being marked unhealthy when their ZeroScript session had
+  not been started yet or when they were temporarily busy.
+- Retry now clears transient provider errors and the task's failed-provider list
+  while preserving genuine quota/captcha cooldowns.
+
 ## 1.13.0
 
 - Added safe one-click handoff for ChatGPT, Claude, Copilot, Mistral Le Chat,
