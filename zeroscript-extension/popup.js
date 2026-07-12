@@ -28,6 +28,7 @@ function renderTeam(team) {
     ? (task ? `${task.status.toUpperCase()} · ${task.phase} · ${task.provider || "unassigned"}${task.error ? `\n${task.error}` : ""}` : `${online.length} model tab${online.length === 1 ? "" : "s"} online${team.writer ? ` · ${team.writer.provider} writing` : " · Studio unlocked"}`)
     : "Single-model mode";
   if (unhealthy) document.getElementById("teamState").textContent += `\nUnavailable: ${unhealthy}`;
+  if (team.checkpoint && team.checkpoint.latest) document.getElementById("teamState").textContent += `\nCheckpoint: ${team.checkpoint.status} · ${team.checkpoint.latest}`;
   const history = team.history || [];
   document.getElementById("teamHistory").textContent = history.length
     ? `Recent: ${history.slice(-3).reverse().map((h) => `${h.status === "done" ? "✓" : "!"} ${h.goal.slice(0, 34)}${h.rounds ? ` (${h.rounds} fixes)` : ""}`).join("\n")}`
@@ -66,6 +67,15 @@ document.getElementById("startTask").addEventListener("click", () => {
 });
 document.getElementById("retryTask").addEventListener("click", () => chrome.runtime.sendMessage({ type: "team_task_retry" }, (r) => r && renderTeam(r.team)));
 document.getElementById("cancelTask").addEventListener("click", () => chrome.runtime.sendMessage({ type: "team_task_cancel" }, (r) => r && renderTeam(r.team)));
+document.getElementById("rollbackTask").addEventListener("click", (e) => {
+  const original = e.target.textContent;
+  e.target.textContent = "Restoring…";
+  chrome.runtime.sendMessage({ type: "team_checkpoint_restore" }, (r) => {
+    e.target.textContent = r && r.ok ? "✓ Rollback complete" : "Rollback failed";
+    if (r && r.team) renderTeam(r.team);
+    setTimeout(() => { e.target.textContent = original; }, 2200);
+  });
+});
 
 function render(s) {
   const dot = document.getElementById("dot");
