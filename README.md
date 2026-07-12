@@ -13,7 +13,7 @@ ZeroScript connects supported browser AI models to Roblox Studio through its loc
    - choose **Load unpacked**
    - select the `zeroscript-extension` folder
 5. Double-click `ZeroScript Hub.bat`.
-6. On first use, click **Extension'ı eşleştir** in Hub and then click the ZeroScript extension icon once.
+6. On first use, click **Extension'ı eşleştir** in Hub. Pairing is automatic; open the ZeroScript extension popup once only if it does not appear within a few seconds.
 7. Write a task in Hub and press **Çalıştır**.
 
 For normal daily use, only Roblox Studio and `ZeroScript Hub.bat` need to be opened.
