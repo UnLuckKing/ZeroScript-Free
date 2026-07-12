@@ -57,8 +57,18 @@
     if (provider) chrome.tabs.create({ url: provider.url });
   });
 
+  function applySavedSelections(config) {
+    if (!config) return;
+    for (const id of Object.keys(roleNames)) {
+      const select = document.getElementById(id);
+      const value = config[id];
+      if (select && value && [...select.options].some((option) => option.value === value)) select.value = value;
+    }
+  }
+
   function renderProviders(teamState) {
     if (!teamState) return;
+    applySavedSelections(teamState.config);
     const byProvider = new Map();
     for (const agent of teamState.agents || []) {
       const current = byProvider.get(agent.provider);
@@ -82,9 +92,12 @@
     if (message && message.type === "zs-status") renderProviders(message.team);
   });
 
-  setInterval(() => {
+  function refresh() {
     chrome.runtime.sendMessage({ type: "status" }, (status) => {
       if (!chrome.runtime.lastError && status) renderProviders(status.team);
     });
-  }, 2000);
+  }
+
+  refresh();
+  setInterval(refresh, 2000);
 })();
