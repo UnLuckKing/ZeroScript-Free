@@ -1,68 +1,78 @@
-# OneMind Connector — Roblox Studio MCP Bridge
+# ZeroScript Hub — Roblox Studio AI Team
 
-![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
-![License](https://img.shields.io/badge/license-GPL--3.0-blue)
+ZeroScript connects supported browser AI models to Roblox Studio through its local MCP bridge. Version 1.25 adds a simple Windows control app so normal use no longer requires separate terminals, manual token copying, or a crowded extension popup.
 
-**OneMind Connector** is the local bridge that connects the OneMind AI platform and supported browser AI models to Roblox Studio through MCP.
+## Recommended setup
 
-It can inspect the active Roblox project, read and edit Luau scripts, execute Studio commands, coordinate multiple AI roles, run playtests, capture results, and keep shared project memory.
-
-> **Status:** Private development build for the OneMind platform. Not ready for public distribution.
-
-## Core capabilities
-
-- Connect Roblox Studio through its built-in MCP server
-- Read the game tree, instances, scripts, and Studio output
-- Create and update Luau scripts and Roblox instances
-- Coordinate Builder, Map Designer, UI Designer, Reviewer, and QA roles
-- Prevent multiple AI models from editing Studio at the same time
-- Save checkpoints and restore recent script changes
-- Preserve project memory between sessions
-- Recover automatically from bridge and Studio connection interruptions
-
-## Architecture
-
-```text
-OneMind AI Platform
-        ↓
-OneMind Connector
-        ↓
-Local MCP Bridge
-        ↓
-Roblox Studio
-```
-
-## Local setup
-
-1. Download or clone this repository.
+1. Download or clone the repository and extract the complete folder.
 2. Open Roblox Studio and load a place.
-3. In Roblox Studio Assistant settings, enable Studio as an MCP server.
-4. Run `start.bat` and keep its window open.
-5. Load the extension folder in a Chromium-based browser using Developer Mode.
-6. Start a supported AI session or connect through the OneMind platform.
+3. Enable Studio's MCP server in Roblox Studio Assistant settings.
+4. Install the Chrome extension once:
+   - open `chrome://extensions`
+   - enable Developer mode
+   - choose **Load unpacked**
+   - select the `zeroscript-extension` folder
+5. Double-click `ZeroScript Hub.bat`.
+6. On first use, click **Extension'ı eşleştir** in Hub and then click the ZeroScript extension icon once.
+7. Write a task in Hub and press **Çalıştır**.
+
+For normal daily use, only Roblox Studio and `ZeroScript Hub.bat` need to be opened.
+
+## What Hub manages
+
+- local MCP bridge startup and restart
+- authenticated extension pairing
+- Studio and bridge health
+- AI provider readiness
+- Fast, Balanced, and Best Quality modes
+- automatic or manual model routing
+- task start, stop, retry, and rollback
+- write approval policy
+- notifications and context recovery
+- provider preparation
+- project scan and Release Manager actions
+
+The underlying Smart Router, shared project memory, writer lock, checkpoints, rollback, provider failover, safety scopes, Reviewer, and QA systems remain active.
+
+## Supported browser providers
+
+- DeepSeek
+- Gemini
+- Qwen
+- Kimi
+- GLM
+- Arena
+- ChatGPT
+- Claude
+- Microsoft Copilot
+- Mistral
+
+Optional local provider support is available for LM Studio and Ollama.
+
+## Optional Studio panel
+
+The Roblox Studio DockWidget is no longer required for ordinary use because Hub already shows task and connection status. To install it anyway:
+
+1. Run `install_studio_panel.bat` once.
+2. Restart Roblox Studio.
+3. Enable **Game Settings → Security → Allow HTTP Requests**.
+4. Use the same local Hub service.
+
+## Legacy launchers
+
+`start.bat` and `start_with_panel.bat` remain available for diagnostics and compatibility. The recommended launcher is `ZeroScript Hub.bat`.
 
 ## Safety
 
-- The connector runs locally on the user's computer.
-- Roblox Studio commands are sent only through the local MCP bridge.
-- AI provider keys are not bundled with the connector.
-- Write operations should be reviewed and checkpointed before large changes.
-- Never commit API keys, access tokens, passwords, or private user data to this repository.
+- All bridge and Hub services bind to localhost.
+- Normal Hub endpoints require a random local token.
+- One-click extension pairing is available only during a short pairing window opened from Hub.
+- AI provider keys are not bundled.
+- Risk scoring, write scopes, catastrophic-change blocking, checkpoints, and rollback remain enabled.
+- Never commit passwords, tokens, API keys, or private player data.
 
-## Development direction
-
-Current work is focused on:
-
-- OneMind account and project pairing
-- Secure connector session tokens
-- Real-time heartbeat and Studio status
-- OneMind web-platform integration
-- Approval controls for write operations
-- Reliable checkpoint and rollback workflows
-- Packaged Windows installation and automatic updates
+More details: `docs/ZEROSCRIPT_HUB_1_25.md`
 
 ## License and attribution
 
-This project is distributed under the **GNU General Public License v3.0 or later**. See `LICENSE` for the complete license text.
-
-OneMind Connector is based on and adapted from the open-source **ZeroScript** project. Existing copyright notices, license headers, and attribution must remain intact in redistributed versions.
+GPL-3.0-or-later. ZeroScript Hub is based on and adapted from the open-source ZeroScript project; existing copyright notices and attribution must remain intact.
