@@ -51,7 +51,11 @@ zsSpeedGoalInfo = function zsSpeedGoalInfoSafe(goal, requestedMode) {
 // UI fix no longer pays for an unrelated builder phase; the same applies to map
 // work. Builder is retained whenever the goal explicitly includes code/logic.
 phasesForGoal = function zsSpeedSafePhasesForGoal(goal) {
-  const base = zsSpeedCorePhasesForGoal(goal);
+  // Use the full pre-quality plan. Calling the already-reduced Fast wrapper here
+  // would make a later safety escalation unable to restore Analyst/Reviewer.
+  const base = typeof zsSuiteCorePhasesForGoal === "function"
+    ? zsSuiteCorePhasesForGoal(goal)
+    : zsSpeedCorePhasesForGoal(goal);
   zsSpeedDecision = zsSpeedGoalInfo(goal, zsSuite.qualityMode);
   let phases = base;
 
