@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.31.0
+
+- Added beginner-first **Kolay Mod**, shown by default with technical tabs hidden until requested.
+- Added a one-click dependent game blueprint builder for RNG, Simulator, Clicker, Tycoon, Obby, Pet Collection and Custom games.
+- Added Fast Prototype, Publishable Game and Premium Quality plans with device-priority options.
+- Added smart next-step guidance for services, extension pairing, Studio MCP, model readiness, Output errors and game-plan start.
+- Added one-click repair, UI polish, gameplay improvement and release preparation actions.
+- Added a focused readiness score, active-task progress and plain-language status dashboard.
+- Optimized the modern dark theme, spacing, controls and advanced-tab density.
+
+## 1.30.0
+
+- Added deterministic Intent Compiler, Project Genome, Shadow Guard and Proof Engine.
+- Added persistent Design DNA and project Behavioral Contracts.
+- Added Studio Command Palette with selected-instance context.
+- Added Model Jury coordination, Self-Healing modes and local Analytics recommendations.
+- Added the modern Superior Engine control screen.
+
+## 1.29.0
+
+- Added SQLite Memory Vault and verified project/global learning.
+- Added Lemonade-style Recipe Studio, learned lessons, failure memory and Recipe suggestions.
+- Added modern dependency-free Windows Hub styling.
+
+## 1.28.0
+
+- Added automation workflows, visual comparison, interaction/security tests, instance rollback and emergency stop.
+
+## 1.27.0
+
+- Added persistent task queue, project index, Output watcher, scoped checkpoints and fast provider recovery.
+
+## 1.26.0
+
+- Added Smart Automatic and Turbo modes, project-scan caching and one-click updater.
+
 ## 1.19.8
 
 - Added Auto-fix Queue in the popup.
@@ -78,302 +114,3 @@
 - New team tasks reuse the persisted scan evidence in the Analyst phase.
 
 ## 1.17.0
-
-- Added a deterministic local project preflight before every team task.
-- Added an Analyst phase that inventories scripts, remotes, UI, and world parts
-  before builders make changes.
-- Preflight flags empty scripts, suspicious RemoteEvent validation, unsafe
-  DataStore patterns, client-trusted economy code, tight loops, UI safe-area
-  risks, heavy unanchored physics, and missing server logic.
-- The evidence report is persisted with the task and passed to every specialist.
-- Kept the release entirely local: no hosted dashboard, cloud account, API key,
-  paid server, or local AI model is required.
-
-## 1.16.0
-
-- Provider tabs now report separate open and ready states.
-- Team tasks are dispatched only to conversations with a completed ZeroScript
-  Start session, preventing avoidable WAITING/error cycles.
-- A waiting task resumes automatically as soon as any suitable tab becomes ready.
-
-## 1.15.0
-
-- Added an optional Studio write approval mode with a persisted preview queue.
-- Script edits, Luau execution, generated assets, instance changes, and other
-  write operations can now be applied or rejected from the extension popup.
-
-## 1.14.0
-
-- Fixed provider tabs being marked unhealthy when their ZeroScript session had
-  not been started yet or when they were temporarily busy.
-- Retry now clears transient provider errors and the task's failed-provider list
-  while preserving genuine quota/captcha cooldowns.
-
-## 1.13.0
-
-- Added safe one-click handoff for ChatGPT, Claude, Copilot, Mistral Le Chat,
-  Perplexity, Poe, and Roblox Assistant.
-- Handoffs include the current goal, phase, provider, repair count, checkpoint,
-  latest report, and recent task outcomes without requiring a paid API.
-
-## 1.12.0
-
-- Added a local, Actions-free release builder for Windows.
-- The builder validates version parity, runs all JavaScript/Python/parser checks,
-  creates and verifies the ZIP, calculates SHA-256, and extracts release notes.
-
-## 1.11.0
-
-- Added automatic per-task Luau source checkpoints and Studio waypoints.
-- Added rollback for changed, deleted, and newly created scripts.
-
-## 1.10.0
-
-- Added provider health tracking and automatic task failover.
-
-## 1.9.0
-
-- Added bounded Reviewer/QA repair loops and persistent task history.
-
-## 1.8.0
-
-- Added smart Map Designer and UI Designer phases.
-
-## 1.7.0
-
-- Added automatic live-model fallback and production task templates.
-
-## 1.6.0
-
-- Added an automatic Builder → Reviewer → QA / Playtest workflow.
-- Added per-role provider selection for the six supported free web model sites.
-- Added persistent task status with Retry and Cancel controls.
-- Added independent code review, live Output inspection, playtest, and vision-aware UI review instructions.
-- Added an automatic GitHub release workflow that validates, packages, checksums, tags, and publishes each new extension version.
-
-## 1.5.0
-
-- Added multi-model team mode and active provider-tab discovery.
-- Added a shared Studio lease so multiple models cannot execute conflicting MCP calls concurrently.
-- Added builder/reviewer selection and live lock-owner status to the popup.
-
-All notable changes to ZeroScript Free are documented here.
-
-## [1.4.1] - 2026-07-11
-
-Robustness release focused on the Roblox Studio connection lifecycle. Every
-fix below was reproduced and validated live against a real Studio + Blender
-setup, including the Roblox-side bugs reported on the devforum (StudioMCP
-stale-pipe disconnects, MCP toggle turning off after a Studio update).
-
-### Fixed
-- **Phantom "Studio connected" state**: leftover `StudioMCP.exe` processes
-  from a previous session or a Studio crash kept answering the bridge as if a
-  Studio were attached, so the terminal and the extension showed green with
-  Studio fully closed. The bridge now kills orphaned `StudioMCP.exe` at boot
-  (only when no real Studio window exists, so a live connection can never be
-  hit), and the boot banner re-confirms a positive probe before announcing a
-  connection.
-- **Status dot stuck green with Studio closed**: when StudioMCP advertised an
-  empty tool catalogue (Studio closed at launch), the connectivity probe
-  returned "unknown" instead of "disconnected", and the extension's
-  don't-degrade-on-unknown rule kept the dot green forever. An alive Roblox
-  proxy with an empty catalogue is now an authoritative "not connected".
-- **Studio opened after the bridge was never detected** (yellow until a full
-  bridge restart): two combined causes. (1) Nothing ever re-asked for the
-  tool catalogue once the launch-time retry window expired - the watcher now
-  re-polls `tools/list` while the catalogue is empty, so a late-attaching
-  Studio is picked up within seconds. (2) Studio's MCP plugin registers with
-  the MCP channel exactly ONCE (late in Studio's boot, or when the Assistant
-  Settings > MCP Servers panel is opened/toggled) and never retries; the
-  bridge's own recovery restarts could kill the MCP listener at that exact
-  moment, permanently orphaning the plugin. The bridge no longer restarts the
-  Roblox proxy while a Studio window is running, and both the terminal and
-  the extension now say the one thing that actually fixes an orphaned
-  plugin: open Assistant Settings > MCP Servers in Studio (validated three
-  times live; a proxy-side restart provably cannot repair it).
-- **Watcher crash silently disabling all Studio monitoring**: an unbound
-  variable in the place-churn detector could kill the background watcher
-  right after a reconnect, silently stopping every status update until the
-  next bridge restart. Fixed, and both watchers are now supervised: a crash
-  is logged in red and the watcher restarts itself in 5 seconds.
-- Boot/connection messages no longer blame the merged multi-server tool count
-  on Roblox ("49 tools loaded but NO Roblox Studio connected" when 22 of
-  those were Blender's): every Roblox-specific message now uses the
-  Roblox-only count.
-
-### Added
-- **Fast startup with addon servers**: MCP servers now launch in parallel and
-  the extension-facing socket opens immediately, so a slow or absent Roblox
-  Studio no longer delays Blender (or any addon) by up to a minute. The
-  Roblox diagnostic continues in the background and the bridge pushes status
-  updates to already-connected extensions as servers come up - previously an
-  extension that connected early could keep a stale "addon offline" snapshot
-  forever (greyed Start button instead of the orange degraded start).
-- **Self-healing for Roblox's own disconnect bugs**: sustained loss of the
-  Studio connection (stale named-pipe state, periodic silent disconnects)
-  now auto-restarts the Roblox proxy - but only when no Studio window is
-  running, where it is safe and effective.
-- **Studio-update detection**: when a disconnect coincides with a new Studio
-  version folder appearing, the terminal says Studio likely turned its MCP
-  toggle off after updating (a known Roblox bug) and points at the exact
-  setting, instead of retrying a recovery that cannot work.
-- Extension messages distinguish "Roblox Studio is not running" from "Studio
-  is running but not connected" (new `studio_proc` status field), each with
-  its own corrective step.
-- Terminal spinner during slow startup phases (server launch, Studio
-  attach), so the console never looks frozen; only one spinner animates at a
-  time.
-- start.bat hardening: refuses to run from an unextracted ZIP, handles
-  missing winget, rescans install folders after a winget install (PATH not
-  refreshed), prints the Python version and the bridge's exit code on
-  screen, and logs the Windows build - so a single screenshot of the
-  terminal carries enough context for support.
-
-## [1.4.0] - 2026-07-08
-
-### Added
-- Multi-MCP addon servers (experimental): a new "MCP servers" section in the
-  panel menu lets you add or remove additional MCP servers (Blender,
-  Sketchfab, or any local MCP command) alongside the always-primary Roblox
-  Studio connection. The bridge rewrites `config.json` and restarts itself to
-  load a change; Roblox stays protected from edits/removal and its status dot
-  is scoped to Roblox alone so an addon going down never misrepresents the
-  primary connection. New `list_mcp_servers` command and a `server` param on
-  `list_commands` let the model discover and use addon tool sets on demand.
-  When Roblox is down but an addon server is alive, the panel now offers a
-  degraded start instead of refusing to start at all.
-- Vision support (screen_capture / other tool-returned images) enabled for
-  Arena, Gemini, GLM, Kimi and Qwen, each with a real "upload finished" signal
-  before sending instead of trusting the first local preview, fixing several
-  silent-attachment-drop and duplicate-attachment-on-retry bugs. A tool from
-  any connected server that returns an image now gets the camera chip and is
-  remembered for future calls, even for a custom MCP server whose name gives
-  no hint it returns images.
-- Parser: a JSON command cut off by the model's own output limit, missing
-  only its trailing closing brackets, is now auto-completed and executed
-  instead of failing with a parse error and forcing a full retry turn.
-  Strictly refuses to salvage anything where real content (not just closers)
-  was cut off.
-- Per-reason parse-error feedback (cut off, bad JSON, missing ###LUA###
-  opener, wrong envelope) instead of one generic "bad JSON" message, so the
-  model fixes the actual problem instead of guessing.
-
-### Fixed
-- DeepSeek: a command's chip could show green "done" while DeepSeek was still
-  streaming the reply, on back-to-back calls to the same tool. Caused by
-  DeepSeek's list virtualization defeating the turn-count identity guard;
-  fixed with a stable per-turn id.
-- GLM: new "scroll to bottom" buttons were mistaken for the Stop button and
-  permanently latched generation state to "busy." Raw command JSON could leak
-  into the visible reply when nested inside a paragraph. An image filename
-  could corrupt result-chip detection.
-- Kimi: added detection of Kimi's own native "Agent" mode, which conflicts
-  with ZeroScript's command protocol; Start is disabled with a warning until
-  it's turned off. Fixed the hidden file-upload input not existing until the
-  "+" menu is opened, raw command text leaking when nested/oversized, and
-  normal model prose containing "try again" being misread as a site error.
-- Qwen: same "try again" false-busy fix as Kimi. A/B "carousel" comparison
-  turns (where the composer disappears mid-carousel) now auto-resolve to
-  Response 1 once both candidates finish, instead of stalling or misreading a
-  candidate as a truncated command.
-- Arena: send is now confirmed until the composer actually clears instead of
-  trusting a single click, preventing stranded messages/attachments; the chip
-  now anchors below the reply text instead of floating above it.
-- A command turn abandoned mid-stream (reload, or superseded by a
-  regenerate) no longer shows a false green checkmark; it now shows a
-  neutral "not run" state instead.
-- A tool's own in-body error (e.g. "Output of '...': Error executing code...")
-  now settles the chip red instead of green, even when the tool didn't use
-  ZeroScript's own ERROR wrapper.
-- Regenerating a stopped command no longer briefly re-shows the old call's
-  chip before the new one streams in.
-
-### Changed
-- The version number next to the ZeroScript name in the panel is now small,
-  plain text instead of a bordered green badge.
-- System prompt updated to cover multiple MCP servers: the model must call
-  `list_mcp_servers` before assuming something outside Roblox is unsupported,
-  and the tool list is no longer inlined in the prompt (fetched on demand via
-  `list_commands`).
-
-## [1.3.9] - 2026-07-04
-
-### Fixed
-- Bridge: kill the full process tree on restart instead of just the wrapper
-  process, which used to leave orphaned StudioMCP.exe instances behind that
-  fought the next launch and caused seemingly random "Studio looks connected
-  but nothing responds" failures.
-- Bridge: a dead MCP server is now auto-restarted by a background watchdog
-  instead of waiting for the next tool call to notice.
-- Bridge: a tool call that hits one of Studio's own brief connection blips now
-  retries once instead of surfacing a spurious "Studio not connected" error.
-- Extension: the status bar no longer shows a falsely healthy "N tools" label
-  when the agent is active but Studio, the place, or the bridge itself isn't
-  actually usable, it now names the real blocker (open a place / enable the
-  MCP server / bridge offline).
-- Cross-provider: DeepSeek, Gemini, Kimi, GLM and Qwen composer menus, model
-  pickers and tooltips (including GLM's search hover card and Kimi's model
-  popover) no longer render clipped or hidden behind ZeroScript's own
-  bar/pill/cover.
-- Cross-provider: a thinking model quoting command JSON in its own reasoning
-  area no longer makes the tool chip flap between done/run/done (Gemini, Kimi,
-  GLM and Qwen).
-- The "Agent is working" composer cover now blocks clicks into the composer
-  underneath it instead of letting them through, and can no longer balloon
-  past the composer's visible band or drag itself off position when a site
-  recreates its editor node mid-session (seen on Kimi).
-- A command chip could briefly flash or restart its spinner when revisiting a
-  past turn; it now settles to done correctly instead.
-- DeepSeek: the raw system-prompt turn no longer flashes for a frame before
-  being hidden.
-- Gemini: "New chat" no longer gets stuck on "Agent active" from a reused
-  previous conversation URL.
-- Kimi: reasoning is read separately from the actual reply, so a command
-  drafted while the model is still "thinking" is no longer detected or
-  executed; input can no longer be typed mid-run after the editor node is
-  recreated.
-- Arena: unsupported-mode gate now also covers Web Search and Generate Image,
-  and chip alignment is fixed when a command turn renders as an A/B
-  model-comparison carousel.
-- Bridge: a long-running tool call no longer starves the connection's ping
-  handling and trips the half-open-socket watchdog.
-
-### Changed
-- Bridge and installer logs moved to `logs/bridge_debug.log` and
-  `logs/start.log`; the console now only shows what a user actually needs to
-  read, full detail still lands in the log files.
-- `start.bat` now detects and explains a double launch instead of silently
-  replacing the previous instance, and warns clearly if port 17613 stays held
-  after trying to free it.
-- Removed remaining em dashes from user-visible strings.
-- Removed remaining em dashes from user-visible strings.
-
-## [1.3.3] - 2026-06-24
-
-### Fixed
-- Bridge no longer depends on Roblox's `mcp.bat`, which hard-coded a single
-  Studio version path and broke (0 tools / "Bridge or Studio offline") once
-  Studio auto-updated and that version folder was removed. A new
-  `launch_studio_mcp.py` finds the newest installed `StudioMCP.exe` and launches
-  it directly.
-- `bridge.py` now runs a `.py` MCP command with the same Python interpreter as
-  the bridge, so it works on installs where only the `py` launcher exists.
-
-## [1.0.0] - 2026-06-09
-
-### Added
-- Initial public release of ZeroScript Free
-- Browser extension for Chrome and Edge (DeepSeek chat integration)
-- Local Python bridge (`bridge.py` + `start.bat`) for Roblox Studio communication
-- Built-in MCP server support (no plugin required - activate directly in Roblox Studio)
-- Read and edit Luau scripts directly from DeepSeek chat
-- Run Luau code in real time inside Roblox Studio
-- Inspect game tree and instances
-- Generate meshes, materials, and models
-- Browse and insert assets from the Creator Store
-- Control play-testing from chat
-- Panel status indicator (green / yellow / grey)
-- Auto kill port 17613 on start to avoid conflicts
-- Ko-fi support link with Robux tip passes in the extension panel
-- Setup tutorial video on YouTube
