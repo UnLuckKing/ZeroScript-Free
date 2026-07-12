@@ -20,6 +20,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
 
+  // popup.js predates Smart AI routing and therefore omits this property when it
+  // saves another field. Preserve the current choice instead of silently
+  // switching a manual user back to automatic routing.
+  if (msg.type === "team_config" && msg.config && !Object.prototype.hasOwnProperty.call(msg.config, "smartRouting")) {
+    msg.config.smartRouting = typeof teamConfig !== "undefined" && teamConfig
+      ? teamConfig.smartRouting !== false
+      : true;
+  }
+
   if (msg.type === "team_task_done" && typeof teamTask !== "undefined" && teamTask && msg.task_id === teamTask.id) {
     const report = String(msg.report || "").slice(0, 12000);
     teamTask.sharedReports = Array.isArray(teamTask.sharedReports) ? teamTask.sharedReports : [];
