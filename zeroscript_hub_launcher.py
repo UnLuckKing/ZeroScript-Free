@@ -91,8 +91,13 @@ def _safe_pair_extension(self) -> None:
             return
         result = hub.request_json("/pair/start", self.token, "POST", {"seconds": 120}, timeout=3.0)
         if result.get("ok"):
-            self.log("Extension eşleştirme penceresi 2 dakika açık.")
-            self.after(0, messagebox.showinfo, "ZeroScript", "Şimdi Chrome'da ZeroScript extension ikonuna bir kez tıkla. Otomatik eşleşecek.")
+            self.log("Extension eşleştirme penceresi 2 dakika açık; otomatik eşleşme bekleniyor.")
+            self.after(
+                0,
+                messagebox.showinfo,
+                "ZeroScript",
+                "Extension otomatik eşleşecek. 5 saniye içinde Hub ekranında görünmezse Chrome'daki ZeroScript ikonuna bir kez tıkla.",
+            )
         else:
             self.after(0, messagebox.showerror, "ZeroScript", result.get("error", "Eşleştirme başlatılamadı."))
 
