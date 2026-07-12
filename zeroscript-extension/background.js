@@ -67,6 +67,7 @@ let checkpointState = { latest: null, status: "idle", detail: "" };
 let pendingApprovals = [];
 let projectAudit = { status: "idle", report: "", scannedAt: 0 };
 let taskStarting = false;
+let autoFixQueue = { status: "idle", items: [], createdAt: 0, updatedAt: 0 };
 
 chrome.storage.local.get("zsTeamConfig", (r) => {
   if (r && r.zsTeamConfig) teamConfig = { ...TEAM_DEFAULTS, ...r.zsTeamConfig };
@@ -90,6 +91,9 @@ chrome.storage.local.get("zsPendingApprovals", (r) => {
 chrome.storage.local.get("zsProjectAudit", (r) => {
   if (r && r.zsProjectAudit) projectAudit = r.zsProjectAudit;
 });
+chrome.storage.local.get("zsAutoFixQueue", (r) => {
+  if (r && r.zsAutoFixQueue) autoFixQueue = r.zsAutoFixQueue;
+});
 
 function cleanTeamState() {
   const now = Date.now();
@@ -109,6 +113,7 @@ function teamObj() {
     providerHealth,
     checkpoint: checkpointState,
     audit: projectAudit,
+    autoFix: autoFixQueue,
     approvals: pendingApprovals.map(({ id, name, arguments: args, provider, createdAt }) => ({ id, name, arguments: args, provider, createdAt })),
   };
 }
@@ -572,6 +577,50 @@ async function runConnectionDoctor({ repair = false } = {}) {
   return { ok, summary, rows, repaired: !!repair, team: teamObj(), status: statusObj() };
 }
 
+function parseAuditWarnings() {
+  try {
+    const raw = String(projectAudit.report || "").replace(/^PREFLIGHT_OK:/, "");
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed.warnings) ? parsed.warnings : [];
+  } catch {
+    return [];
+  }
+}
+
+async function persistAutoFixQueue() {
+  autoFixQueue.updatedAt = Date.now();
+  await chrome.storage.local.set({ zsAutoFixQueue: autoFixQueue });
+  broadcastTeam();
+}
+
+function makeAutoFixQueue(doctor) {
+  const items = [];
+  const add = (title, goal, manual = false) => items.push({ id: `fix-${items.length + 1}`, title, goal, manual, status: "pending" });
+  const blocked = doctor && Array.isArray(doctor.rows) ? doctor.rows.filter((r) => !r.ok) : [];
+  if (blocked.length) add("Fix connection first", `Connection is not ready. Fix these blockers before running game edits:\n${blocked.map((r) => `- ${r.label}: ${r.detail}`).join("\n")}`, true);
+  const warnings = parseAuditWarnings();
+  const kinds = new Set(warnings.map((w) => w.kind));
+  if (["remote_validation", "datastore_set", "client_trust"].some((k) => kinds.has(k))) add("Security/DataStore repair", TASK_SECURITY_GOAL);
+  if (["empty_script", "tight_loop", "missing_server"].some((k) => kinds.has(k))) add("Runtime/code health repair", TASK_ERRORS_GOAL);
+  if (kinds.has("safe_area")) add("Mobile UI safety pass", TASK_UI_GOAL);
+  if (kinds.has("physics")) add("Map performance cleanup", TASK_MAP_GOAL);
+  add("Popular map polish", TASK_MAP_GOAL);
+  add("Premium UI polish", TASK_UI_GOAL);
+  add("Onboarding pass", TASK_ONBOARDING_GOAL);
+  add("Monetization presentation", TASK_MONETIZATION_GOAL);
+  add("Release QA pass", TASK_RELEASE_GOAL);
+  autoFixQueue = { status: "ready", items, createdAt: Date.now(), updatedAt: Date.now() };
+  return autoFixQueue;
+}
+
+const TASK_ERRORS_GOAL = "Run the experience, read Output and Developer Console, reproduce every current runtime error, fix root causes without hiding warnings, and repeat playtests until the tested main path is clean.";
+const TASK_SECURITY_GOAL = "Audit all RemoteEvents, RemoteFunctions, purchases, rewards, currencies, DataStores, and client-server boundaries. Fix exploitable client trust, missing validation, spam, duplication, and data-loss risks, then playtest the corrected flows.";
+const TASK_MAP_GOAL = "Turn the current Roblox map into a compact popular-game lobby. Preserve working gameplay. Build a premium spawn view, central action altar, shop, upgrades, index/collection, leaderboard, boosts/gamepass, and portal/world zones with clear paths, signage, lighting, VFX, and performance-safe decoration. Use Creator Store/Toolbox assets when helpful. Verify spawn orientation, traversal, and Output.";
+const TASK_UI_GOAL = "Upgrade the player-facing UI to a premium simulator/RNG style. Preserve existing logic. Create a clean top currency bar, bottom action bar, left menu, roll/result card, feed, settings, shop/upgrades/index panels, hover/click feedback, gradients, strokes, shadows, and responsive mobile-safe sizing. Test desktop and mobile layouts and fix broken buttons.";
+const TASK_ONBOARDING_GOAL = "Build a new-player onboarding path without breaking existing gameplay. Spawn the player facing the main action, add clear arrows/signage/tutorial hints, highlight the first interaction, guide them to shop/upgrades/index after the first reward, and make sure the UI explains what to do next on desktop and mobile.";
+const TASK_MONETIZATION_GOAL = "Polish the monetization presentation without adding fake purchases. Create or improve a clear gamepass/shop UI, boost boards, premium-looking product cards, benefit descriptions, non-intrusive prompts, and visible value paths. Preserve existing product/gamepass IDs and test that purchase buttons do not error.";
+const TASK_RELEASE_GOAL = "Prepare this Roblox experience for release. Audit gameplay, onboarding, saving, economy, monetization, security, performance, mobile UI, error handling, and playtest coverage. Fix verified blockers and report only genuine user-only publishing steps that remain.";
+
 async function refreshRobloxReadiness() {
   await send({ type: "list_tools" }, 25000);
   await send({ type: "studio_status" }, 12000);
@@ -643,6 +692,22 @@ async function startTeamTask(goal) {
   } finally {
     taskStarting = false;
   }
+}
+
+async function startNextAutoFix() {
+  if (teamTask && !["done", "failed", "cancelled"].includes(teamTask.status)) return { ok: false, error: "A team task is already running.", team: teamObj() };
+  const next = (autoFixQueue.items || []).find((x) => x.status === "pending");
+  if (!next) return { ok: false, error: "Auto-fix queue is empty.", team: teamObj() };
+  if (next.manual) return { ok: false, error: next.goal, team: teamObj() };
+  next.status = "running";
+  next.startedAt = Date.now();
+  await persistAutoFixQueue();
+  startTeamTask(next.goal).catch(async (error) => {
+    next.status = "failed";
+    next.error = String(error && error.message || error);
+    await persistAutoFixQueue();
+  });
+  return { ok: true, started: next, team: teamObj() };
 }
 
 function resolvePending(id, value) {
@@ -774,6 +839,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse(await runConnectionDoctor({ repair: msg.repair === true }));
         break;
       }
+      case "auto_fix_plan": {
+        const doctor = await runConnectionDoctor({ repair: msg.repair === true });
+        if (doctor.ok || msg.scan !== false) await scanAndPersistProject();
+        makeAutoFixQueue(doctor);
+        await persistAutoFixQueue();
+        sendResponse({ ok: true, queue: autoFixQueue, doctor, team: teamObj() });
+        break;
+      }
+      case "auto_fix_start_next": {
+        sendResponse(await startNextAutoFix());
+        break;
+      }
       case "team_task_done": {
         if (!teamTask || msg.task_id !== teamTask.id || msg.phase !== teamTask.phase) { sendResponse({ ok: false, error: "Stale task result ignored." }); break; }
         const completedPhase = teamTask.phase;
@@ -830,6 +907,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         teamTask.updatedAt = Date.now();
         if (["done", "failed"].includes(teamTask.status)) {
+          const runningFix = (autoFixQueue.items || []).find((x) => x.status === "running");
+          if (runningFix) {
+            runningFix.status = teamTask.status === "done" ? "done" : "failed";
+            runningFix.completedAt = Date.now();
+            if (teamTask.error) runningFix.error = teamTask.error;
+            autoFixQueue.status = (autoFixQueue.items || []).some((x) => x.status === "pending") ? "ready" : "done";
+            await persistAutoFixQueue();
+          }
           teamHistory.push({ id: teamTask.id, goal: teamTask.goal, status: teamTask.status, rounds: teamTask.round || 0, qaEvidence: teamTask.qaEvidence || null, createdAt: teamTask.createdAt, completedAt: Date.now(), events: (teamTask.events || []).slice(-20) });
           teamHistory = teamHistory.slice(-50);
           await chrome.storage.local.set({ zsTeamHistory: teamHistory });
