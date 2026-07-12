@@ -68,6 +68,10 @@ importScripts("background-automation-instance-fixes.js");
 // Compact verified evidence consumed by the persistent SQLite Memory Vault.
 importScripts("background-learning-sync.js");
 
+// Deterministic intent/risk compiler, Project Genome, Shadow Guard, behavioral
+// contracts, Proof Engine, Model Jury coordination and opt-in self-healing.
+importScripts("background-superior-pack.js");
+
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
     for (const tab of tabs || []) {
