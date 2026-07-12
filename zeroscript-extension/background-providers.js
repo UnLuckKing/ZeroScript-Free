@@ -58,6 +58,11 @@ importScripts("background-productivity-pack.js");
 importScripts("background-productivity-fixes.js");
 importScripts("background-productivity-sync.js");
 
+// One-click diagnosis/repair, automatic task planning, instance-level rollback,
+// timeout failover, visual/button/security workflows, project identity, grouped
+// errors, model scorecards, notification center and emergency stop.
+importScripts("background-automation-pack.js");
+
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
     for (const tab of tabs || []) {
