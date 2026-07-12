@@ -2,12 +2,13 @@
 const KOFI_URL = "https://ko-fi.com/sebattfg";
 const PROVIDERS = ["deepseek", "gemini", "kimi", "glm", "qwen", "arena"];
 
-for (const id of ["writer", "reviewer", "qa"]) {
+for (const id of ["writer", "mapDesigner", "uiDesigner", "reviewer", "qa"]) {
   const el = document.getElementById(id);
   for (const p of PROVIDERS) {
     const o = document.createElement("option");
     o.value = p;
-    o.textContent = `${id === "writer" ? "Builder" : id === "reviewer" ? "Reviewer" : "QA / Playtest"}: ${p[0].toUpperCase() + p.slice(1)}`;
+    const role = id === "writer" ? "System Builder" : id === "mapDesigner" ? "Map Designer" : id === "uiDesigner" ? "UI Designer" : id === "reviewer" ? "Reviewer" : "QA / Playtest";
+    o.textContent = `${role}: ${p[0].toUpperCase() + p.slice(1)}`;
     el.appendChild(o);
   }
 }
@@ -16,6 +17,8 @@ function renderTeam(team) {
   team = team || { config: {}, agents: [] };
   document.getElementById("teamEnabled").checked = !!team.config.enabled;
   document.getElementById("writer").value = team.config.writer || "deepseek";
+  document.getElementById("mapDesigner").value = team.config.mapDesigner || "gemini";
+  document.getElementById("uiDesigner").value = team.config.uiDesigner || "gemini";
   document.getElementById("reviewer").value = team.config.reviewer || "gemini";
   document.getElementById("qa").value = team.config.qa || "qwen";
   const online = (team.agents || []).map((a) => a.provider).filter((v, i, a) => a.indexOf(v) === i);
@@ -29,11 +32,13 @@ function saveTeam() {
   chrome.runtime.sendMessage({ type: "team_config", config: {
     enabled: document.getElementById("teamEnabled").checked,
     writer: document.getElementById("writer").value,
+    mapDesigner: document.getElementById("mapDesigner").value,
+    uiDesigner: document.getElementById("uiDesigner").value,
     reviewer: document.getElementById("reviewer").value,
     qa: document.getElementById("qa").value,
   }}, (r) => r && renderTeam(r.team));
 }
-["teamEnabled", "writer", "reviewer", "qa"].forEach((id) => document.getElementById(id).addEventListener("change", saveTeam));
+["teamEnabled", "writer", "mapDesigner", "uiDesigner", "reviewer", "qa"].forEach((id) => document.getElementById(id).addEventListener("change", saveTeam));
 
 const TASK_TEMPLATES = {
   audit: "Inspect the entire current Roblox project. Complete unfinished or broken gameplay systems, preserve working content, verify data saving and economy, test the main loop, fix every verified runtime error, and leave the experience production-ready.",
