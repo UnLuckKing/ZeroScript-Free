@@ -43,6 +43,10 @@ importScripts("background-studio-panel-fixes.js");
 importScripts("background-hub-autopair.js");
 importScripts("background-hub-actions.js");
 
+// Never treat provider readiness (including pressing Start Roblox agent) as
+// permission to resume a task restored after restart. Retry remains explicit.
+importScripts("background-task-start-policy.js");
+
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
     for (const tab of tabs || []) {
