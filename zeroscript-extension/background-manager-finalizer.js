@@ -4,6 +4,7 @@
 // capture after long QA evidence checks finish.
 
 let zsLastFinalizedTask = null;
+let zsLastScoredDiffAt = 0;
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (!msg || msg.type !== "team_task_done") return;
@@ -31,8 +32,18 @@ setInterval(() => {
 
   if (zsLastFinalizedTask !== teamTask.id) {
     zsLastFinalizedTask = teamTask.id;
+    zsLastScoredDiffAt = 0;
     zsTimeline("final", `${teamTask.status.toUpperCase()} · ${teamTask.id}`, { taskId: teamTask.id });
+    zsComputeReleaseScore();
     zsCaptureTaskDiff(teamTask).catch(() => {});
+    return;
   }
-  zsComputeReleaseScore();
+
+  const diffAt = zsManager.diff && zsManager.diff.taskId === teamTask.id
+    ? Number(zsManager.diff.checkedAt || 0)
+    : 0;
+  if (diffAt && diffAt !== zsLastScoredDiffAt) {
+    zsLastScoredDiffAt = diffAt;
+    zsComputeReleaseScore();
+  }
 }, 5000);
