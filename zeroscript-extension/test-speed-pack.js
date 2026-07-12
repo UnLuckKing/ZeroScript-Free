@@ -8,6 +8,8 @@ const source = fs.readFileSync(path.join(__dirname, "background-speed-pack.js"),
 const fixes = fs.readFileSync(path.join(__dirname, "background-speed-fixes.js"), "utf8");
 const stored = {};
 const listeners = [];
+let mockTabs = [];
+let mockSend = () => null;
 const context = {
   console,
   Date,
@@ -24,6 +26,7 @@ const context = {
   zsHubApplyConfig: async () => {},
   zsSuitePersist: async () => {},
   broadcastTeam: () => {},
+  cleanTeamState: () => {},
   phasesForGoal: (goal) => {
     const text = String(goal).toLowerCase();
     return ["analyst", "builder", ...(text.includes("map") ? ["map"] : []), ...(text.includes("ui") ? ["ui"] : []), "reviewer", "qa"];
@@ -55,8 +58,8 @@ const context = {
       },
     },
     tabs: {
-      query: (_query, callback) => callback([]),
-      sendMessage: (_id, _message, callback) => callback(null),
+      query: (_query, callback) => callback(mockTabs),
+      sendMessage: (_id, message, callback) => callback(mockSend(message)),
       update: () => Promise.resolve(),
     },
     runtime: {
@@ -97,6 +100,7 @@ vm.runInContext(fixes, context, { filename: "background-speed-fixes.js" });
   assert.deepStrictEqual(Array.from(phases), ["map", "qa"], "pure map work should not pay for an unrelated builder phase");
 
   phases = context.phasesForGoal("audit DataStore security and purchases");
+  assert.ok(phases.includes("analyst"));
   assert.ok(phases.includes("reviewer"));
   assert.ok(phases.includes("qa"));
 
@@ -108,9 +112,33 @@ vm.runInContext(fixes, context, { filename: "background-speed-fixes.js" });
   assert.match(prompt, /TEST_EVIDENCE/);
   assert.match(prompt, /OUTPUT_ERRORS/);
 
-  assert.ok(listeners.length >= 1, "direct config compatibility listener should be registered");
+  assert.strictEqual(
+    context.zsSpeedAuditReusable({ effective: "turbo", highRisk: false, inspection: false }),
+    true,
+    "low-risk Turbo should skip the whole-project scan",
+  );
+
+  mockTabs = [{ id: 7 }];
+  mockSend = (message) => message.type === "zs-provider-probe"
+    ? { composer: true, ready: false, chatEmpty: false }
+    : { ok: false, error: "Start button is not available in this chat." };
+  let reused = await context.zsSpeedReuseProvider("gemini");
+  assert.strictEqual(reused, null, "a dead/non-startable chat must fall through to a fresh provider tab");
+
+  mockSend = (message) => message.type === "zs-provider-probe"
+    ? { composer: true, ready: true }
+    : null;
+  reused = await context.zsSpeedReuseProvider("gemini");
+  assert.strictEqual(reused.reused, true);
+  assert.strictEqual(reused.alreadyReady, true);
+
+  assert.ok(listeners.length >= 2, "speed fix listeners should be registered");
   listeners.forEach((listener) => listener({ type: "suite_set_config", qualityMode: "turbo" }));
   assert.strictEqual(context.zsSuite.qualityMode, "turbo");
+
+  listeners.forEach((listener) => listener({ type: "team_task_done", phase: "ui" }));
+  await Promise.resolve();
+  assert.strictEqual(stored.zsProjectAudit.status, "stale", "mutating phases must invalidate the cached project scan");
 
   console.log("speed pack tests passed");
 })().catch((error) => {
