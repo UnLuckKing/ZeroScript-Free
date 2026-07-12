@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.19.3
+
+- Added safer DeepSeek direct-send timing so ZeroScript waits for the composer value and send button before submitting tool feedback.
+- Added a small randomized DeepSeek send delay to reduce dropped or too-fast injected turns.
+- Moved handoff controls behind a fallback section so the normal flow stays direct: Start connects ZeroScript to the current model tab.
+
 ## 1.19.2
 
 - Fixed Start task handling when Roblox Studio is not actually connected.
