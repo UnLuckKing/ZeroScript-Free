@@ -48,6 +48,14 @@ The extension runs inside the chat page (DeepSeek, Gemini, Kimi, GLM, Qwen or Ar
 
 ## Setup
 
+### Build a release locally (no GitHub Actions required)
+
+On Windows, double-click `build_release.bat`. It runs the full validation suite
+and creates a verified ZIP, SHA-256 checksum, and release notes in `dist/`.
+This does not require a GitHub Actions quota or an API key. Node.js and Python 3
+must be installed because the same source checks used during development run
+before packaging.
+
 > 📺 **Lost? Watch the [setup tutorial on YouTube](https://youtu.be/kPKiZLZ9_Ps) it covers every step below.**
 
 ### 1. Download the zip and install the extension
