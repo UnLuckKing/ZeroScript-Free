@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.19.4
+
+- Added a one-click Connection Doctor in the popup.
+- Doctor checks the bridge socket, Roblox MCP server, Roblox tools, Studio process, Studio MCP registration, open-place readiness, and model tab readiness.
+- Doctor can attempt one targeted Roblox MCP repair before reporting the exact blocker.
+- Fixed Restart Roblox server routing so targeted web reconnects preserve the requested server id.
+
 ## 1.19.3
 
 - Added safer DeepSeek direct-send timing so ZeroScript waits for the composer value and send button before submitting tool feedback.
