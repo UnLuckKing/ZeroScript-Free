@@ -39,6 +39,7 @@ jobs:
         run: |
           node zeroscript-extension/test-parser.js
           node zeroscript-extension/test-control-suite.js
+          node zeroscript-extension/test-task-start-policy.js
       - name: Manifest version parity
         shell: python
         run: |
