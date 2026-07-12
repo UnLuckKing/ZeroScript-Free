@@ -14,5 +14,11 @@ zsStudioPanelStatusPayload = function zsStudioPanelStatusWithProductivity() {
     payload.task.phaseStartedAt = Number(teamTask.phaseStartedAt || 0);
   }
   payload.productivity = typeof zsProductivityPublic === "function" ? zsProductivityPublic() : null;
+  payload.taskHistory = Array.isArray(teamHistory) ? teamHistory.slice(-20) : [];
+  if (typeof zsManager !== "undefined" && zsManager) {
+    payload.changeDiff = zsManager.diff || null;
+    payload.regression = Array.isArray(zsManager.regression) ? zsManager.regression.slice(-20) : [];
+    payload.managerTimeline = Array.isArray(zsManager.timeline) ? zsManager.timeline.slice(-20) : [];
+  }
   return payload;
 };
