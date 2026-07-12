@@ -1,0 +1,81 @@
+name: Validate ZeroScript 1.24
+
+on:
+  push:
+    branches:
+      - agent/1-24-foundation-hardening
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-version:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+      - name: Synchronize bridge version
+        shell: python
+        run: |
+          import json, pathlib, re
+          root = pathlib.Path('.')
+          version = json.loads((root / 'zeroscript-extension/manifest.json').read_text('utf-8'))['version']
+          path = root / 'bridge.py'
+          text = path.read_text('utf-8')
+          updated, count = re.subn(r'^BRIDGE_VERSION = "[^"]+"', f'BRIDGE_VERSION = "{version}"', text, count=1, flags=re.M)
+          if count != 1:
+              raise SystemExit('BRIDGE_VERSION assignment not found')
+          path.write_text(updated, 'utf-8')
+      - name: Commit synchronized version
+        run: |
+          if git diff --quiet -- bridge.py; then
+            echo "bridge.py already synchronized"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bridge.py
+          git commit -m "chore: sync bridge version with extension"
+          git push origin HEAD:${GITHUB_REF_NAME}
+
+  validate:
+    needs: [sync-version]
+    if: always() && (needs.sync-version.result == 'success' || needs.sync-version.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: JavaScript syntax checks
+        run: |
+          find zeroscript-extension -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Manifest and provider wiring checks
+        shell: python
+        run: |
+          import json, pathlib
+          manifest = json.loads(pathlib.Path('zeroscript-extension/manifest.json').read_text('utf-8'))
+          assert manifest['version'] == '1.24.0'
+          paths = {p for entry in manifest['content_scripts'] for p in entry.get('js', [])}
+          for required in ('core/provider-probe.js', 'core/permission-guard.js'):
+              assert required in paths, required
+          for required in ('background-suite.js', 'popup-suite.js'):
+              assert pathlib.Path('zeroscript-extension', required).exists(), required
+      - name: Parser tests and Python checks
+        run: |
+          node zeroscript-extension/test-parser.js
+          python -m py_compile bridge.py build_release.py launch_studio_mcp.py
+      - name: Build release package
+        run: python build_release.py
