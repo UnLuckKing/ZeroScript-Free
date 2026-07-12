@@ -15,9 +15,9 @@ ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist"
 ROOT_FILES = [
     "bridge.py", "bridge_core.py", "launch_studio_mcp.py", "start.bat", "start_with_panel.bat",
-    "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py", "control_api.py",
+    "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py", "hub_productivity_ui.py", "control_api.py",
     "install_studio_panel.py", "install_studio_panel.bat",
-    "config.json", "LICENSE", "README.md", "CHANGELOG.md", "RELEASE_NOTES_1.26.md",
+    "config.json", "LICENSE", "README.md", "CHANGELOG.md", "RELEASE_NOTES_1.27.md",
 ]
 PACKAGE_DIRS = ["zeroscript-extension", "roblox-plugin", "docs"]
 
@@ -46,6 +46,7 @@ def validate() -> None:
     run("node", "zeroscript-extension/test-control-suite.js")
     run("node", "zeroscript-extension/test-task-start-policy.js")
     run("node", "zeroscript-extension/test-speed-pack.js")
+    run("node", "zeroscript-extension/test-productivity-pack.js")
     run(sys.executable, "-m", "unittest", "-v", "test_control_api.py")
     run(
         sys.executable,
@@ -57,6 +58,7 @@ def validate() -> None:
         "control_api.py",
         "zeroscript_hub.py",
         "zeroscript_hub_launcher.py",
+        "hub_productivity_ui.py",
         "install_studio_panel.py",
         "build_release.py",
     )
@@ -77,6 +79,8 @@ def validate() -> None:
         "background-task-start-policy.js",
         "background-speed-pack.js",
         "background-speed-fixes.js",
+        "background-productivity-pack.js",
+        "background-productivity-sync.js",
         "popup-simple.js",
     ):
         if not (extension / required).exists():
@@ -84,8 +88,8 @@ def validate() -> None:
     if not (ROOT / "roblox-plugin" / "ZeroScriptControlPanel.lua").exists():
         raise RuntimeError("Native Studio panel source is missing")
     for required in (
-        "zeroscript_hub.py", "zeroscript_hub_launcher.py", "ZeroScript Hub.bat",
-        "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "RELEASE_NOTES_1.26.md",
+        "zeroscript_hub.py", "zeroscript_hub_launcher.py", "hub_productivity_ui.py", "ZeroScript Hub.bat",
+        "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "RELEASE_NOTES_1.27.md",
     ):
         if not (ROOT / required).exists():
             raise RuntimeError(f"ZeroScript Hub release file is missing: {required}")
