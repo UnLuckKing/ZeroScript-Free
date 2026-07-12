@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.19.0
+
+- Added a strict QA evidence gate for coordinated team tasks.
+- QA reports must identify the tested path and explicitly report Output errors.
+- ZeroScript independently queries Studio Output after QA finishes when the
+  console tool is available.
+- Missing evidence or detected runtime errors automatically requeue QA up to
+  two times instead of accepting an unsupported completion claim.
+- Verified evidence and captured Output are persisted with task history and
+  summarized in the extension popup.
+
 ## 1.18.0
 
 - Added a one-click **Scan current project** action in the extension popup.

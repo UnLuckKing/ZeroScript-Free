@@ -41,6 +41,7 @@ function renderTeam(team) {
     : "Single-model mode";
   if (unhealthy) document.getElementById("teamState").textContent += `\nUnavailable: ${unhealthy}`;
   if (team.checkpoint && team.checkpoint.latest) document.getElementById("teamState").textContent += `\nCheckpoint: ${team.checkpoint.status} · ${team.checkpoint.latest}`;
+  if (task && task.qaEvidence) document.getElementById("teamState").textContent += `\nQA evidence: ${task.qaEvidence.passed ? "verified" : "retry required"}${task.qaEvidence.consoleChecked ? ` · Output ${task.qaEvidence.consoleClean ? "clean" : "has errors"}` : ""}`;
   const audit = team.audit || {};
   const auditBox = document.getElementById("auditReport");
   if (audit.status === "scanning") auditBox.textContent = "Project scan running…";
