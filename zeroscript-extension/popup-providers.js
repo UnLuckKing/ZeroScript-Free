@@ -100,4 +100,14 @@
 
   refresh();
   setInterval(refresh, 2000);
+
+  // popup-manager.js is parsed after this file. Load the specialist action pack
+  // on window load so the manager dashboard is guaranteed to exist first.
+  window.addEventListener("load", () => {
+    if (document.querySelector('script[data-zs-manager-actions]')) return;
+    const script = document.createElement("script");
+    script.src = chrome.runtime.getURL("popup-manager-actions.js");
+    script.dataset.zsManagerActions = "1";
+    document.documentElement.appendChild(script);
+  }, { once: true });
 })();
