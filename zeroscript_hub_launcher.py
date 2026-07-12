@@ -52,13 +52,14 @@ def _guarded_start_services(self) -> None:
         return
     self._hub_services_starting = True
 
-    # A ZIP update can leave the previous control API alive on the same port.
-    # Replace it when its reported version is stale or it is not a real Hub API.
+    # A ZIP update can leave the previous API and bridge alive on their ports.
+    # Replace both when the API is stale or the process on 17614 is not ours.
     if hub.port_open(hub.CONTROL_PORT, 0.12):
         health = hub.request_json("/health", timeout=0.6)
         if not health.get("ok") or health.get("version") != hub.VERSION:
             hub.kill_port(hub.CONTROL_PORT)
-            self.log("Eski/takılmış Hub servisi kapatıldı; güncel sürüm başlatılıyor.")
+            hub.kill_port(hub.BRIDGE_PORT)
+            self.log("Eski/takılmış Hub ve Bridge servisleri kapatıldı; güncel sürüm başlatılıyor.")
             time.sleep(0.25)
 
     _original_start_services(self)
@@ -144,6 +145,7 @@ def _wait_for_control(timeout: float = 8.0) -> bool:
 def _wait_for_task_acceptance(goal: str, previous_id: str | None, timeout: float = 10.0) -> tuple[bool, str]:
     deadline = time.time() + timeout
     last_detail = "Extension görevi henüz almadı."
+    expected_goal = goal[:500].strip()
     while time.time() < deadline:
         result = hub.request_json("/status", hub.ensure_token(), timeout=0.8)
         status = result.get("status") if result.get("ok") else {}
@@ -157,7 +159,7 @@ def _wait_for_task_acceptance(goal: str, previous_id: str | None, timeout: float
         task = status.get("task") or {}
         task_id = str(task.get("id") or "")
         task_goal = str(task.get("goal") or "").strip()
-        if task_id and task_id != (previous_id or "") and task_goal == goal:
+        if task_id and task_id != (previous_id or "") and task_goal == expected_goal:
             return True, f"{task.get('status', 'queued')} · {task.get('phase', 'hazırlanıyor')}"
         if task and task_id == (previous_id or ""):
             last_detail = f"Önceki görev hâlâ {task.get('status', 'aktif')}. Durdur veya tamamlanmasını bekle."
