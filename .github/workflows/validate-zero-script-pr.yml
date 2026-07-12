@@ -1,0 +1,51 @@
+name: Validate ZeroScript Pull Request
+
+on:
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Synchronize bridge version in the test workspace
+        shell: python
+        run: |
+          import json, pathlib, re
+          version = json.loads(pathlib.Path('zeroscript-extension/manifest.json').read_text('utf-8'))['version']
+          path = pathlib.Path('bridge.py')
+          text = path.read_text('utf-8')
+          text, count = re.subn(r'^BRIDGE_VERSION = "[^"]+"', f'BRIDGE_VERSION = "{version}"', text, count=1, flags=re.M)
+          if count != 1:
+              raise SystemExit('BRIDGE_VERSION assignment not found')
+          path.write_text(text, 'utf-8')
+      - name: JavaScript syntax checks
+        run: find zeroscript-extension -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Parser and Control Suite tests
+        run: |
+          node zeroscript-extension/test-parser.js
+          if [ -f zeroscript-extension/test-control-suite.js ]; then node zeroscript-extension/test-control-suite.js; fi
+      - name: Python checks
+        run: |
+          python -m py_compile bridge.py build_release.py launch_studio_mcp.py
+          if [ -f control_api.py ]; then python -m py_compile control_api.py install_studio_panel.py; fi
+      - name: Test optional Studio plugin installer
+        if: ${{ hashFiles('install_studio_panel.py') != '' }}
+        shell: bash
+        run: |
+          export LOCALAPPDATA="$RUNNER_TEMP/localappdata"
+          python install_studio_panel.py
+          test -s "$LOCALAPPDATA/Roblox/Plugins/ZeroScriptControlPanel.rbxmx"
+      - name: Build release package
+        run: python build_release.py
