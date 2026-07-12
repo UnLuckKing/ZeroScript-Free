@@ -94,12 +94,21 @@ document.getElementById("taskTemplate").addEventListener("change", (e) => {
   if (TASK_TEMPLATES[e.target.value]) document.getElementById("teamGoal").value = TASK_TEMPLATES[e.target.value];
 });
 
-document.getElementById("startTask").addEventListener("click", () => {
+document.getElementById("startTask").addEventListener("click", (e) => {
   const goal = document.getElementById("teamGoal").value.trim();
   if (!goal) return;
+  const original = e.target.textContent;
+  e.target.textContent = "Starting…";
+  e.target.disabled = true;
   document.getElementById("teamEnabled").checked = true;
   saveTeam();
-  setTimeout(() => chrome.runtime.sendMessage({ type: "team_task_start", goal }, (r) => r && renderTeam(r.team)), 100);
+  setTimeout(() => chrome.runtime.sendMessage({ type: "team_task_start", goal }, (r) => {
+    e.target.disabled = false;
+    e.target.textContent = r && r.ok ? "✓ Started" : "Start blocked";
+    if (r && r.team) renderTeam(r.team);
+    else if (r && r.error) document.getElementById("teamState").textContent = r.error;
+    setTimeout(() => { e.target.textContent = original; }, 2200);
+  }), 100);
 });
 document.getElementById("scanProject").addEventListener("click", (e) => {
   const original = e.target.textContent;
