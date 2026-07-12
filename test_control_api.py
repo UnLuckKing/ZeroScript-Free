@@ -10,7 +10,7 @@ from control_api import ALLOWED_ACTIONS, ControlState, VERSION, load_or_create_t
 
 class ControlApiTests(unittest.TestCase):
     def test_version(self) -> None:
-        self.assertEqual(VERSION, "1.28.0")
+        self.assertEqual(VERSION, "1.29.0")
 
     def test_token_is_created_and_reused(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
