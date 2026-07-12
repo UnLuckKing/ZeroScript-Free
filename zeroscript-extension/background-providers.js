@@ -35,6 +35,10 @@ importScripts("background-local-fixes.js");
 // checks. Loaded last so its wrappers observe the final dispatch implementation.
 importScripts("background-suite.js");
 
+// Optional authenticated localhost side-channel used by the native Roblox
+// Studio DockWidget. Disabled until the user supplies the generated token.
+importScripts("background-studio-panel.js");
+
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
     for (const tab of tabs || []) {
