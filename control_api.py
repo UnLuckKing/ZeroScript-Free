@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-VERSION = "1.29.0"
+VERSION = "1.30.0"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 17614
 ALLOWED_ACTIONS = {
@@ -26,6 +26,8 @@ ALLOWED_ACTIONS = {
     "diagnose_fix", "decompose_task", "set_automation", "context_compact", "emergency_stop",
     "clear_notifications", "clear_error_groups", "restore_instances", "visual_ui_compare",
     "button_test", "remote_fuzzer", "instance_rollback_test", "auto_profile_setup",
+    "set_superior", "genome_scan", "shadow_prepare", "proof_evaluate", "jury_review",
+    "self_heal_scan", "intent_compile", "studio_command",
 }
 
 
