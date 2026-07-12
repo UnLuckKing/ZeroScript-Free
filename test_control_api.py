@@ -30,7 +30,12 @@ class ControlApiTests(unittest.TestCase):
 
     def test_actions_are_fifo_and_consumed_once(self) -> None:
         state = ControlState()
-        actions = ("stop", "retry", "rollback", "start_task", "set_config", "repair_connection", "open_provider")
+        actions = (
+            "stop", "retry", "rollback", "start_task", "set_config", "repair_connection", "open_provider",
+            "enqueue_task", "queue_pause", "queue_resume", "queue_clear", "queue_remove", "build_index",
+            "output_watch", "ui_audit", "security_audit", "datastore_lab", "economy_simulator",
+            "marketplace_scan", "release_check", "multiplayer_test", "record_test",
+        )
         for action in actions:
             self.assertIn(action, ALLOWED_ACTIONS)
             state.add_action(action, {"sample": True})
