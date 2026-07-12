@@ -1,0 +1,96 @@
+name: Build ZeroScript release
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - bridge.py
+      - launch_studio_mcp.py
+      - start.bat
+      - config.json
+      - zeroscript-extension/**
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zeroscript-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Read and validate version
+        id: version
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./zeroscript-extension/manifest.json').version")"
+          BRIDGE_VERSION="$(python - <<'PY'
+          import re
+          text = open('bridge.py', encoding='utf-8').read()
+          print(re.search(r'^BRIDGE_VERSION = "([^"]+)"', text, re.M).group(1))
+          PY
+          )"
+          test "$VERSION" = "$BRIDGE_VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Validate sources
+        run: |
+          node --check zeroscript-extension/background.js
+          node --check zeroscript-extension/popup.js
+          node --check zeroscript-extension/core/main.js
+          node zeroscript-extension/test-parser.js
+          python -m py_compile bridge.py launch_studio_mcp.py
+
+      - name: Build Windows package
+        shell: bash
+        run: |
+          ROOT="ZeroScript-${{ steps.version.outputs.version }}"
+          mkdir -p "dist/$ROOT"
+          cp bridge.py launch_studio_mcp.py start.bat config.json LICENSE README.md CHANGELOG.md "dist/$ROOT/"
+          cp -R zeroscript-extension "dist/$ROOT/zeroscript-extension"
+          cd dist
+          zip -r -9 "ZeroScript-${{ steps.version.outputs.version }}-Windows.zip" "$ROOT"
+          sha256sum "ZeroScript-${{ steps.version.outputs.version }}-Windows.zip" > "ZeroScript-${{ steps.version.outputs.version }}-SHA256.txt"
+
+      - name: Create GitHub release when missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "$TAG already exists; leaving the immutable release untouched."
+            exit 0
+          fi
+          gh release create "$TAG" \
+            "dist/ZeroScript-$VERSION-Windows.zip" \
+            "dist/ZeroScript-$VERSION-SHA256.txt" \
+            --target "$GITHUB_SHA" \
+            --title "ZeroScript $VERSION" \
+            --generate-notes
+
+      - name: Keep build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZeroScript-${{ steps.version.outputs.version }}-Windows
+          path: |
+            dist/ZeroScript-${{ steps.version.outputs.version }}-Windows.zip
+            dist/ZeroScript-${{ steps.version.outputs.version }}-SHA256.txt
+          if-no-files-found: error
