@@ -16,8 +16,9 @@ DIST = ROOT / "dist"
 ROOT_FILES = [
     "bridge.py", "bridge_core.py", "launch_studio_mcp.py", "start.bat", "start_with_panel.bat",
     "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py",
-    "hub_productivity_ui.py", "hub_workflow_extras.py", "hub_automation_ui.py", "hub_learning_ui.py", "hub_modern_ui.py",
-    "memory_vault.py", "control_api.py", "install_studio_panel.py", "install_studio_panel.bat",
+    "hub_productivity_ui.py", "hub_workflow_extras.py", "hub_automation_ui.py", "hub_learning_ui.py", "hub_learning_extras.py", "hub_modern_ui.py",
+    "memory_vault.py", "memory_vault_safeguards.py", "recipe_starter_packs.py", "control_api.py",
+    "install_studio_panel.py", "install_studio_panel.bat",
     "config.json", "LICENSE", "README.md", "CHANGELOG.md", "RELEASE_NOTES_1.29.md",
 ]
 PACKAGE_DIRS = ["zeroscript-extension", "roblox-plugin", "docs"]
@@ -66,8 +67,11 @@ def validate() -> None:
         "hub_workflow_extras.py",
         "hub_automation_ui.py",
         "hub_learning_ui.py",
+        "hub_learning_extras.py",
         "hub_modern_ui.py",
         "memory_vault.py",
+        "memory_vault_safeguards.py",
+        "recipe_starter_packs.py",
         "install_studio_panel.py",
         "build_release.py",
     )
@@ -103,7 +107,8 @@ def validate() -> None:
         raise RuntimeError("Native Studio panel source is missing")
     for required in (
         "zeroscript_hub.py", "zeroscript_hub_launcher.py", "hub_productivity_ui.py", "hub_workflow_extras.py",
-        "hub_automation_ui.py", "hub_learning_ui.py", "hub_modern_ui.py", "memory_vault.py",
+        "hub_automation_ui.py", "hub_learning_ui.py", "hub_learning_extras.py", "hub_modern_ui.py",
+        "memory_vault.py", "memory_vault_safeguards.py", "recipe_starter_packs.py",
         "ZeroScript Hub.bat", "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "RELEASE_NOTES_1.29.md",
     ):
         if not (ROOT / required).exists():
