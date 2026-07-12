@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.13.0
+
+- Added safe one-click handoff for ChatGPT, Claude, Copilot, Mistral Le Chat,
+  Perplexity, Poe, and Roblox Assistant.
+- Handoffs include the current goal, phase, provider, repair count, checkpoint,
+  latest report, and recent task outcomes without requiring a paid API.
+
 ## 1.12.0
 
 - Added a local, Actions-free release builder for Windows.
