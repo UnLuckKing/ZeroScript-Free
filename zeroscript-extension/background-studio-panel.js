@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Optional browser <-> local control API synchronization for the native Roblox
-// Studio DockWidget. The API binds to localhost and requires a random token.
+// Browser <-> ZeroScript Hub synchronization. The API binds to localhost and
+// requires a random token except during the explicit short pairing window.
 
 const ZS_STUDIO_PANEL_KEY = "zsStudioPanelConfig";
 const ZS_STUDIO_PANEL_DEFAULTS = {
@@ -10,7 +10,7 @@ const ZS_STUDIO_PANEL_DEFAULTS = {
   connected: false,
   lastSyncAt: 0,
   lastActionAt: 0,
-  lastError: "Studio panel disabled",
+  lastError: "ZeroScript Hub not paired",
 };
 let zsStudioPanel = { ...ZS_STUDIO_PANEL_DEFAULTS };
 let zsStudioPanelBusy = false;
@@ -55,6 +55,13 @@ function zsStudioPanelHeaders() {
 function zsStudioPanelStatusPayload() {
   const task = teamTask;
   const manager = typeof zsManager !== "undefined" ? zsManager : null;
+  const providers = [...teamAgents.entries()].map(([tabId, agent]) => ({
+    tabId,
+    provider: agent.provider,
+    ready: !!agent.ready,
+    title: agent.title || "",
+    lastSeen: agent.lastSeen || 0,
+  }));
   return {
     extensionVersion: chrome.runtime.getManifest().version,
     runtime: zsSuite && zsSuite.runtime ? zsSuite.runtime : { state: task ? task.status : "idle" },
@@ -74,6 +81,14 @@ function zsStudioPanelStatusPayload() {
       studioApp,
       studioProc,
       tools: toolsCache.length,
+    },
+    providers,
+    config: {
+      qualityMode: zsSuite && zsSuite.qualityMode || "balanced",
+      smartRouting: !!teamConfig.smartRouting,
+      approvalMode: teamConfig.approvalMode || "autonomous",
+      notifications: zsSuite ? !!zsSuite.notifications : true,
+      autoContextRecovery: zsSuite ? !!zsSuite.autoContextRecovery : true,
     },
     risk: zsSuite && zsSuite.risk ? zsSuite.risk : null,
     ownership: zsSuite && zsSuite.ownership ? zsSuite.ownership : null,
@@ -116,18 +131,56 @@ function zsStudioPanelSendRuntime(message) {
   });
 }
 
+function zsHubProvider(value, fallback) {
+  const provider = String(value || "auto").toLowerCase();
+  return provider === "auto" ? fallback : provider;
+}
+
+async function zsHubApplyConfig(payload) {
+  const config = payload && typeof payload === "object" ? payload : {};
+  if (zsSuite) {
+    if (["fast", "balanced", "best"].includes(config.qualityMode)) zsSuite.qualityMode = config.qualityMode;
+    if (typeof config.notifications === "boolean") zsSuite.notifications = config.notifications;
+    if (typeof config.autoContextRecovery === "boolean") zsSuite.autoContextRecovery = config.autoContextRecovery;
+  }
+  teamConfig = {
+    ...teamConfig,
+    enabled: true,
+    smartRouting: typeof config.smartRouting === "boolean" ? config.smartRouting : teamConfig.smartRouting,
+    approvalMode: ["autonomous", "review"].includes(config.approvalMode) ? config.approvalMode : teamConfig.approvalMode,
+    writer: zsHubProvider(config.preferredBuilder, teamConfig.writer || "qwen"),
+    mapDesigner: zsHubProvider(config.preferredUI, teamConfig.mapDesigner || "gemini"),
+    uiDesigner: zsHubProvider(config.preferredUI, teamConfig.uiDesigner || "gemini"),
+    qa: zsHubProvider(config.preferredQA, teamConfig.qa || "qwen"),
+  };
+  await chrome.storage.local.set({ zsTeamConfig: teamConfig });
+  if (typeof zsSuitePersist === "function") await zsSuitePersist();
+  broadcastTeam();
+}
+
 async function zsStudioPanelHandleAction(item) {
   const action = String(item && item.action || "").toLowerCase();
+  const payload = item && item.payload && typeof item.payload === "object" ? item.payload : {};
   if (!action) return;
   zsStudioPanel.lastActionAt = Date.now();
-  if (typeof zsSuiteLedger === "function") zsSuiteLedger("studio_panel", `Studio requested action: ${action}`, { actionId: item.id });
+  if (typeof zsSuiteLedger === "function") zsSuiteLedger("hub", `ZeroScript Hub requested: ${action}`, { actionId: item.id });
 
   if (action === "stop") await zsStudioPanelBroadcastStop();
   else if (action === "retry") await zsStudioPanelSendRuntime({ type: "team_task_retry" });
   else if (action === "cancel") await zsStudioPanelSendRuntime({ type: "team_task_cancel" });
-  else if (action === "rollback") await zsStudioPanelSendRuntime({ type: "team_task_rollback" });
+  else if (action === "rollback") await zsStudioPanelSendRuntime({ type: "team_checkpoint_restore" });
   else if (action === "probe_providers" && typeof zsSuiteProbeProviders === "function") await zsSuiteProbeProviders();
   else if (action === "scan_project" && typeof scanAndPersistProject === "function") await scanAndPersistProject();
+  else if (action === "repair_connection" && typeof runConnectionDoctor === "function") await runConnectionDoctor({ repair: true });
+  else if (action === "set_config") await zsHubApplyConfig(payload);
+  else if (action === "open_provider" && typeof zsSuitePrepareProvider === "function") {
+    await zsSuitePrepareProvider(String(payload.provider || "qwen"));
+  }
+  else if (action === "start_task" && typeof startTeamTask === "function") {
+    const goal = String(payload.goal || "").trim();
+    const active = teamTask && !["done", "failed", "cancelled"].includes(teamTask.status);
+    if (goal && !active) await startTeamTask(goal);
+  }
   else if (action === "release_manager" && typeof startTeamTask === "function") {
     const active = teamTask && !["done", "failed", "cancelled"].includes(teamTask.status);
     if (!active) await startTeamTask("Run the Release Manager for the currently open Roblox experience. Inspect release readiness, security, DataStores, purchases, economy, onboarding, mobile UI, performance, Output, respawn, and the main gameplay loop. Fix verified blockers, run regression tests, and return genuine evidence and remaining user-only steps.");
@@ -143,7 +196,12 @@ async function zsStudioPanelSync() {
       body: JSON.stringify(zsStudioPanelStatusPayload()),
     });
     const actionsResult = await zsStudioPanelRequest("/actions");
-    for (const action of actionsResult.actions || []) await zsStudioPanelHandleAction(action);
+    for (const action of actionsResult.actions || []) {
+      try { await zsStudioPanelHandleAction(action); }
+      catch (error) {
+        if (typeof zsSuiteLedger === "function") zsSuiteLedger("hub_error", String(error && error.message || error), { action: action.action });
+      }
+    }
     const eventResult = await zsStudioPanelRequest("/studio-events");
     for (const event of eventResult.events || []) {
       if (typeof zsSuiteLedger === "function") zsSuiteLedger("studio_event", event.detail || event.kind || "Studio panel event", event);
@@ -167,7 +225,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (typeof message.enabled === "boolean") zsStudioPanel.enabled = message.enabled;
     if (typeof message.url === "string" && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?$/i.test(message.url.trim())) zsStudioPanel.url = message.url.trim().replace(/\/+$/, "");
     if (typeof message.token === "string") zsStudioPanel.token = message.token.trim();
-    zsStudioPanel.lastError = zsStudioPanel.enabled ? "Not tested yet" : "Studio panel disabled";
+    zsStudioPanel.lastError = zsStudioPanel.enabled ? "Not tested yet" : "ZeroScript Hub disabled";
     zsStudioPanelPersist().then(() => {
       broadcastTeam();
       if (zsStudioPanel.enabled) zsStudioPanelSync().catch(() => {});
@@ -181,7 +239,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const healthResponse = await fetch(zsStudioPanelEndpoint("/health"), { cache: "no-store" });
         const health = await healthResponse.json();
         if (!healthResponse.ok || !health.ok) throw new Error(health.error || `Control API HTTP ${healthResponse.status}`);
-        if (!String(zsStudioPanel.token || "").trim()) throw new Error("Enter the token from control_token.txt.");
+        if (!String(zsStudioPanel.token || "").trim()) throw new Error("Pair the extension from ZeroScript Hub.");
         await zsStudioPanelRequest("/status");
         zsStudioPanel.connected = true;
         zsStudioPanel.lastSyncAt = Date.now();
@@ -201,9 +259,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// The popup writes configuration directly to chrome.storage to avoid a race
-// with the legacy background message listener. Reload it immediately here so
-// the service worker starts/stops synchronization without requiring a restart.
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local" || !changes[ZS_STUDIO_PANEL_KEY]) return;
   zsStudioPanel = {
@@ -211,10 +266,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     ...((changes[ZS_STUDIO_PANEL_KEY] && changes[ZS_STUDIO_PANEL_KEY].newValue) || {}),
   };
   broadcastTeam();
-  if (zsStudioPanel.enabled && String(zsStudioPanel.token || "").trim()) {
-    zsStudioPanelSync().catch(() => {});
-  }
+  if (zsStudioPanel.enabled && String(zsStudioPanel.token || "").trim()) zsStudioPanelSync().catch(() => {});
 });
 
-setInterval(() => zsStudioPanelSync().catch(() => {}), 2000);
-setTimeout(() => zsStudioPanelSync().catch(() => {}), 3000);
+setInterval(() => zsStudioPanelSync().catch(() => {}), 1500);
+setTimeout(() => zsStudioPanelSync().catch(() => {}), 1000);
