@@ -24,6 +24,9 @@ ttk.Frame.columnconfigure = _safe_columnconfigure
 
 import zeroscript_hub as hub  # noqa: E402
 
+# Display the hotfix version without rewriting the stable Hub implementation.
+hub.VERSION = "1.25.1"
+
 _original_log = hub.ZeroScriptHub.log
 _original_start_services = hub.ZeroScriptHub.start_services
 
