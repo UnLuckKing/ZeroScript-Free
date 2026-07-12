@@ -36,10 +36,11 @@ importScripts("background-local-fixes.js");
 importScripts("background-suite.js");
 importScripts("background-suite-fixes.js");
 
-// Optional authenticated localhost side-channel used by the native Roblox
-// Studio DockWidget. Disabled until the user supplies the generated token.
+// Authenticated localhost channel shared by ZeroScript Hub and the optional
+// Roblox Studio DockWidget. Hub can open a short one-click pairing window.
 importScripts("background-studio-panel.js");
 importScripts("background-studio-panel-fixes.js");
+importScripts("background-hub-autopair.js");
 
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
