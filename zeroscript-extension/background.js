@@ -587,6 +587,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (teamTask && msg.task_id === teamTask.id) {
           const failed = teamTask.provider || msg.provider || "unknown";
           const reason = String(msg.error || "Model tab could not run the task.");
+          const setupProblem = /start a zeroscript session|not started|is busy in another turn/i.test(reason);
+          if (setupProblem) {
+            teamTask.status = "waiting";
+            teamTask.error = reason;
+            teamTask.updatedAt = Date.now();
+            await chrome.storage.local.set({ zsTeamTask: teamTask });
+            broadcastTeam();
+            sendResponse({ ok: true, waiting: true });
+            break;
+          }
           teamTask.failedProviders = Array.isArray(teamTask.failedProviders) ? teamTask.failedProviders : [];
           if (!teamTask.failedProviders.includes(failed)) teamTask.failedProviders.push(failed);
           const limited = /quota|rate limit|context limit|too long|captcha|usage limit/i.test(reason);
@@ -603,7 +613,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         break;
       }
       case "team_task_retry": {
-        if (teamTask) { teamTask.status = "queued"; teamTask.error = null; dispatchTask(); }
+        if (teamTask) {
+          // Retry is an explicit user signal that setup/transient problems were
+          // fixed. Forget per-task failures and clear only generic error health;
+          // real quota/captcha limits remain cooled down to avoid immediate loops.
+          teamTask.failedProviders = [];
+          for (const [provider, h] of Object.entries(providerHealth)) {
+            if (h && h.status === "error") delete providerHealth[provider];
+          }
+          teamTask.status = "queued";
+          teamTask.error = null;
+          teamTask.updatedAt = Date.now();
+          await chrome.storage.local.set({ zsTeamTask: teamTask, zsProviderHealth: providerHealth });
+          broadcastTeam();
+          dispatchTask();
+        }
         sendResponse({ ok: !!teamTask, team: teamObj() });
         break;
       }
