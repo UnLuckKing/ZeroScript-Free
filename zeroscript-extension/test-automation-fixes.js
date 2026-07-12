@@ -6,6 +6,7 @@ const vm = require("vm");
 
 const pack = fs.readFileSync(path.join(__dirname, "background-automation-pack.js"), "utf8");
 const fixes = fs.readFileSync(path.join(__dirname, "background-automation-fixes.js"), "utf8");
+const instanceFixes = fs.readFileSync(path.join(__dirname, "background-automation-instance-fixes.js"), "utf8");
 let startCalls = 0;
 let checkpointCalls = 0;
 let toolCalls = 0;
@@ -38,7 +39,12 @@ const context = {
   broadcastTeam: () => {},
   teamObj: () => ({}),
   robloxTool: () => ({ name: "execute_luau" }),
-  send: async () => { toolCalls += 1; return { ok: true, text: "INSTANCE_BACKUP_OK:1:skipped=0" }; },
+  send: async (message) => {
+    toolCalls += 1;
+    const code = String(message && message.arguments && message.arguments.code || "");
+    if (code.includes("INSTANCE_RESTORE")) return { ok: true, text: "INSTANCE_RESTORE_OK:1:skipped=0" };
+    return { ok: true, text: "INSTANCE_BACKUP_OK:1:skipped=0" };
+  },
   runConnectionDoctor: async () => ({ ok: true, rows: [] }),
   zsSuiteProbeProviders: async () => ({}),
   scanAndPersistProject: async () => ({}),
@@ -79,6 +85,7 @@ const context = {
 vm.createContext(context);
 vm.runInContext(pack, context, { filename: "background-automation-pack.js" });
 vm.runInContext(fixes, context, { filename: "background-automation-fixes.js" });
+vm.runInContext(instanceFixes, context, { filename: "background-automation-instance-fixes.js" });
 
 (async () => {
   vm.runInContext("zsAutomation.settings.autoDecomposeBroadTasks = true", context);
@@ -100,6 +107,7 @@ vm.runInContext(fixes, context, { filename: "background-automation-fixes.js" });
   context.teamTask = { goal: "fix the mobile UI", performanceMode: "turbo" };
   await context.createCheckpoint("cp-ui");
   assert.ok(toolCalls >= 1, "UI work should attach an instance-level backup");
+  assert.strictEqual(vm.runInContext("zsAutomation.instanceBackup.status", context), "saved");
 
   vm.runInContext("zsAutomationNotice('task', 'Completed', 'done', 'success')", context);
   await Promise.resolve();
