@@ -1,0 +1,111 @@
+name: ZeroScript 1.23 sync and validation
+
+on:
+  push:
+    paths:
+      - '.github/workflows/v1-23-sync-and-validate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Sync release metadata
+        run: |
+          python - <<'PY'
+          import json
+          import pathlib
+          import re
+
+          root = pathlib.Path('.')
+          manifest_path = root / 'zeroscript-extension' / 'manifest.json'
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          version = manifest['version']
+
+          bridge = root / 'bridge.py'
+          bridge_text = bridge.read_text(encoding='utf-8')
+          bridge_text, count = re.subn(
+              r'BRIDGE_VERSION = "[^"]+"',
+              f'BRIDGE_VERSION = "{version}"',
+              bridge_text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit('Could not locate BRIDGE_VERSION in bridge.py')
+          bridge.write_text(bridge_text, encoding='utf-8')
+
+          changelog = root / 'CHANGELOG.md'
+          current = changelog.read_text(encoding='utf-8')
+          heading = f'## {version}'
+          if heading not in current:
+              block = f'''# Changelog
+
+{heading}
+
+- Added the adaptive AI Team Manager with dynamic task planning and structured cross-model memory.
+- Added learned provider routing, persistent regression tests, context recovery, and stuck-task failover.
+- Added deterministic script diffing, high-risk change warnings, and catastrophic bulk-change protection.
+- Added release-readiness scoring, task timeline, provider performance, and specialist manager tasks.
+- Added optional free local AI support for LM Studio, Ollama, and OpenAI-compatible localhost servers.
+- Added local-model health checks, model discovery, tool execution, safety checks, and automatic web-provider fallback.
+
+'''
+              if current.startswith('# Changelog\n\n'):
+                  current = block + current[len('# Changelog\n\n'):]
+              else:
+                  current = block + current
+              changelog.write_text(current, encoding='utf-8')
+          PY
+
+      - name: Validate JavaScript
+        run: |
+          node --check zeroscript-extension/background.js
+          node --check zeroscript-extension/background-entry.js
+          node --check zeroscript-extension/background-providers.js
+          node --check zeroscript-extension/background-manager.js
+          node --check zeroscript-extension/background-manager-finalizer.js
+          node --check zeroscript-extension/background-local.js
+          node --check zeroscript-extension/background-local-fixes.js
+          node --check zeroscript-extension/popup.js
+          node --check zeroscript-extension/popup-smart.js
+          node --check zeroscript-extension/popup-providers.js
+          node --check zeroscript-extension/popup-manager.js
+          node --check zeroscript-extension/popup-manager-actions.js
+          node --check zeroscript-extension/popup-local.js
+          node --check zeroscript-extension/core/main.js
+          node --check zeroscript-extension/core/team-reliability.js
+          node --check zeroscript-extension/core/catastrophic-guard.js
+          node --check zeroscript-extension/providers/browser-chat.js
+          node zeroscript-extension/test-parser.js
+
+      - name: Validate Python and release package
+        run: |
+          python -m py_compile bridge.py build_release.py launch_studio_mcp.py
+          python build_release.py
+
+      - name: Commit synchronized metadata
+        run: |
+          if git diff --quiet; then
+            echo 'No metadata changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add bridge.py CHANGELOG.md
+          git commit -m 'v1.23: sync bridge version and changelog'
+          git push
