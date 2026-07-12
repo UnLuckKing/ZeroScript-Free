@@ -7,6 +7,7 @@ on:
       - 'zeroscript_hub.py'
       - 'zeroscript_hub_launcher.py'
       - 'hub_productivity_ui.py'
+      - 'hub_workflow_extras.py'
       - 'control_api.py'
       - 'test_control_api.py'
       - 'zeroscript-extension/**'
@@ -32,7 +33,7 @@ jobs:
           node-version: '22'
       - name: Python syntax and tests
         run: |
-          python -m py_compile bridge.py bridge_core.py control_api.py zeroscript_hub.py zeroscript_hub_launcher.py hub_productivity_ui.py install_studio_panel.py build_release.py
+          python -m py_compile bridge.py bridge_core.py control_api.py zeroscript_hub.py zeroscript_hub_launcher.py hub_productivity_ui.py hub_workflow_extras.py install_studio_panel.py build_release.py
           python -m unittest -v test_control_api.py
       - name: JavaScript syntax
         run: find zeroscript-extension -name '*.js' -print0 | xargs -0 -n1 node --check
