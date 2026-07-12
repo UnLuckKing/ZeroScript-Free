@@ -109,7 +109,7 @@ function teamObj() {
 
 function agentFor(provider) {
   cleanTeamState();
-  return [...teamAgents.entries()].find(([, a]) => a.provider === provider);
+  return [...teamAgents.entries()].find(([, a]) => a.provider === provider && a.ready);
 }
 
 function fallbackAgent(preferred, phase) {
@@ -117,7 +117,7 @@ function fallbackAgent(preferred, phase) {
   const excluded = new Set(teamTask && Array.isArray(teamTask.failedProviders) ? teamTask.failedProviders : []);
   const exact = !excluded.has(preferred) && !providerHealth[preferred] ? agentFor(preferred) : null;
   if (exact) return { hit: exact, provider: preferred, fallback: false };
-  const candidates = [...teamAgents.entries()].filter(([, a]) => !excluded.has(a.provider) && !providerHealth[a.provider]);
+  const candidates = [...teamAgents.entries()].filter(([, a]) => a.ready && !excluded.has(a.provider) && !providerHealth[a.provider]);
   if (!candidates.length) return null;
   // Prefer vision for QA, otherwise use the first live provider. Provider tabs
   // heartbeat every seven seconds, so this list contains only genuinely open tabs.
@@ -522,9 +522,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       case "team_register": {
         if (sender.tab && sender.tab.id != null) {
-          teamAgents.set(sender.tab.id, { provider: msg.provider || "unknown", title: sender.tab.title || "", lastSeen: Date.now() });
+          teamAgents.set(sender.tab.id, { provider: msg.provider || "unknown", title: sender.tab.title || "", ready: msg.ready === true, lastSeen: Date.now() });
           broadcastTeam();
-          if (teamTask && teamTask.status === "waiting" && phaseProvider(teamTask.phase) === msg.provider) dispatchTask();
+          if (msg.ready === true && teamTask && teamTask.status === "waiting") dispatchTask();
         }
         sendResponse({ ok: true, team: teamObj() });
         break;
