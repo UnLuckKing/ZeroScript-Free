@@ -22,7 +22,7 @@ ttk.Frame.columnconfigure = _safe_columnconfigure
 
 import zeroscript_hub as hub  # noqa: E402
 
-hub.VERSION = "1.30.0"
+hub.VERSION = "1.31.0"
 hub.QUALITY_LABELS = {
     "Akıllı otomatik": "auto",
     "Turbo": "turbo",
@@ -32,6 +32,7 @@ hub.QUALITY_LABELS = {
 }
 hub.QUALITY_VALUES = {value: label for label, value in hub.QUALITY_LABELS.items()}
 hub.DEFAULT_SETTINGS["qualityMode"] = "auto"
+hub.DEFAULT_SETTINGS["simpleMode"] = True
 
 _original_log = hub.ZeroScriptHub.log
 _original_start_services = hub.ZeroScriptHub.start_services
@@ -237,6 +238,7 @@ from hub_workflow_extras import install as install_workflow_extras  # noqa: E402
 from hub_automation_ui import install as install_automation_ui  # noqa: E402
 from hub_learning_ui import install as install_learning_ui  # noqa: E402
 from hub_superior_ui import install as install_superior_ui  # noqa: E402
+from hub_easy_ui import install as install_easy_ui  # noqa: E402
 from hub_modern_ui import install as install_modern_ui  # noqa: E402
 
 install_productivity_ui(hub)
@@ -244,6 +246,7 @@ install_workflow_extras(hub)
 install_automation_ui(hub)
 install_learning_ui(hub)
 install_superior_ui(hub)
+install_easy_ui(hub)
 install_modern_ui(hub)
 
 
