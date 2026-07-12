@@ -8,6 +8,7 @@ on:
       - 'zeroscript_hub_launcher.py'
       - 'hub_productivity_ui.py'
       - 'hub_workflow_extras.py'
+      - 'hub_automation_ui.py'
       - 'control_api.py'
       - 'test_control_api.py'
       - 'zeroscript-extension/**'
@@ -33,7 +34,7 @@ jobs:
           node-version: '22'
       - name: Python syntax and tests
         run: |
-          python -m py_compile bridge.py bridge_core.py control_api.py zeroscript_hub.py zeroscript_hub_launcher.py hub_productivity_ui.py hub_workflow_extras.py install_studio_panel.py build_release.py
+          python -m py_compile bridge.py bridge_core.py control_api.py zeroscript_hub.py zeroscript_hub_launcher.py hub_productivity_ui.py hub_workflow_extras.py hub_automation_ui.py install_studio_panel.py build_release.py
           python -m unittest -v test_control_api.py
       - name: JavaScript syntax
         run: find zeroscript-extension -name '*.js' -print0 | xargs -0 -n1 node --check
@@ -44,6 +45,7 @@ jobs:
           node zeroscript-extension/test-task-start-policy.js
           node zeroscript-extension/test-speed-pack.js
           node zeroscript-extension/test-productivity-pack.js
+          node zeroscript-extension/test-automation-pack.js
       - name: Manifest version parity
         shell: python
         run: |
@@ -52,4 +54,4 @@ jobs:
           bridge = pathlib.Path('bridge.py').read_text('utf-8')
           match = re.search(r'^BRIDGE_VERSION = "([^"]+)"', bridge, re.M)
           assert match and match.group(1) == version, (version, match.group(1) if match else None)
-          assert version == '1.27.0'
+          assert version == '1.28.0'
