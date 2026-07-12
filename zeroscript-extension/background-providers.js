@@ -63,6 +63,7 @@ importScripts("background-productivity-sync.js");
 // errors, model scorecards, notification center and emergency stop.
 importScripts("background-automation-pack.js");
 importScripts("background-automation-fixes.js");
+importScripts("background-automation-instance-fixes.js");
 
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
