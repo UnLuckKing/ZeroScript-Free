@@ -22,6 +22,14 @@ for (const id of ["writer", "mapDesigner", "uiDesigner", "reviewer", "qa"]) {
   }
 }
 
+chrome.storage.local.get("zsAutoStart", (r) => {
+  const el = document.getElementById("autoStart");
+  if (el) el.checked = r && r.zsAutoStart === true;
+});
+document.getElementById("autoStart").addEventListener("change", (e) => {
+  chrome.storage.local.set({ zsAutoStart: e.target.checked });
+});
+
 function renderTeam(team) {
   team = team || { config: {}, agents: [] };
   lastTeam = team;

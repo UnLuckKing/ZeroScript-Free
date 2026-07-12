@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.19.5
+
+- Added optional Auto-start when ready.
+- When enabled, ZeroScript automatically starts on a new empty supported AI chat after bridge and Roblox Studio are ready.
+- Auto-start is guarded against existing conversations, hidden tabs, unsupported provider modes, and repeated retries in the same chat.
+- Added a popup toggle for Auto-start when ready.
+
 ## 1.19.4
 
 - Added a one-click Connection Doctor in the popup.
