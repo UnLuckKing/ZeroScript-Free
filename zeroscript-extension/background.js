@@ -55,7 +55,7 @@ let studioProc = null;
 // Shared coordination for every supported AI tab. The bridge remains the one
 // Studio connection; this lease prevents concurrent MCP calls from different
 // models from observing or mutating conflicting state.
-const TEAM_DEFAULTS = { enabled: false, writer: "deepseek", mapDesigner: "gemini", uiDesigner: "gemini", reviewer: "gemini", qa: "qwen", maxRepairRounds: 2 };
+const TEAM_DEFAULTS = { enabled: false, writer: "deepseek", mapDesigner: "gemini", uiDesigner: "gemini", reviewer: "gemini", qa: "qwen", maxRepairRounds: 2, approvalMode: "autonomous" };
 let teamConfig = { ...TEAM_DEFAULTS };
 const teamAgents = new Map();
 let writerLease = null;
@@ -64,6 +64,7 @@ let teamTask = null;
 let teamHistory = [];
 let providerHealth = {};
 let checkpointState = { latest: null, status: "idle", detail: "" };
+let pendingApprovals = [];
 
 chrome.storage.local.get("zsTeamConfig", (r) => {
   if (r && r.zsTeamConfig) teamConfig = { ...TEAM_DEFAULTS, ...r.zsTeamConfig };
@@ -80,6 +81,9 @@ chrome.storage.local.get("zsProviderHealth", (r) => {
 });
 chrome.storage.local.get("zsCheckpointState", (r) => {
   if (r && r.zsCheckpointState) checkpointState = r.zsCheckpointState;
+});
+chrome.storage.local.get("zsPendingApprovals", (r) => {
+  if (r && Array.isArray(r.zsPendingApprovals)) pendingApprovals = r.zsPendingApprovals.slice(-20);
 });
 
 function cleanTeamState() {
@@ -99,6 +103,7 @@ function teamObj() {
     history: teamHistory.slice(-10),
     providerHealth,
     checkpoint: checkpointState,
+    approvals: pendingApprovals.map(({ id, name, arguments: args, provider, createdAt }) => ({ id, name, arguments: args, provider, createdAt })),
   };
 }
 
@@ -144,6 +149,17 @@ function phasePrompt(task) {
   if (task.phase === "ui") return `${shared}\nAct as the UI Designer. Inspect every relevant ScreenGui and capture the running UI when possible. Implement a professional, consistent, responsive desktop/mobile interface with clear hierarchy, feedback states, safe-area handling and working buttons. Preserve the project's visual identity and test interactions in play mode.`;
   if (task.phase === "reviewer") return `${shared}\nBuilder report:\n${task.lastReport || "No report supplied."}\nIndependently inspect the actual Studio state. Find and directly fix verified functional, security, data-loss, race-condition, mobile UI, and maintainability problems. Do not change correct work merely for style.`;
   return `${shared}\nPrevious report:\n${task.lastReport || "No report supplied."}\nRun a real playtest, read Output, exercise the feature, and use screen_capture if supported. Fix runtime errors and obvious UI overflow, contrast, or alignment issues, then re-test. Finish only when the tested path is clean or a genuine user-only blocker remains.`;
+}
+
+function needsWriteApproval(name) {
+  const bare = String(name || "").split("/").pop().toLowerCase();
+  if (/^(script_read|script_search|script_grep|search_asset|screen_capture|get_|inspect_|list_|read_|wait_job_finished)$/.test(bare)) return false;
+  return /(edit|write|create|delete|execute|insert|generate|set_|rename|move|update)/.test(bare);
+}
+
+async function persistApprovals() {
+  pendingApprovals = pendingApprovals.slice(-20);
+  await chrome.storage.local.set({ zsPendingApprovals: pendingApprovals });
 }
 
 function robloxTool(bare) {
@@ -482,6 +498,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           writerLease.expiresAt = Date.now() + WRITE_LEASE_MS;
         }
+        if (teamConfig.approvalMode === "review" && needsWriteApproval(msg.name)) {
+          const approval = {
+            id: `approval-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            name: msg.name,
+            arguments: msg.arguments || {},
+            provider: msg.provider || "agent",
+            createdAt: Date.now(),
+          };
+          pendingApprovals.push(approval);
+          await persistApprovals();
+          broadcastTeam();
+          sendResponse({ ok: false, kind: "approval_required", error: `Studio write queued for approval (${approval.id}). Tell the user what will change and wait.` });
+          break;
+        }
         const timeout = (msg.timeout || 120000) + 10000;
         const r = await send(
           { type: "call_tool", name: msg.name, arguments: msg.arguments, timeout: msg.timeout },
@@ -642,6 +672,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const id = msg.id || checkpointState.latest;
         const r = await restoreCheckpoint(id);
         sendResponse({ ...r, team: teamObj() });
+        break;
+      }
+      case "team_approval_apply": {
+        const index = pendingApprovals.findIndex((a) => a.id === msg.id);
+        if (index < 0) { sendResponse({ ok: false, error: "Approval request not found." }); break; }
+        if (writerLease) { sendResponse({ ok: false, error: `Studio is busy with ${writerLease.provider}.` }); break; }
+        const approval = pendingApprovals[index];
+        const r = await send({ type: "call_tool", name: approval.name, arguments: approval.arguments, timeout: 120000 }, 130000);
+        pendingApprovals.splice(index, 1);
+        await persistApprovals();
+        broadcastTeam();
+        sendResponse({ ok: !!(r && r.ok), result: r && (r.text || r.error), team: teamObj() });
+        break;
+      }
+      case "team_approval_reject": {
+        pendingApprovals = pendingApprovals.filter((a) => a.id !== msg.id);
+        await persistApprovals();
+        broadcastTeam();
+        sendResponse({ ok: true, team: teamObj() });
         break;
       }
       case "restart_mcp": {

@@ -39,6 +39,10 @@
       <select id="uiDesigner" title="UI designer"></select>
       <select id="reviewer" title="Review model"></select>
       <select id="qa" title="QA and playtest model"></select>
+      <select id="approvalMode" title="Studio write mode">
+        <option value="autonomous">Studio writes: Automatic</option>
+        <option value="review">Studio writes: Require approval</option>
+      </select>
       <select id="taskTemplate" title="Ready task template">
         <option value="">Task template...</option>
         <option value="audit">Audit and finish project</option>
@@ -53,6 +57,7 @@
       <button class="ghost" id="rollbackTask">↶ Rollback latest checkpoint</button>
       <div class="row" id="teamState">Single-model mode</div>
       <div class="row" id="teamHistory"></div>
+      <div class="row" id="approvalQueue"></div>
       <select id="handoffTarget" title="Send context to another assistant">
         <option value="chatgpt">Handoff: ChatGPT</option>
         <option value="claude">Handoff: Claude</option>
