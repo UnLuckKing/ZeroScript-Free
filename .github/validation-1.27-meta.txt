@@ -1,0 +1,2 @@
+base=master
+version=1.27.0
