@@ -2072,6 +2072,44 @@
     // The primary button does different things depending on the current state
     // (set by renderBar via actionBtn.dataset.kind).
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    let autoStartEnabled = false;
+    let autoStartTimer = null;
+    const autoStartedKeys = new Set();
+
+    try {
+      chrome.storage.local.get("zsAutoStart", (r) => {
+        autoStartEnabled = r && r.zsAutoStart === true;
+        maybeAutoStart();
+      });
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === "local" && changes.zsAutoStart) {
+          autoStartEnabled = changes.zsAutoStart.newValue === true;
+          maybeAutoStart();
+        }
+      });
+    } catch {}
+
+    function autoStartKey() {
+      return (P.conversationKey && P.conversationKey()) || `${location.origin}${location.pathname}${location.search}`;
+    }
+
+    function maybeAutoStart() {
+      if (autoStartTimer) { clearTimeout(autoStartTimer); autoStartTimer = null; }
+      if (!autoStartEnabled || !bridgeOk || A.started || A.starting || A.running || A.injecting) return;
+      if (!(P.isFreshChat() || P.chatIsEmpty()) || document.hidden) return;
+      if (P.modeWarning && P.modeWarning()) return;
+      const key = autoStartKey();
+      if (autoStartedKeys.has(key)) return;
+      autoStartTimer = setTimeout(() => {
+        autoStartTimer = null;
+        if (!autoStartEnabled || !bridgeOk || A.started || A.starting || A.running || A.injecting) return;
+        if (!(P.isFreshChat() || P.chatIsEmpty()) || document.hidden) return;
+        if (P.modeWarning && P.modeWarning()) return;
+        autoStartedKeys.add(key);
+        ui.toast("Auto-starting ZeroScript…");
+        startSession();
+      }, 1200);
+    }
 
     async function repairRobloxBeforeStart() {
       if (bridgeOk) return true;
@@ -2672,6 +2710,7 @@
         try { chrome.storage.local.set({ zsSetupSeen: true }); } catch {}
       }
       renderBar();
+      maybeAutoStart();
       refreshSetup(s.connected);
     }
 
