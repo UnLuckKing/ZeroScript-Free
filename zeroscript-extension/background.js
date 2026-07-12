@@ -65,6 +65,7 @@ let teamHistory = [];
 let providerHealth = {};
 let checkpointState = { latest: null, status: "idle", detail: "" };
 let pendingApprovals = [];
+let projectAudit = { status: "idle", report: "", scannedAt: 0 };
 
 chrome.storage.local.get("zsTeamConfig", (r) => {
   if (r && r.zsTeamConfig) teamConfig = { ...TEAM_DEFAULTS, ...r.zsTeamConfig };
@@ -85,6 +86,9 @@ chrome.storage.local.get("zsCheckpointState", (r) => {
 chrome.storage.local.get("zsPendingApprovals", (r) => {
   if (r && Array.isArray(r.zsPendingApprovals)) pendingApprovals = r.zsPendingApprovals.slice(-20);
 });
+chrome.storage.local.get("zsProjectAudit", (r) => {
+  if (r && r.zsProjectAudit) projectAudit = r.zsProjectAudit;
+});
 
 function cleanTeamState() {
   const now = Date.now();
@@ -103,6 +107,7 @@ function teamObj() {
     history: teamHistory.slice(-10),
     providerHealth,
     checkpoint: checkpointState,
+    audit: projectAudit,
     approvals: pendingApprovals.map(({ id, name, arguments: args, provider, createdAt }) => ({ id, name, arguments: args, provider, createdAt })),
   };
 }
@@ -189,6 +194,17 @@ if not game:GetService("ServerScriptService"):FindFirstChildWhichIsA("LuaSourceC
 return "PREFLIGHT_OK:"..HttpService:JSONEncode(report)`;
   const r = await send({ type: "call_tool", name: tool.name, arguments: { code, datamodel_type: "Edit" }, timeout: 60000 }, 70000);
   return r && r.ok ? String(r.text || "PREFLIGHT_OK:empty") : `PREFLIGHT_ERROR:${String(r && r.error || "scan failed")}`;
+}
+
+async function scanAndPersistProject() {
+  projectAudit = { status: "scanning", report: projectAudit.report || "", scannedAt: projectAudit.scannedAt || 0 };
+  broadcastTeam();
+  const report = await runProjectPreflight();
+  const ok = /^PREFLIGHT_OK:/.test(report);
+  projectAudit = { status: ok ? "ready" : "error", report: report.slice(0, 24000), scannedAt: Date.now() };
+  await chrome.storage.local.set({ zsProjectAudit: projectAudit });
+  broadcastTeam();
+  return { ok, audit: projectAudit, team: teamObj() };
 }
 
 function robloxTool(bare) {
@@ -482,7 +498,8 @@ async function startTeamTask(goal) {
   const checkpoint = await createCheckpoint(teamTask.id);
   teamTask.checkpoint = checkpoint.ok ? checkpoint.id : null;
   if (!checkpoint.ok) teamTask.error = `Checkpoint warning: ${checkpoint.error}`;
-  teamTask.auditReport = await runProjectPreflight();
+  const audit = await scanAndPersistProject();
+  teamTask.auditReport = audit.audit.report;
   teamTask.status = "queued";
   await chrome.storage.local.set({ zsTeamTask: teamTask });
   broadcastTeam();
@@ -606,6 +623,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case "team_task_start": {
         const goal = String(msg.goal || "").trim();
         sendResponse(await startTeamTask(goal));
+        break;
+      }
+      case "team_project_scan": {
+        sendResponse(await scanAndPersistProject());
         break;
       }
       case "team_task_done": {

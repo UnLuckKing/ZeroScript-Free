@@ -41,6 +41,21 @@ function renderTeam(team) {
     : "Single-model mode";
   if (unhealthy) document.getElementById("teamState").textContent += `\nUnavailable: ${unhealthy}`;
   if (team.checkpoint && team.checkpoint.latest) document.getElementById("teamState").textContent += `\nCheckpoint: ${team.checkpoint.status} · ${team.checkpoint.latest}`;
+  const audit = team.audit || {};
+  const auditBox = document.getElementById("auditReport");
+  if (audit.status === "scanning") auditBox.textContent = "Project scan running…";
+  else if (audit.report) {
+    let summary = audit.report;
+    try {
+      const raw = summary.replace(/^PREFLIGHT_OK:/, "");
+      const parsed = JSON.parse(raw);
+      const counts = parsed.counts || {};
+      const warnings = parsed.warnings || [];
+      summary = `Last scan: ${counts.scripts || 0} scripts · ${counts.remotes || 0} remotes · ${counts.guis || 0} GUIs · ${warnings.length} warnings`;
+      if (warnings.length) summary += `\n${warnings.slice(0, 5).map((w) => `• ${w.kind}: ${w.path}`).join("\n")}`;
+    } catch {}
+    auditBox.textContent = summary.slice(0, 1800);
+  } else auditBox.textContent = "Project has not been scanned yet.";
   const history = team.history || [];
   document.getElementById("teamHistory").textContent = history.length
     ? `Recent: ${history.slice(-3).reverse().map((h) => `${h.status === "done" ? "✓" : "!"} ${h.goal.slice(0, 34)}${h.rounds ? ` (${h.rounds} fixes)` : ""}`).join("\n")}`
@@ -84,6 +99,17 @@ document.getElementById("startTask").addEventListener("click", () => {
   document.getElementById("teamEnabled").checked = true;
   saveTeam();
   setTimeout(() => chrome.runtime.sendMessage({ type: "team_task_start", goal }, (r) => r && renderTeam(r.team)), 100);
+});
+document.getElementById("scanProject").addEventListener("click", (e) => {
+  const original = e.target.textContent;
+  e.target.textContent = "Scanning Studio…";
+  e.target.disabled = true;
+  chrome.runtime.sendMessage({ type: "team_project_scan" }, (r) => {
+    e.target.disabled = false;
+    e.target.textContent = r && r.ok ? "✓ Scan complete" : "Scan failed";
+    if (r && r.team) renderTeam(r.team);
+    setTimeout(() => { e.target.textContent = original; }, 2200);
+  });
 });
 document.getElementById("retryTask").addEventListener("click", () => chrome.runtime.sendMessage({ type: "team_task_retry" }, (r) => r && renderTeam(r.team)));
 document.getElementById("cancelTask").addEventListener("click", () => chrome.runtime.sendMessage({ type: "team_task_cancel" }, (r) => r && renderTeam(r.team)));

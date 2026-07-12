@@ -53,10 +53,12 @@
       </select>
       <textarea id="teamGoal" placeholder="Describe the complete Roblox feature or fix..."></textarea>
       <button id="startTask">▶ Start automatic team task</button>
+      <button class="ghost" id="scanProject">⌕ Scan current project</button>
       <div class="task-actions"><button class="ghost" id="retryTask">↻ Retry</button><button class="ghost" id="cancelTask">■ Cancel</button></div>
       <button class="ghost" id="rollbackTask">↶ Rollback latest checkpoint</button>
       <div class="row" id="teamState">Single-model mode</div>
       <div class="row" id="teamHistory"></div>
+      <div class="row" id="auditReport" style="white-space:pre-wrap;max-height:130px;overflow:auto"></div>
       <div class="row" id="approvalQueue"></div>
       <select id="handoffTarget" title="Send context to another assistant">
         <option value="chatgpt">Handoff: ChatGPT</option>

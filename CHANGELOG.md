@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.18.0
+
+- Added a one-click **Scan current project** action in the extension popup.
+- Project scans now work independently from team tasks and persist locally.
+- The popup summarizes script, remote, GUI, and warning counts and shows the
+  first actionable findings without requiring an AI model.
+- New team tasks reuse the persisted scan evidence in the Analyst phase.
+
 ## 1.17.0
 
 - Added a deterministic local project preflight before every team task.
