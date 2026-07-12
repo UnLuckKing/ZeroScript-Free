@@ -73,6 +73,23 @@ def _fill_quick_task(self, text: str, mode: str = "Akıllı otomatik") -> None:
     self.goal.focus_set()
 
 
+def _run_updater(self) -> None:
+    updater = hub.ROOT / "ZeroScript Güncelle.bat"
+    if not updater.exists():
+        messagebox.showerror("ZeroScript", "Güncelleme dosyası bulunamadı. Yeni ZIP paketini indirmen gerekiyor.")
+        return
+    if not messagebox.askyesno(
+        "ZeroScript Güncelle",
+        "Güncel master sürümü indirilecek. Token, Hub ayarları ve MCP config dosyan korunacak. Devam edilsin mi?",
+    ):
+        return
+    try:
+        hub.os.startfile(str(updater))
+        self.after(300, self.destroy)
+    except Exception as exc:
+        messagebox.showerror("ZeroScript", f"Güncelleyici açılamadı:\n{exc}")
+
+
 def _build_home_with_shortcuts(self) -> None:
     _original_build_home(self)
     shortcuts = ttk.Frame(self.home)
@@ -102,7 +119,11 @@ def _build_home_with_shortcuts(self) -> None:
             "Audit the current RemoteEvents, RemoteFunctions, DataStores, purchases, rewards, and currencies. Fix verified validation, rate-limit, duplication, session-lock, and data-loss problems, then test the corrected server-authoritative flows.",
         ),
     ).pack(side="left", padx=3)
-    ttk.Button(shortcuts, text="Duraklayan göreve devam", command=lambda: self.action("retry")).pack(side="right")
+
+    utility = ttk.Frame(self.home)
+    utility.pack(fill="x", padx=4, pady=(8, 0))
+    ttk.Button(utility, text="Duraklayan göreve devam", command=lambda: self.action("retry")).pack(side="left")
+    ttk.Button(utility, text="ZeroScript'i güncelle", command=lambda: _run_updater(self)).pack(side="right")
 
 
 hub.ZeroScriptHub.log = _thread_safe_log
