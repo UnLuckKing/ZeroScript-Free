@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.19.8
+
+- Added Auto-fix Queue in the popup.
+- Auto-fix Plan runs Connection Doctor and project scan, then builds a prioritized queue from connection blockers and project warnings.
+- Start Next launches the next runnable fix task and tracks queue status as pending, running, done, failed, or manual.
+- Queue prioritizes connection blockers, security/DataStore risks, runtime/code health, UI safety, map performance, map polish, premium UI, onboarding, monetization, and release QA.
+
 ## 1.19.7
 
 - Added Map/UI Build Mode templates for popular-game map polish, premium simulator UI, full presentation pass, onboarding, and monetization polish.
