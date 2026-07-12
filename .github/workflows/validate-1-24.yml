@@ -96,9 +96,10 @@ jobs:
               assert required in paths, required
           for required in ('background-suite.js', 'popup-suite.js'):
               assert pathlib.Path('zeroscript-extension', required).exists(), required
-      - name: Parser tests and Python checks
+      - name: Parser, Control Suite and Python checks
         run: |
           node zeroscript-extension/test-parser.js
+          node zeroscript-extension/test-control-suite.js
           python -m py_compile bridge.py build_release.py launch_studio_mcp.py
       - name: Build release package
         run: python build_release.py
