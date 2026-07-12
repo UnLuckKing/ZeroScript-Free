@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist"
 ROOT_FILES = [
     "bridge.py", "bridge_core.py", "launch_studio_mcp.py", "start.bat", "start_with_panel.bat",
-    "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py", "control_api.py",
+    "ZeroScript Kurulum.bat", "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py", "control_api.py",
     "install_studio_panel.py", "install_studio_panel.bat",
     "config.json", "LICENSE", "README.md", "CHANGELOG.md",
 ]
@@ -70,13 +70,15 @@ def validate() -> None:
         "background-suite-fixes.js",
         "background-studio-panel.js",
         "background-studio-panel-fixes.js",
+        "background-hub-autopair.js",
+        "background-hub-actions.js",
         "popup-simple.js",
     ):
         if not (extension / required).exists():
             raise RuntimeError(f"Required release file is missing: {required}")
     if not (ROOT / "roblox-plugin" / "ZeroScriptControlPanel.lua").exists():
         raise RuntimeError("Native Studio panel source is missing")
-    for required in ("zeroscript_hub.py", "zeroscript_hub_launcher.py", "ZeroScript Hub.bat"):
+    for required in ("zeroscript_hub.py", "zeroscript_hub_launcher.py", "ZeroScript Hub.bat", "ZeroScript Kurulum.bat"):
         if not (ROOT / required).exists():
             raise RuntimeError(f"ZeroScript Hub release file is missing: {required}")
 
@@ -85,7 +87,12 @@ def release_notes(version: str) -> str:
     text = (ROOT / "CHANGELOG.md").read_text("utf-8")
     pattern = rf"(?ms)^## \[?{re.escape(version)}\]?.*?\n(.*?)(?=^## |\Z)"
     match = re.search(pattern, text)
-    body = match.group(1).strip() if match else "See CHANGELOG.md for changes."
+    if match:
+        body = match.group(1).strip()
+    elif version == "1.25.0" and (ROOT / "docs" / "ZEROSCRIPT_HUB_1_25.md").exists():
+        body = (ROOT / "docs" / "ZEROSCRIPT_HUB_1_25.md").read_text("utf-8").strip()
+    else:
+        body = "See CHANGELOG.md for changes."
     return f"# ZeroScript {version}\n\n{body}\n"
 
 
