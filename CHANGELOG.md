@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.19.1
+
+- Fixed team start appearing unresponsive while checkpoint and preflight tools
+  were still running.
+- Task start now acknowledges immediately and prepares the audit safely in the
+  background, keeping the Manifest V3 service worker responsive.
+- Reduced the deterministic preflight timeout and made scan failure non-blocking:
+  the coordinated task continues with an explicit warning.
+- Removed duplicated Retry state updates introduced during earlier merges.
+
 ## 1.19.0
 
 - Added a strict QA evidence gate for coordinated team tasks.
