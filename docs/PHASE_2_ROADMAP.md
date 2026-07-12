@@ -1,12 +1,15 @@
 # Phase 2: Deterministic Studio-Side Automation
 
-The items below are intentionally tracked separately from the browser-only 1.24 Control Center. A prompt template is not considered implementation; each item must have real Studio behavior and repeatable evidence.
+ZeroScript 1.24 now ships the first native Studio integration: an authenticated localhost side-channel and a DockWidget for live task state, safety data, Stop, Retry, Cancel, checkpoint Rollback, provider probing, project scanning, and Release Manager actions.
 
-## Native Studio integration
+The remaining items below are intentionally tracked separately. A prompt template is not considered implementation; each item must have real Studio behavior and repeatable evidence.
 
-- DockWidget showing the active task, provider, phase, Output errors, pending approvals, Stop, Retry, and Rollback.
-- A local authenticated side-channel between the bridge and the Studio plugin.
-- Read-only mode when the side-channel cannot prove it is connected to the expected local bridge.
+## Native Studio integration — remaining hardening
+
+- Read-only mode when the side-channel cannot prove it is connected to the expected local bridge and extension instance.
+- Approval cards inside Studio for individual pending write operations.
+- Studio-side display of the full report, task ledger, ownership conflicts, and changed-instance diff.
+- Automatic plugin updater with signed/checksummed local releases.
 
 ## Full checkpoint and rollback
 
