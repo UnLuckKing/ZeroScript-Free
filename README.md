@@ -1,6 +1,6 @@
 # ZeroScript Hub — Roblox Studio AI Team
 
-ZeroScript connects supported browser AI models to Roblox Studio through its local MCP bridge. Version 1.26 keeps the multi-model router, checkpoints, rollback, safety, Reviewer, and QA systems while making normal work much faster and simpler.
+ZeroScript connects supported browser AI models to Roblox Studio through its local MCP bridge. Version 1.27 keeps the multi-model router, checkpoints, rollback, safety, Reviewer, and QA systems while adding a persistent work queue, project intelligence, live error watching, specialist test tools, and per-game profiles.
 
 ## Recommended setup
 
@@ -18,20 +18,20 @@ ZeroScript connects supported browser AI models to Roblox Studio through its loc
 
 For normal daily use, only Roblox Studio and `ZeroScript Hub.bat` need to be opened.
 
-## New in 1.26
+## New in 1.27
 
-- **Akıllı otomatik** chooses Turbo, Fast, Balanced, or Best Quality from the task risk and size.
-- **Turbo** uses one relevant specialist for small fixes and requires a real self-test plus Output check.
-- Security, DataStore, purchase, destructive, full-project, and release tasks automatically escalate to safer workflows.
-- Recent Studio readiness and project scans are reused instead of repeated unnecessarily.
-- Checkpoint creation and project preflight run together when a fresh scan is required.
-- Existing AI tabs are reused; ZeroScript no longer opens duplicate provider tabs when a usable one already exists.
-- Old paused tasks are replaced safely by a new Hub task instead of blocking it silently.
-- Hub verifies that the extension actually accepted a task instead of only reporting that it was queued locally.
-- Re-pairing repairs stale tokens after replacing the downloaded folder.
-- Stale older Hub services on the local port are detected and replaced automatically.
-- Quick task buttons prepare Output repair, UI/button repair, and Security/DataStore audits.
-- `ZeroScript Güncelle.bat` and the Hub update button download the latest ZIP while preserving local token, Hub settings, and MCP config.
+- Persistent priority task queue with pause, resume, removal, dependencies, and automatic next-task execution.
+- New Hub tabs for **Görev kuyruğu**, **Araçlar**, **Geçmiş**, and **Oyun profilleri**.
+- Live progress percentage, elapsed time, and estimated remaining time.
+- Project index for scripts, remotes, ScreenGuis, and world-size counts.
+- Background Studio Output watcher with optional automatic repair-task creation.
+- Faster stuck-provider failover instead of waiting close to an hour.
+- Scoped Turbo checkpoints and rollback for only the relevant script services.
+- Compact Fast/Turbo context to reduce repeated prompt size and model delay.
+- One-click UI/button audit, Remote security audit, DataStore lab, economy simulation, Toolbox/backdoor scan, multiplayer readiness, test-flow recording, and release checks.
+- Local debug bundle export.
+- Separate saved settings profiles for each Roblox game.
+- Long Hub task goals are now accepted correctly instead of failing the old 500-character status check.
 
 ## Modes
 
@@ -41,20 +41,44 @@ For normal daily use, only Roblox Studio and `ZeroScript Hub.bat` need to be ope
 - **Dengeli**: normal coordinated analysis, implementation, review, and QA.
 - **Maksimum kalite**: release/full-project workflow with the strongest review gates.
 
+Security, DataStore, purchase, destructive, full-project, and release tasks automatically escalate out of Turbo.
+
+## Hub workflow
+
+### Task queue
+
+Add several jobs before leaving the computer. Priority jobs run first, the queue can be paused, and the next runnable task starts after the current one reaches a terminal state.
+
+### Tools
+
+The Tools tab exposes specialist workflows and the Output watcher. Output auto-fix remains off by default; enabling it lets newly detected errors create a high-priority repair task.
+
+### History
+
+The History tab shows task state, selected mode, approximate duration, live progress, and remaining-time estimate.
+
+### Game profiles
+
+Save model routing, quality mode, safety, notification, and context settings under each game name so unrelated projects do not reuse the wrong workflow preferences.
+
 ## What Hub manages
 
 - local MCP bridge startup and restart
 - authenticated extension pairing
 - Studio and bridge health
-- AI provider readiness and tab reuse
+- AI provider readiness and existing-tab reuse
 - automatic or manual model routing
-- task start confirmation, stop, retry, and rollback
+- direct tasks and persistent queued tasks
+- task progress, history, stop, retry, and rollback
+- project indexing and cached scans
+- Output error monitoring
+- scoped and full checkpoints
+- specialist test and audit workflows
 - write approval policy
 - notifications and context recovery
-- cached project scan and Release Manager actions
-- one-click updates
+- one-click updates and local debug bundles
 
-The underlying Smart Router, shared project memory, writer lock, checkpoints, rollback, provider failover, safety scopes, Reviewer, and QA systems remain active.
+The underlying Smart Router, shared project memory, writer lock, provider failover, safety scopes, Reviewer, and QA systems remain active.
 
 ## Supported browser providers
 
@@ -77,6 +101,7 @@ Use **ZeroScript'i güncelle** in Hub or double-click `ZeroScript Güncelle.bat`
 
 - `control_token.txt`
 - `hub_settings.json`
+- `hub_profiles.json`
 - `config.json`
 
 After updating, Chrome opens `chrome://extensions`; press **Reload** on the ZeroScript extension card.
@@ -101,10 +126,11 @@ The Roblox Studio DockWidget is not required for ordinary use because Hub alread
 - One-click extension pairing is available only during a short pairing window opened from Hub.
 - AI provider keys are not bundled.
 - Risk scoring, write scopes, catastrophic-change blocking, checkpoints, and rollback remain enabled.
-- Turbo automatically escalates risky tasks instead of weakening safeguards.
+- Scoped rollback never removes scripts outside its recorded service scope.
+- Output auto-fix is opt-in.
 - Never commit passwords, tokens, API keys, or private player data.
 
-More details: `docs/ZEROSCRIPT_HUB_1_25.md`
+Release details: `RELEASE_NOTES_1.27.md`
 
 ## License and attribution
 
