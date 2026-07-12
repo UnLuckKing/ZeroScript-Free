@@ -16,9 +16,9 @@ DIST = ROOT / "dist"
 ROOT_FILES = [
     "bridge.py", "bridge_core.py", "launch_studio_mcp.py", "start.bat", "start_with_panel.bat",
     "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py",
-    "hub_productivity_ui.py", "hub_workflow_extras.py", "hub_automation_ui.py", "control_api.py",
-    "install_studio_panel.py", "install_studio_panel.bat",
-    "config.json", "LICENSE", "README.md", "CHANGELOG.md", "RELEASE_NOTES_1.28.md",
+    "hub_productivity_ui.py", "hub_workflow_extras.py", "hub_automation_ui.py", "hub_learning_ui.py", "hub_modern_ui.py",
+    "memory_vault.py", "control_api.py", "install_studio_panel.py", "install_studio_panel.bat",
+    "config.json", "LICENSE", "README.md", "CHANGELOG.md", "RELEASE_NOTES_1.29.md",
 ]
 PACKAGE_DIRS = ["zeroscript-extension", "roblox-plugin", "docs"]
 
@@ -50,7 +50,8 @@ def validate() -> None:
     run("node", "zeroscript-extension/test-productivity-pack.js")
     run("node", "zeroscript-extension/test-automation-pack.js")
     run("node", "zeroscript-extension/test-automation-fixes.js")
-    run(sys.executable, "-m", "unittest", "-v", "test_control_api.py")
+    run("node", "zeroscript-extension/test-learning-sync.js")
+    run(sys.executable, "-m", "unittest", "-v", "test_control_api.py", "test_memory_vault.py")
     run(
         sys.executable,
         "-m",
@@ -64,6 +65,9 @@ def validate() -> None:
         "hub_productivity_ui.py",
         "hub_workflow_extras.py",
         "hub_automation_ui.py",
+        "hub_learning_ui.py",
+        "hub_modern_ui.py",
+        "memory_vault.py",
         "install_studio_panel.py",
         "build_release.py",
     )
@@ -90,6 +94,7 @@ def validate() -> None:
         "background-automation-pack.js",
         "background-automation-fixes.js",
         "background-automation-instance-fixes.js",
+        "background-learning-sync.js",
         "popup-simple.js",
     ):
         if not (extension / required).exists():
@@ -97,8 +102,9 @@ def validate() -> None:
     if not (ROOT / "roblox-plugin" / "ZeroScriptControlPanel.lua").exists():
         raise RuntimeError("Native Studio panel source is missing")
     for required in (
-        "zeroscript_hub.py", "zeroscript_hub_launcher.py", "hub_productivity_ui.py", "hub_workflow_extras.py", "hub_automation_ui.py",
-        "ZeroScript Hub.bat", "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "RELEASE_NOTES_1.28.md",
+        "zeroscript_hub.py", "zeroscript_hub_launcher.py", "hub_productivity_ui.py", "hub_workflow_extras.py",
+        "hub_automation_ui.py", "hub_learning_ui.py", "hub_modern_ui.py", "memory_vault.py",
+        "ZeroScript Hub.bat", "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "RELEASE_NOTES_1.29.md",
     ):
         if not (ROOT / required).exists():
             raise RuntimeError(f"ZeroScript Hub release file is missing: {required}")
@@ -150,7 +156,7 @@ def main() -> int:
     ext, bridge = versions()
     if ext != bridge:
         raise RuntimeError(f"Version mismatch: extension={ext}, bridge={bridge}")
-    if ext != "1.28.0":
+    if ext != "1.29.0":
         raise RuntimeError(f"Unexpected release version: {ext}")
     print(f"ZeroScript {ext} local release builder")
     validate()
