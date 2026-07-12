@@ -1,0 +1,48 @@
+name: Validate ZeroScript Hub
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'zeroscript_hub.py'
+      - 'zeroscript_hub_launcher.py'
+      - 'control_api.py'
+      - 'test_control_api.py'
+      - 'zeroscript-extension/**'
+      - 'build_release.py'
+      - '.github/workflows/validate-hub.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Python syntax and tests
+        run: |
+          python -m py_compile bridge.py bridge_core.py control_api.py zeroscript_hub.py zeroscript_hub_launcher.py install_studio_panel.py build_release.py
+          python -m unittest -v test_control_api.py
+      - name: JavaScript syntax
+        run: find zeroscript-extension -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Parser and control suite tests
+        run: |
+          node zeroscript-extension/test-parser.js
+          node zeroscript-extension/test-control-suite.js
+      - name: Manifest version parity
+        shell: python
+        run: |
+          import json, pathlib, re
+          version = json.loads(pathlib.Path('zeroscript-extension/manifest.json').read_text('utf-8'))['version']
+          bridge = pathlib.Path('bridge.py').read_text('utf-8')
+          match = re.search(r'^BRIDGE_VERSION = "([^"]+)"', bridge, re.M)
+          assert match and match.group(1) == version, (version, match.group(1) if match else None)
+          assert version == '1.25.0'
