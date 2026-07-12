@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Modern visual theme for ZeroScript Hub 1.29.
+"""Modern visual theme for ZeroScript Hub 1.30.
 
 The theme stays dependency-free and uses native Tk/ttk so the Hub still starts on
 a clean Windows Python installation.
@@ -122,8 +122,8 @@ def install(hub: Any) -> None:
         style_text_widgets(self)
         footer = ttk.Frame(self, style="Hero.TFrame", padding=(18, 8))
         footer.pack(fill="x", side="bottom", before=self.notebook)
-        ttk.Label(footer, text="ZeroScript • Yerel ve güvenli geliştirme merkezi", style="Hero.Sub.TLabel").pack(side="left")
-        ttk.Label(footer, text="Memory Vault aktif", style="Pill.TLabel").pack(side="right")
+        ttk.Label(footer, text="ZeroScript • Yerel karar motoru + bağlı AI takımı", style="Hero.Sub.TLabel").pack(side="left")
+        ttk.Label(footer, text="Memory Vault + Superior Engine aktif", style="Pill.TLabel").pack(side="right")
 
     hub.ZeroScriptHub._build_style = build_style
     hub.ZeroScriptHub._build_ui = build_ui
