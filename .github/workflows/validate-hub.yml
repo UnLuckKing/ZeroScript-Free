@@ -9,8 +9,12 @@ on:
       - 'hub_productivity_ui.py'
       - 'hub_workflow_extras.py'
       - 'hub_automation_ui.py'
+      - 'hub_learning_ui.py'
+      - 'hub_modern_ui.py'
+      - 'memory_vault.py'
       - 'control_api.py'
       - 'test_control_api.py'
+      - 'test_memory_vault.py'
       - 'zeroscript-extension/**'
       - 'build_release.py'
       - '.github/workflows/validate-hub.yml'
@@ -34,8 +38,8 @@ jobs:
           node-version: '22'
       - name: Python syntax and tests
         run: |
-          python -m py_compile bridge.py bridge_core.py control_api.py zeroscript_hub.py zeroscript_hub_launcher.py hub_productivity_ui.py hub_workflow_extras.py hub_automation_ui.py install_studio_panel.py build_release.py
-          python -m unittest -v test_control_api.py
+          python -m py_compile bridge.py bridge_core.py control_api.py zeroscript_hub.py zeroscript_hub_launcher.py hub_productivity_ui.py hub_workflow_extras.py hub_automation_ui.py hub_learning_ui.py hub_modern_ui.py memory_vault.py install_studio_panel.py build_release.py
+          python -m unittest -v test_control_api.py test_memory_vault.py
       - name: JavaScript syntax
         run: find zeroscript-extension -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Parser and control suite tests
@@ -47,12 +51,16 @@ jobs:
           node zeroscript-extension/test-productivity-pack.js
           node zeroscript-extension/test-automation-pack.js
           node zeroscript-extension/test-automation-fixes.js
+          node zeroscript-extension/test-learning-sync.js
       - name: Manifest version parity
         shell: python
         run: |
           import json, pathlib, re
           version = json.loads(pathlib.Path('zeroscript-extension/manifest.json').read_text('utf-8'))['version']
           bridge = pathlib.Path('bridge.py').read_text('utf-8')
-          match = re.search(r'^BRIDGE_VERSION = "([^"]+)"', bridge, re.M)
-          assert match and match.group(1) == version, (version, match.group(1) if match else None)
-          assert version == '1.28.0'
+          control = pathlib.Path('control_api.py').read_text('utf-8')
+          bridge_match = re.search(r'^BRIDGE_VERSION = "([^"]+)"', bridge, re.M)
+          control_match = re.search(r'^VERSION = "([^"]+)"', control, re.M)
+          assert bridge_match and bridge_match.group(1) == version
+          assert control_match and control_match.group(1) == version
+          assert version == '1.29.0'
