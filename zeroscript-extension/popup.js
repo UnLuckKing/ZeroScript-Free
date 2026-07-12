@@ -35,6 +35,17 @@ function saveTeam() {
 }
 ["teamEnabled", "writer", "reviewer", "qa"].forEach((id) => document.getElementById(id).addEventListener("change", saveTeam));
 
+const TASK_TEMPLATES = {
+  audit: "Inspect the entire current Roblox project. Complete unfinished or broken gameplay systems, preserve working content, verify data saving and economy, test the main loop, fix every verified runtime error, and leave the experience production-ready.",
+  errors: "Run the experience, read Output and Developer Console, reproduce every current runtime error, fix root causes without hiding warnings, and repeat playtests until the tested main path is clean.",
+  security: "Audit all RemoteEvents, RemoteFunctions, purchases, rewards, currencies, DataStores, and client-server boundaries. Fix exploitable client trust, missing validation, spam, duplication, and data-loss risks, then playtest the corrected flows.",
+  ui: "Audit every player-facing UI on desktop and mobile. Fix overflow, scaling, hierarchy, alignment, contrast, navigation, feedback states, and broken buttons while preserving the established visual style. Use screen captures and playtest all changed interactions.",
+  release: "Prepare this Roblox experience for release. Audit gameplay, onboarding, saving, economy, monetization, security, performance, mobile UI, error handling, and playtest coverage. Fix verified blockers and report only genuine user-only publishing steps that remain."
+};
+document.getElementById("taskTemplate").addEventListener("change", (e) => {
+  if (TASK_TEMPLATES[e.target.value]) document.getElementById("teamGoal").value = TASK_TEMPLATES[e.target.value];
+});
+
 document.getElementById("startTask").addEventListener("click", () => {
   const goal = document.getElementById("teamGoal").value.trim();
   if (!goal) return;

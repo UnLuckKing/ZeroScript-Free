@@ -91,6 +91,20 @@ function agentFor(provider) {
   return [...teamAgents.entries()].find(([, a]) => a.provider === provider);
 }
 
+function fallbackAgent(preferred, phase) {
+  const exact = agentFor(preferred);
+  if (exact) return { hit: exact, provider: preferred, fallback: false };
+  cleanTeamState();
+  const excluded = new Set(teamTask && Array.isArray(teamTask.failedProviders) ? teamTask.failedProviders : []);
+  const candidates = [...teamAgents.entries()].filter(([, a]) => !excluded.has(a.provider));
+  if (!candidates.length) return null;
+  // Prefer vision for QA, otherwise use the first live provider. Provider tabs
+  // heartbeat every seven seconds, so this list contains only genuinely open tabs.
+  const vision = new Set(["gemini", "kimi", "glm", "qwen", "arena"]);
+  const selected = phase === "qa" ? (candidates.find(([, a]) => vision.has(a.provider)) || candidates[0]) : candidates[0];
+  return { hit: selected, provider: selected[1].provider, fallback: true };
+}
+
 function phaseProvider(phase) {
   return phase === "builder" ? teamConfig.writer : phase === "reviewer" ? teamConfig.reviewer : teamConfig.qa;
 }
@@ -104,19 +118,20 @@ function phasePrompt(task) {
 
 async function dispatchTask() {
   if (!teamTask || ["done", "failed", "cancelled"].includes(teamTask.status)) return;
-  const provider = phaseProvider(teamTask.phase);
-  const hit = agentFor(provider);
-  if (!hit) {
+  const preferred = phaseProvider(teamTask.phase);
+  const selected = fallbackAgent(preferred, teamTask.phase);
+  if (!selected) {
     teamTask.status = "waiting";
-    teamTask.error = `Open and start a ZeroScript session in ${provider}.`;
+    teamTask.error = `No model tab is available. Open and start a ZeroScript session in ${preferred} or another provider.`;
     teamTask.updatedAt = Date.now();
     broadcastTeam();
     return;
   }
-  const [tabId] = hit;
+  const [tabId] = selected.hit;
+  const provider = selected.provider;
   teamTask.status = "running";
   teamTask.provider = provider;
-  teamTask.error = null;
+  teamTask.error = selected.fallback ? `${preferred} is offline; automatically using ${provider}.` : null;
   teamTask.updatedAt = Date.now();
   await chrome.storage.local.set({ zsTeamTask: teamTask });
   broadcastTeam();

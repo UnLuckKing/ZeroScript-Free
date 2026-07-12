@@ -37,6 +37,14 @@
       <select id="writer" title="Primary builder"></select>
       <select id="reviewer" title="Review model"></select>
       <select id="qa" title="QA and playtest model"></select>
+      <select id="taskTemplate" title="Ready task template">
+        <option value="">Task template...</option>
+        <option value="audit">Audit and finish project</option>
+        <option value="errors">Fix runtime errors</option>
+        <option value="security">Security and DataStore audit</option>
+        <option value="ui">Professional responsive UI</option>
+        <option value="release">Prepare game for release</option>
+      </select>
       <textarea id="teamGoal" placeholder="Describe the complete Roblox feature or fix..."></textarea>
       <button id="startTask">▶ Start automatic team task</button>
       <div class="task-actions"><button class="ghost" id="retryTask">↻ Retry</button><button class="ghost" id="cancelTask">■ Cancel</button></div>
