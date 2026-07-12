@@ -47,6 +47,7 @@ jobs:
 - Added provider permission scopes (inspect, scripts, UI, map, full), deterministic operation risk scoring, and automatic blocking of critical autonomous mutations.
 - Added domain ownership claims and conflict history for Studio areas such as StarterGui, Workspace, Lighting, ServerScriptService, and ReplicatedStorage.
 - Added manual regression recording, automatic context-recovery tab creation, and release validation for every JavaScript file.
+- Added an optional authenticated localhost side-channel and native Roblox Studio DockWidget for task state, Stop, Retry, Cancel, Rollback, provider probing, project scanning, and Release Manager actions.
 
 '''
               if changelog.startswith('# Changelog\n'):
@@ -83,7 +84,7 @@ jobs:
       - name: JavaScript syntax checks
         run: |
           find zeroscript-extension -name '*.js' -print0 | xargs -0 -n1 node --check
-      - name: Manifest and provider wiring checks
+      - name: Manifest and release wiring checks
         shell: python
         run: |
           import json, pathlib, re
@@ -94,12 +95,27 @@ jobs:
           paths = {p for entry in manifest['content_scripts'] for p in entry.get('js', [])}
           for required in ('core/provider-probe.js', 'core/permission-guard.js'):
               assert required in paths, required
-          for required in ('background-suite.js', 'popup-suite.js'):
+          for required in (
+              'background-suite.js', 'background-suite-fixes.js',
+              'background-studio-panel.js', 'background-studio-panel-fixes.js',
+              'popup-suite.js', 'popup-studio-panel.js',
+          ):
               assert pathlib.Path('zeroscript-extension', required).exists(), required
+          for required in (
+              'control_api.py', 'start_with_panel.bat', 'install_studio_panel.py',
+              'install_studio_panel.bat', 'roblox-plugin/ZeroScriptControlPanel.lua',
+          ):
+              assert pathlib.Path(required).exists(), required
       - name: Parser, Control Suite and Python checks
         run: |
           node zeroscript-extension/test-parser.js
           node zeroscript-extension/test-control-suite.js
-          python -m py_compile bridge.py build_release.py launch_studio_mcp.py
+          python -m py_compile bridge.py build_release.py launch_studio_mcp.py control_api.py install_studio_panel.py
+      - name: Test Studio plugin installer
+        shell: bash
+        run: |
+          export LOCALAPPDATA="$RUNNER_TEMP/localappdata"
+          python install_studio_panel.py
+          test -s "$LOCALAPPDATA/Roblox/Plugins/ZeroScriptControlPanel.rbxmx"
       - name: Build release package
         run: python build_release.py
