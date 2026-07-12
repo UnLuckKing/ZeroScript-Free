@@ -11,7 +11,7 @@ import asyncio
 
 import bridge_core as _bridge
 
-BRIDGE_VERSION = "1.30.0"
+BRIDGE_VERSION = "1.31.0"
 _bridge.BRIDGE_VERSION = BRIDGE_VERSION
 
 
