@@ -55,6 +55,7 @@ importScripts("background-speed-fixes.js");
 // Persistent task queue, project index, Output watcher, scoped checkpoints,
 // compact context, progress estimates and faster stuck-provider recovery.
 importScripts("background-productivity-pack.js");
+importScripts("background-productivity-fixes.js");
 importScripts("background-productivity-sync.js");
 
 function zsBroadcastToExtraTabs(message) {
