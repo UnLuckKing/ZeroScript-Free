@@ -29,6 +29,12 @@ importScripts("background-manager-finalizer.js");
 importScripts("background-local.js");
 importScripts("background-local-fixes.js");
 
+// Final reliability/control layer: explicit runtime state machine, provider
+// diagnostics and preparation, task ledger, ownership claims, quality modes,
+// permission scopes, context recovery, notifications, debug bundles and update
+// checks. Loaded last so its wrappers observe the final dispatch implementation.
+importScripts("background-suite.js");
+
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
     for (const tab of tabs || []) {
