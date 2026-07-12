@@ -57,6 +57,21 @@
     };
   }
 
+  function stopActiveTurn() {
+    const zsStop = document.querySelector("#zs-root #zs-stop:not([hidden])");
+    if (zsStop) {
+      zsStop.click();
+      return { ok: true, method: "zeroscript-stop" };
+    }
+    try {
+      if (typeof ZSProvider !== "undefined" && ZSProvider.stopGeneration) {
+        ZSProvider.stopGeneration();
+        return { ok: true, method: "provider-stop" };
+      }
+    } catch {}
+    return { ok: false, error: "No active ZeroScript or provider generation was found." };
+  }
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!message || typeof message !== "object") return;
     if (message.type === "zs-provider-probe") {
@@ -76,6 +91,10 @@
       }
       button.click();
       sendResponse({ ok: true, requested: true, probe: before });
+      return false;
+    }
+    if (message.type === "zs-suite-stop") {
+      sendResponse(stopActiveTurn());
       return false;
     }
   });
