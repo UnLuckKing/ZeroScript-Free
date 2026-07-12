@@ -41,6 +41,7 @@ importScripts("background-suite-fixes.js");
 importScripts("background-studio-panel.js");
 importScripts("background-studio-panel-fixes.js");
 importScripts("background-hub-autopair.js");
+importScripts("background-hub-actions.js");
 
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
