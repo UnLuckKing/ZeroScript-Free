@@ -85,6 +85,71 @@ phasesForGoal = function zsSpeedSafePhasesForGoal(goal) {
   return phases;
 };
 
+// Turbo already makes the assigned specialist inspect the relevant instances,
+// perform the change, playtest, and check Output. Skip the whole-project scan for
+// low-risk Turbo fixes; keep the per-task checkpoint and every write guard.
+zsSpeedAuditReusable = function zsSpeedAuditReusableSafe(decision) {
+  if (decision && decision.effective === "turbo" && !decision.highRisk && !decision.inspection) return true;
+  return !decision.highRisk
+    && projectAudit
+    && projectAudit.status === "ready"
+    && /^PREFLIGHT_OK:/.test(String(projectAudit.report || ""))
+    && Date.now() - Number(projectAudit.scannedAt || 0) < ZS_SPEED_AUDIT_CACHE_MS;
+};
+
+// Reuse only a provider tab that is already ready or can genuinely start a
+// ZeroScript session. A non-empty/unsupported chat must not block the task; in
+// that case the core preparer opens a clean conversation instead.
+zsSpeedReuseProvider = async function zsSpeedReuseProviderSafe(provider) {
+  if (typeof cleanTeamState === "function") cleanTeamState();
+  const readyAgent = [...teamAgents.entries()].find(([, agent]) => agent && agent.provider === provider && agent.ready);
+  if (readyAgent) {
+    const [tabId] = readyAgent;
+    chrome.tabs.update(tabId, { active: true }).catch(() => {});
+    return { tabId, provider, reused: true, alreadyReady: true };
+  }
+
+  const patterns = ZS_SPEED_PROVIDER_PATTERNS[provider];
+  if (!patterns) return null;
+  const tabs = await new Promise((resolve) => chrome.tabs.query({ url: patterns }, resolve));
+  for (const tab of tabs || []) {
+    if (tab.id == null) continue;
+    let probe = await zsSpeedSendTab(tab.id, { type: "zs-provider-probe" });
+    if (!probe || !probe.composer) {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      probe = await zsSpeedSendTab(tab.id, { type: "zs-provider-probe" });
+    }
+    if (!probe || !probe.composer) continue;
+    if (probe.ready) {
+      chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+      if (typeof zsSuiteLedger === "function") zsSuiteLedger("prepare_reuse", `Reused ready ${provider} tab`, { provider, tabId: tab.id });
+      return { tabId: tab.id, provider, reused: true, alreadyReady: true, probe };
+    }
+
+    const start = await zsSpeedSendTab(tab.id, { type: "zs-provider-auto-start" });
+    if (start && start.ok) {
+      chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+      if (typeof zsSuiteLedger === "function") zsSuiteLedger("prepare_reuse", `Reused and started existing ${provider} tab`, { provider, tabId: tab.id });
+      return { tabId: tab.id, provider, reused: true, probe, start };
+    }
+  }
+  return null;
+};
+
+// Any completed mutating specialist phase can invalidate the structural scan.
+// Mark it stale so later non-Turbo/security tasks cannot reuse outdated warnings.
+chrome.runtime.onMessage.addListener((msg) => {
+  if (!msg || msg.type !== "team_task_done") return;
+  if (!["builder", "map", "ui"].includes(String(msg.phase || "").toLowerCase())) return;
+  projectAudit = {
+    ...projectAudit,
+    status: "stale",
+    staleAt: Date.now(),
+    staleReason: `${msg.phase} phase completed`,
+  };
+  chrome.storage.local.set({ zsProjectAudit: projectAudit }).catch(() => {});
+});
+
 // The desktop Hub normally uses zsHubApplyConfig. Keep direct extension callers
 // compatible with the two new modes as well.
 chrome.runtime.onMessage.addListener((msg) => {
