@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Modern visual theme for ZeroScript Hub 1.30.
+"""Modern visual theme for ZeroScript Hub 1.31.
 
 The theme stays dependency-free and uses native Tk/ttk so the Hub still starts on
 a clean Windows Python installation.
@@ -12,16 +12,16 @@ from typing import Any
 
 
 PALETTE = {
-    "bg": "#0B0D12",
-    "surface": "#121620",
-    "surface2": "#191E2B",
-    "surface3": "#22293A",
-    "border": "#2B3448",
-    "text": "#F4F7FB",
-    "muted": "#9AA5B6",
+    "bg": "#080B12",
+    "surface": "#111623",
+    "surface2": "#181F30",
+    "surface3": "#222C40",
+    "border": "#2B3850",
+    "text": "#F6F8FC",
+    "muted": "#98A6BA",
     "accent": "#7C5CFC",
-    "accent_hover": "#8B70FF",
-    "accent_soft": "#2A234A",
+    "accent_hover": "#8E76FF",
+    "accent_soft": "#29234A",
     "success": "#2DD4A3",
     "warning": "#F6B84A",
     "danger": "#F06276",
@@ -39,8 +39,8 @@ def install(hub: Any) -> None:
 
     def build_style(self: Any) -> None:
         previous_style(self)
-        self.geometry("1220x820")
-        self.minsize(1020, 700)
+        self.geometry("1280x860")
+        self.minsize(1060, 700)
         self.configure(bg=PALETTE["bg"])
         try:
             self.tk.call("tk", "scaling", 1.08)
@@ -67,19 +67,21 @@ def install(hub: Any) -> None:
         style.configure("StatusValue.TLabel", background=PALETTE["surface"], foreground=PALETTE["success"], font=("Segoe UI Semibold", 12))
         style.configure("Hero.Title.TLabel", background=PALETTE["surface2"], foreground=PALETTE["text"], font=("Segoe UI Variable Display Semibold", 15))
         style.configure("Hero.Sub.TLabel", background=PALETTE["surface2"], foreground=PALETTE["muted"], font=("Segoe UI", 10))
-        style.configure("Pill.TLabel", background=PALETTE["accent_soft"], foreground="#C9BDFF", font=("Segoe UI Semibold", 9), padding=(10, 5))
+        style.configure("Pill.TLabel", background=PALETTE["accent_soft"], foreground="#D2C8FF", font=("Segoe UI Semibold", 9), padding=(10, 5))
 
         style.configure("TButton", background=PALETTE["surface3"], foreground=PALETTE["text"], borderwidth=0, focusthickness=0, font=("Segoe UI Semibold", 9), padding=(12, 8))
-        style.map("TButton", background=[("pressed", PALETTE["selection"]), ("active", "#2E374B"), ("disabled", PALETTE["surface2"])], foreground=[("disabled", "#616B7C")])
-        style.configure("Primary.TButton", background=PALETTE["accent"], foreground="white", borderwidth=0, focusthickness=0, font=("Segoe UI Semibold", 10), padding=(15, 10))
+        style.map("TButton", background=[("pressed", PALETTE["selection"]), ("active", "#2E3A51"), ("disabled", PALETTE["surface2"])], foreground=[("disabled", "#616B7C")])
+        style.configure("Primary.TButton", background=PALETTE["accent"], foreground="white", borderwidth=0, focusthickness=0, font=("Segoe UI Semibold", 10), padding=(16, 11))
         style.map("Primary.TButton", background=[("pressed", "#6849E8"), ("active", PALETTE["accent_hover"]), ("disabled", "#403762")])
         style.configure("Danger.TButton", background="#3A202A", foreground="#FF9BAA", borderwidth=0, font=("Segoe UI Semibold", 9), padding=(12, 8))
         style.map("Danger.TButton", background=[("active", "#522A37"), ("pressed", "#662E3E")])
         style.configure("Success.TButton", background="#163A32", foreground="#75E9C7", borderwidth=0, font=("Segoe UI Semibold", 9), padding=(12, 8))
         style.map("Success.TButton", background=[("active", "#1D4B40")])
+        style.configure("Soft.TButton", background=PALETTE["accent_soft"], foreground="#D9D2FF", borderwidth=0, font=("Segoe UI Semibold", 9), padding=(12, 8))
+        style.map("Soft.TButton", background=[("active", "#352C60")])
 
         style.configure("TNotebook", background=PALETTE["bg"], borderwidth=0, tabmargins=(0, 0, 0, 8))
-        style.configure("TNotebook.Tab", background=PALETTE["surface"], foreground=PALETTE["muted"], borderwidth=0, font=("Segoe UI Semibold", 9), padding=(14, 9))
+        style.configure("TNotebook.Tab", background=PALETTE["surface"], foreground=PALETTE["muted"], borderwidth=0, font=("Segoe UI Semibold", 9), padding=(11, 8))
         style.map("TNotebook.Tab", background=[("selected", PALETTE["accent_soft"]), ("active", PALETTE["surface2"])], foreground=[("selected", "#D9D2FF"), ("active", PALETTE["text"])])
 
         style.configure("TCombobox", fieldbackground=PALETTE["surface2"], background=PALETTE["surface2"], foreground=PALETTE["text"], arrowcolor=PALETTE["muted"], bordercolor=PALETTE["border"], lightcolor=PALETTE["border"], darkcolor=PALETTE["border"], padding=7)
@@ -92,7 +94,7 @@ def install(hub: Any) -> None:
         style.configure("Treeview", background=PALETTE["surface2"], fieldbackground=PALETTE["surface2"], foreground=PALETTE["text"], borderwidth=0, rowheight=30, font=("Segoe UI", 9))
         style.map("Treeview", background=[("selected", PALETTE["selection"])], foreground=[("selected", "white")])
         style.configure("Treeview.Heading", background=PALETTE["surface3"], foreground=PALETTE["muted"], borderwidth=0, font=("Segoe UI Semibold", 9), padding=(7, 8))
-        style.map("Treeview.Heading", background=[("active", "#2D3548")])
+        style.map("Treeview.Heading", background=[("active", "#2D394F")])
 
         style.configure("TProgressbar", background=PALETTE["accent"], troughcolor=PALETTE["surface2"], borderwidth=0, thickness=9)
         style.configure("TLabelframe", background=PALETTE["surface"], foreground=PALETTE["text"], bordercolor=PALETTE["border"], relief="solid")
@@ -122,8 +124,8 @@ def install(hub: Any) -> None:
         style_text_widgets(self)
         footer = ttk.Frame(self, style="Hero.TFrame", padding=(18, 8))
         footer.pack(fill="x", side="bottom", before=self.notebook)
-        ttk.Label(footer, text="ZeroScript • Yerel karar motoru + bağlı AI takımı", style="Hero.Sub.TLabel").pack(side="left")
-        ttk.Label(footer, text="Memory Vault + Superior Engine aktif", style="Pill.TLabel").pack(side="right")
+        ttk.Label(footer, text="ZeroScript • Kolay Mod + yerel karar motoru + bağlı AI takımı", style="Hero.Sub.TLabel").pack(side="left")
+        ttk.Label(footer, text="Memory Vault · Superior Engine · Proof Guard", style="Pill.TLabel").pack(side="right")
 
     hub.ZeroScriptHub._build_style = build_style
     hub.ZeroScriptHub._build_ui = build_ui
