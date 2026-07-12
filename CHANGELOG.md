@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.19.2
+
+- Fixed Start task handling when Roblox Studio is not actually connected.
+- Start now checks bridge, Roblox MCP tools, Studio attachment, and open-place readiness before dispatching agents.
+- If StudioMCP is stale, Start automatically restarts the Roblox MCP server once and rechecks readiness.
+- The popup now shows clear blocked-start messages instead of appearing unresponsive.
+- The in-page ZeroScript bar now keeps Start clickable when Studio is stuck disconnected, attempts a Roblox MCP restart, and shows a clear recovery banner if the reconnect still fails.
+
 ## 1.19.1
 
 - Fixed team start appearing unresponsive while checkpoint and preflight tools

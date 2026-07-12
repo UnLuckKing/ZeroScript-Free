@@ -19,7 +19,6 @@
   const log = (...a) => console.log("[zeroscript]", ...a);
   let teamToken = null;
   let teamReady = false;
-  let teamReady = false;
 
   // Every provider tab announces itself to the shared service worker. The
   // heartbeat expires automatically, so closing a model tab removes it from
@@ -2072,9 +2071,51 @@
 
     // The primary button does different things depending on the current state
     // (set by renderBar via actionBtn.dataset.kind).
-    function onActionClick() {
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    async function repairRobloxBeforeStart() {
+      if (bridgeOk) return true;
+      if (!A.bridge || !A.bridge.connected) {
+        ui.banner("warn", "ZeroScript bridge is offline",
+          "Run start.bat / python bridge.py, keep the bridge window open, then click Start Roblox agent again.");
+        return false;
+      }
+      const oldText = actionBtn.textContent;
+      actionBtn.disabled = true;
+      actionBtn.textContent = "Repairing…";
+      try {
+        ui.toast("Trying to reconnect Roblox Studio…");
+        await bg({ type: "restart_mcp", server: "roblox" });
+        await delay(1200);
+        await bg({ type: "list_tools" });
+        await delay(250);
+        const s = await bg({ type: "status" });
+        if (s && s.type === "zs-status") setStatus(s);
+        if (bridgeOk) {
+          ui.toast("Roblox Studio connected.");
+          return true;
+        }
+        const detail = placeDown
+          ? "Roblox Studio is connected, but no place is open. Open your place and click Start again."
+          : studioProcUp
+            ? "Studio is open but not connected. In Studio, open Assistant Settings > MCP Servers and toggle/enable its MCP server, then click Start again."
+            : "Open Roblox Studio, open your place, enable Assistant Settings > MCP Servers, then click Start again.";
+        ui.banner("warn", "Roblox Studio is not connected", detail);
+        return false;
+      } finally {
+        actionBtn.disabled = false;
+        actionBtn.textContent = oldText;
+        renderBar();
+      }
+    }
+
+    async function onActionClick() {
       const kind = actionBtn.dataset.kind;
-      if (kind === "start" || kind === "start-degraded") startSession();
+      if (kind === "start") {
+        if (await repairRobloxBeforeStart()) startSession();
+      } else if (kind === "start-degraded") {
+        startSession();
+      }
     }
 
     // ── Custom prompt (persisted) ───────────────────────────────────────────
@@ -2497,7 +2538,11 @@
                     : `Open <b>Roblox Studio</b> for the tools.`;
           label = "▶ Start Roblox agent"; kind = "start";
         }
-        disabled = !bridgeOk && !addonOk;
+        // If the bridge itself is reachable, keep Start clickable even when
+        // Roblox Studio is currently yellow/red. Clicking Start then becomes a
+        // guided repair attempt (restart the Roblox MCP proxy and re-check)
+        // instead of a dead disabled button that leaves the user stuck.
+        disabled = !(A.bridge && A.bridge.connected) && !addonOk;
       } else {
         toneClass = "noagent";
         msg = `No agent here. Open a new chat to start one.`;

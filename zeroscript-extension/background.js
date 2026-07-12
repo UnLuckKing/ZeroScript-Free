@@ -511,16 +511,83 @@ function handleBridgeMessage(msg) {
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function hasRobloxTool(name) {
+  return toolsCache.some((tool) => tool && (tool.name === name || tool.name === `roblox/${name}`));
+}
+
+function studioReadinessError() {
+  if (!connected) return "Bridge offline. Run start.bat / python bridge.py, then press Start again.";
+  if (!mcpAlive) return "Roblox MCP server is not answering yet. Keep Roblox Studio open and press Start again.";
+  if (studioConnected === false && studioProc === true && studioApp === false) {
+    return "Roblox Studio is open but not connected. In Studio open Assistant Settings > MCP Servers and enable/toggle the MCP server, then press Start again.";
+  }
+  if (studioConnected === false && studioApp === false) {
+    return "Roblox Studio is not connected. Open Roblox Studio, open a place, enable Assistant Settings > MCP Servers, then press Start again.";
+  }
+  if (studioConnected === false && studioApp === true) {
+    return "Roblox Studio is connected but no place is open. Open your place file, then press Start again.";
+  }
+  if (!hasRobloxTool("execute_luau")) {
+    return "Roblox tools are not available yet. Keep Studio open and press Restart Roblox server, or press Start again in a few seconds.";
+  }
+  return null;
+}
+
+async function refreshRobloxReadiness() {
+  await send({ type: "list_tools" }, 25000);
+  await send({ type: "studio_status" }, 12000);
+}
+
+async function ensureStudioReadyForTask() {
+  if (!(await waitForConnection(8000))) return { ok: false, error: studioReadinessError() };
+
+  await refreshRobloxReadiness();
+  let error = studioReadinessError();
+  if (!error) return { ok: true };
+
+  // A common live failure is a stale StudioMCP proxy: the bridge is up, but the
+  // Studio catalogue is empty or the place probe still says disconnected. One
+  // targeted restart usually rebinds it after Studio was opened/toggled.
+  if (connected) {
+    const restart = await send({ type: "restart_mcp", server: "roblox" }, 35000);
+    if (restart && restart.ok) {
+      await sleep(1200);
+      await refreshRobloxReadiness();
+      error = studioReadinessError();
+      if (!error) return { ok: true, repaired: true };
+    }
+  }
+  return { ok: false, error };
+}
+
 async function startTeamTask(goal) {
   goal = String(goal || "").trim();
   if (!goal) return { ok: false, error: "Enter a goal first." };
   if (taskStarting) return { ok: false, error: "A task is already being prepared." };
   taskStarting = true;
   const phases = phasesForGoal(goal);
-  teamTask = { id: `task-${Date.now()}`, goal, phases, phaseIndex: 0, phase: phases[0], status: "scanning", provider: null, round: 0, lastReport: "", error: null, createdAt: Date.now(), updatedAt: Date.now() };
+  teamTask = { id: `task-${Date.now()}`, goal, phases, phaseIndex: 0, phase: phases[0], status: "connecting", provider: null, round: 0, lastReport: "", error: "Checking Roblox Studio connection…", createdAt: Date.now(), updatedAt: Date.now() };
   await chrome.storage.local.set({ zsTeamTask: teamTask });
   broadcastTeam();
   try {
+    const ready = await ensureStudioReadyForTask();
+    if (!ready.ok) {
+      teamTask.status = "waiting";
+      teamTask.error = ready.error || "Roblox Studio is not ready.";
+      teamTask.updatedAt = Date.now();
+      await chrome.storage.local.set({ zsTeamTask: teamTask });
+      broadcastTeam();
+      return { ok: false, error: teamTask.error, team: teamObj() };
+    }
+    teamTask.status = "scanning";
+    teamTask.error = ready.repaired ? "Reconnected Roblox MCP; scanning project…" : null;
+    teamTask.updatedAt = Date.now();
+    await chrome.storage.local.set({ zsTeamTask: teamTask });
+    broadcastTeam();
     const checkpoint = await createCheckpoint(teamTask.id);
     teamTask.checkpoint = checkpoint.ok ? checkpoint.id : null;
     if (!checkpoint.ok) teamTask.error = `Checkpoint warning: ${checkpoint.error}`;
