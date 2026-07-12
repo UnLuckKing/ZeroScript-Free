@@ -72,6 +72,7 @@ def validate() -> None:
         "background-studio-panel-fixes.js",
         "background-hub-autopair.js",
         "background-hub-actions.js",
+        "background-task-start-policy.js",
         "popup-simple.js",
     ):
         if not (extension / required).exists():
@@ -89,7 +90,7 @@ def release_notes(version: str) -> str:
     match = re.search(pattern, text)
     if match:
         body = match.group(1).strip()
-    elif version == "1.25.0" and (ROOT / "docs" / "ZEROSCRIPT_HUB_1_25.md").exists():
+    elif version.startswith("1.25") and (ROOT / "docs" / "ZEROSCRIPT_HUB_1_25.md").exists():
         body = (ROOT / "docs" / "ZEROSCRIPT_HUB_1_25.md").read_text("utf-8").strip()
     else:
         body = "See CHANGELOG.md for changes."
