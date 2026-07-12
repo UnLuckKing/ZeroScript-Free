@@ -49,8 +49,19 @@ if errorlevel 1 (
 rmdir /s /q "%TMP%" >nul 2>nul
 
 echo.
+echo Studio Control Panel ve Command Palette guncelleniyor...
+where py >nul 2>nul
+if not errorlevel 1 (
+  py -3 "%ROOT%install_studio_panel.py" >nul 2>nul
+) else (
+  where python >nul 2>nul
+  if not errorlevel 1 python "%ROOT%install_studio_panel.py" >nul 2>nul
+)
+
+echo.
 echo [OK] ZeroScript dosyalari ve Memory Vault korundu.
 echo Chrome extension sayfasi aciliyor. ZeroScript kartinda Yeniden Yukle'ye bas.
+echo Roblox Studio aciksa Command Palette icin Studio'yu yeniden baslat.
 start "" chrome "chrome://extensions" 2>nul
 
 echo.
