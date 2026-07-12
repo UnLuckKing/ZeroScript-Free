@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.6.0
+
+- Added an automatic Builder → Reviewer → QA / Playtest workflow.
+- Added per-role provider selection for the six supported free web model sites.
+- Added persistent task status with Retry and Cancel controls.
+- Added independent code review, live Output inspection, playtest, and vision-aware UI review instructions.
+- Added an automatic GitHub release workflow that validates, packages, checksums, tags, and publishes each new extension version.
+
+## 1.5.0
+
+- Added multi-model team mode and active provider-tab discovery.
+- Added a shared Studio lease so multiple models cannot execute conflicting MCP calls concurrently.
+- Added builder/reviewer selection and live lock-owner status to the popup.
+
 All notable changes to ZeroScript Free are documented here.
 
 ## [1.4.1] - 2026-07-11
