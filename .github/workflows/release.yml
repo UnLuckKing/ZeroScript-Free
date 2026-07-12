@@ -4,6 +4,8 @@ on:
   push:
     branches: [master]
     paths:
+      - .github/workflows/release.yml
+      - CHANGELOG.md
       - bridge.py
       - launch_studio_mcp.py
       - start.bat
