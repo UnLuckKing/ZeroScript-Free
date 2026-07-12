@@ -1,10 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Small finalization layer for the adaptive manager. It clears stale error/open
-// memory only when QA explicitly proves a clean state, and retries final diff
-// capture after long QA evidence checks finish.
+// memory only when QA explicitly proves a clean state, retries final diff capture
+// after long QA checks, and keeps transient routing state out of learned scores.
 
 let zsLastFinalizedTask = null;
 let zsLastScoredDiffAt = 0;
+
+const zsCoreRecordPerformance = zsRecordPerformance;
+zsRecordPerformance = function zsRecordMeaningfulPerformance(provider, phase, result, report, durationMs) {
+  const text = String(report || "");
+  if (result === "failed" && /start a zeroscript session|not started|busy in another turn|tab.*not ready/i.test(text)) {
+    return;
+  }
+  return zsCoreRecordPerformance(provider, phase, result, report, durationMs);
+};
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (!msg || msg.type !== "team_task_done") return;
