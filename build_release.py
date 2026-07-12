@@ -36,10 +36,21 @@ def versions() -> tuple[str, str]:
 def validate() -> None:
     if not shutil.which("node"):
         raise RuntimeError("Node.js is required to run the JavaScript checks")
-    for path in ("background.js", "popup.js", "core/main.js"):
-        run("node", "--check", f"zeroscript-extension/{path}")
+    extension = ROOT / "zeroscript-extension"
+    for path in sorted(extension.rglob("*.js")):
+        run("node", "--check", str(path.relative_to(ROOT)))
     run("node", "zeroscript-extension/test-parser.js")
     run(sys.executable, "-m", "py_compile", "bridge.py", "launch_studio_mcp.py")
+
+    manifest = json.loads((extension / "manifest.json").read_text("utf-8"))
+    script_paths = {path for entry in manifest.get("content_scripts", []) for path in entry.get("js", [])}
+    required_content_scripts = {"core/provider-probe.js", "core/permission-guard.js"}
+    missing = sorted(required_content_scripts - script_paths)
+    if missing:
+        raise RuntimeError(f"Manifest is missing required content scripts: {', '.join(missing)}")
+    for required in ("background-suite.js", "popup-suite.js"):
+        if not (extension / required).exists():
+            raise RuntimeError(f"Required release file is missing: {required}")
 
 
 def release_notes(version: str) -> str:
