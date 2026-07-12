@@ -79,7 +79,7 @@ def _run_updater(self) -> None:
         return
     if not messagebox.askyesno(
         "ZeroScript Güncelle",
-        "Güncel master sürümü indirilecek. Token, Hub ayarları, oyun profilleri ve MCP config dosyan korunacak. Devam edilsin mi?",
+        "Güncel master sürümü indirilecek. Token, Hub ayarları, oyun profilleri, görev şablonları ve MCP config dosyan korunacak. Devam edilsin mi?",
     ):
         return
     try:
@@ -245,8 +245,10 @@ hub.ZeroScriptHub.pair_extension = _safe_pair_extension
 hub.ZeroScriptHub.repair = _safe_repair
 
 from hub_productivity_ui import install as install_productivity_ui  # noqa: E402
+from hub_workflow_extras import install as install_workflow_extras  # noqa: E402
 
 install_productivity_ui(hub)
+install_workflow_extras(hub)
 
 
 if __name__ == "__main__":
