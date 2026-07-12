@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist"
 ROOT_FILES = [
     "bridge.py", "bridge_core.py", "launch_studio_mcp.py", "start.bat", "start_with_panel.bat",
-    "ZeroScript Kurulum.bat", "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py", "control_api.py",
+    "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py", "control_api.py",
     "install_studio_panel.py", "install_studio_panel.bat",
     "config.json", "LICENSE", "README.md", "CHANGELOG.md",
 ]
@@ -45,6 +45,7 @@ def validate() -> None:
     run("node", "zeroscript-extension/test-parser.js")
     run("node", "zeroscript-extension/test-control-suite.js")
     run("node", "zeroscript-extension/test-task-start-policy.js")
+    run("node", "zeroscript-extension/test-speed-pack.js")
     run(sys.executable, "-m", "unittest", "-v", "test_control_api.py")
     run(
         sys.executable,
@@ -74,13 +75,18 @@ def validate() -> None:
         "background-hub-autopair.js",
         "background-hub-actions.js",
         "background-task-start-policy.js",
+        "background-speed-pack.js",
+        "background-speed-fixes.js",
         "popup-simple.js",
     ):
         if not (extension / required).exists():
             raise RuntimeError(f"Required release file is missing: {required}")
     if not (ROOT / "roblox-plugin" / "ZeroScriptControlPanel.lua").exists():
         raise RuntimeError("Native Studio panel source is missing")
-    for required in ("zeroscript_hub.py", "zeroscript_hub_launcher.py", "ZeroScript Hub.bat", "ZeroScript Kurulum.bat"):
+    for required in (
+        "zeroscript_hub.py", "zeroscript_hub_launcher.py", "ZeroScript Hub.bat",
+        "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat",
+    ):
         if not (ROOT / required).exists():
             raise RuntimeError(f"ZeroScript Hub release file is missing: {required}")
 
@@ -91,7 +97,7 @@ def release_notes(version: str) -> str:
     match = re.search(pattern, text)
     if match:
         body = match.group(1).strip()
-    elif version.startswith("1.25") and (ROOT / "docs" / "ZEROSCRIPT_HUB_1_25.md").exists():
+    elif version.startswith("1.2") and (ROOT / "docs" / "ZEROSCRIPT_HUB_1_25.md").exists():
         body = (ROOT / "docs" / "ZEROSCRIPT_HUB_1_25.md").read_text("utf-8").strip()
     else:
         body = "See CHANGELOG.md for changes."
