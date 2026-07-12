@@ -44,6 +44,7 @@ def validate() -> None:
         run("node", "--check", str(path.relative_to(ROOT)))
     run("node", "zeroscript-extension/test-parser.js")
     run("node", "zeroscript-extension/test-control-suite.js")
+    run("node", "zeroscript-extension/test-task-start-policy.js")
     run(sys.executable, "-m", "unittest", "-v", "test_control_api.py")
     run(
         sys.executable,
