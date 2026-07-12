@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ZeroScript Free × Roblox Studio Agent",
-  "version": "1.20.1",
+  "version": "1.21.0",
   "description": "Connect multiple AI models safely to Roblox Studio through one coordinated bridge.",
   "permissions": ["storage", "clipboardWrite"],
   "host_permissions": [
@@ -13,11 +13,15 @@
     "https://chat.z.ai/*",
     "https://chat.qwen.ai/*",
     "https://arena.ai/*",
+    "https://chatgpt.com/*",
+    "https://claude.ai/*",
+    "https://copilot.microsoft.com/*",
+    "https://chat.mistral.ai/*",
     "http://127.0.0.1/*",
     "ws://127.0.0.1/*"
   ],
   "background": {
-    "service_worker": "background-entry.js"
+    "service_worker": "background-providers.js"
   },
   "icons": {
     "16": "icon.png",
@@ -73,6 +77,12 @@
     {
       "matches": ["https://chat.qwen.ai/*"],
       "js": ["core/config.js", "core/parser.js", "providers/qwen.js", "core/team-reliability.js", "core/main.js"],
+      "css": ["overlay.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://chatgpt.com/*", "https://claude.ai/*", "https://copilot.microsoft.com/*", "https://chat.mistral.ai/*"],
+      "js": ["core/config.js", "core/parser.js", "providers/browser-chat.js", "core/team-reliability.js", "core/main.js"],
       "css": ["overlay.css"],
       "run_at": "document_idle"
     }
