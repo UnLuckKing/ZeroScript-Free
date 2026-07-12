@@ -49,6 +49,7 @@ def validate() -> None:
     run("node", "zeroscript-extension/test-speed-pack.js")
     run("node", "zeroscript-extension/test-productivity-pack.js")
     run("node", "zeroscript-extension/test-automation-pack.js")
+    run("node", "zeroscript-extension/test-automation-fixes.js")
     run(sys.executable, "-m", "unittest", "-v", "test_control_api.py")
     run(
         sys.executable,
@@ -87,6 +88,7 @@ def validate() -> None:
         "background-productivity-fixes.js",
         "background-productivity-sync.js",
         "background-automation-pack.js",
+        "background-automation-fixes.js",
         "popup-simple.js",
     ):
         if not (extension / required).exists():
