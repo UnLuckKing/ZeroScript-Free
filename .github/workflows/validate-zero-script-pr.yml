@@ -39,6 +39,7 @@ jobs:
       - name: Python checks
         run: |
           python -m py_compile bridge.py build_release.py launch_studio_mcp.py
+          if [ -f bridge_core.py ]; then python -m py_compile bridge_core.py; fi
           if [ -f control_api.py ]; then
             python -m py_compile control_api.py install_studio_panel.py
             python -m unittest -v test_control_api.py
