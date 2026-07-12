@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.16.0
+
+- Provider tabs now report separate open and ready states.
+- Team tasks are dispatched only to conversations with a completed ZeroScript
+  Start session, preventing avoidable WAITING/error cycles.
+- A waiting task resumes automatically as soon as any suitable tab becomes ready.
+
 ## 1.15.0
 
 - Added an optional Studio write approval mode with a persisted preview queue.
