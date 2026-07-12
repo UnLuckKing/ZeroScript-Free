@@ -22,6 +22,7 @@ Object.assign(ZS_PROVIDER_WEIGHTS.qa,       { chatgpt: 9, claude: 9, mistral: 7,
 // deterministic script diffing, regression memory, safety telemetry, and
 // release-readiness scoring.
 importScripts("background-manager.js");
+importScripts("background-manager-finalizer.js");
 
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
