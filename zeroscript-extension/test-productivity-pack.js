@@ -7,6 +7,7 @@ const vm = require("vm");
 const source = fs.readFileSync(path.join(__dirname, "background-productivity-pack.js"), "utf8");
 const fixes = fs.readFileSync(path.join(__dirname, "background-productivity-fixes.js"), "utf8");
 const stored = {};
+let sends = 0;
 const context = {
   console,
   Date,
@@ -29,8 +30,8 @@ const context = {
   checkpointState: { latest: null, status: "idle", detail: "" },
   connected: true,
   studioConnected: true,
-  robloxTool: () => null,
-  send: async () => ({ ok: false }),
+  robloxTool: () => ({ name: "get_console_output" }),
+  send: async () => { sends += 1; return { ok: true, text: "clean" }; },
   broadcastTeam: () => {},
   startTeamTask: async () => ({ ok: true }),
   dispatchTask: async () => ({ ok: true }),
@@ -88,6 +89,14 @@ vm.runInContext(fixes, context, { filename: "background-productivity-fixes.js" }
   const publicState = context.zsProductivityPublic();
   assert.strictEqual(publicState.projectIndex.counts.scripts, 99);
   assert.strictEqual(publicState.projectIndex.samples.scripts.length, 12, "Hub sync must stay compact");
+
+  context.writerLease = { provider: "gemini" };
+  const skipped = await context.zsOutputWatchTick();
+  assert.strictEqual(skipped.reason, "writer_busy");
+  assert.strictEqual(sends, 0, "background Output polling must not compete with an active Studio writer");
+  context.writerLease = null;
+  await context.zsOutputWatchTick();
+  assert.strictEqual(sends, 1);
 
   console.log("productivity pack tests passed");
 })().catch((error) => {
