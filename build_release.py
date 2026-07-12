@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist"
 ROOT_FILES = [
     "bridge.py", "bridge_core.py", "launch_studio_mcp.py", "start.bat", "start_with_panel.bat",
-    "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py", "hub_productivity_ui.py", "control_api.py",
+    "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py", "hub_productivity_ui.py", "hub_workflow_extras.py", "control_api.py",
     "install_studio_panel.py", "install_studio_panel.bat",
     "config.json", "LICENSE", "README.md", "CHANGELOG.md", "RELEASE_NOTES_1.27.md",
 ]
@@ -59,6 +59,7 @@ def validate() -> None:
         "zeroscript_hub.py",
         "zeroscript_hub_launcher.py",
         "hub_productivity_ui.py",
+        "hub_workflow_extras.py",
         "install_studio_panel.py",
         "build_release.py",
     )
@@ -80,6 +81,7 @@ def validate() -> None:
         "background-speed-pack.js",
         "background-speed-fixes.js",
         "background-productivity-pack.js",
+        "background-productivity-fixes.js",
         "background-productivity-sync.js",
         "popup-simple.js",
     ):
@@ -88,7 +90,7 @@ def validate() -> None:
     if not (ROOT / "roblox-plugin" / "ZeroScriptControlPanel.lua").exists():
         raise RuntimeError("Native Studio panel source is missing")
     for required in (
-        "zeroscript_hub.py", "zeroscript_hub_launcher.py", "hub_productivity_ui.py", "ZeroScript Hub.bat",
+        "zeroscript_hub.py", "zeroscript_hub_launcher.py", "hub_productivity_ui.py", "hub_workflow_extras.py", "ZeroScript Hub.bat",
         "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "RELEASE_NOTES_1.27.md",
     ):
         if not (ROOT / required).exists():
