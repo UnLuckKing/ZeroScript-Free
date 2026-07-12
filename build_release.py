@@ -17,7 +17,7 @@ ROOT_FILES = [
     "bridge.py", "bridge_core.py", "launch_studio_mcp.py", "start.bat", "start_with_panel.bat",
     "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py",
     "hub_productivity_ui.py", "hub_workflow_extras.py", "hub_automation_ui.py", "hub_learning_ui.py", "hub_learning_extras.py",
-    "hub_superior_ui.py", "hub_easy_ui.py", "hub_modern_ui.py", "memory_vault.py", "memory_vault_safeguards.py", "recipe_starter_packs.py",
+    "hub_superior_ui.py", "hub_easy_ui.py", "hub_easy_runtime.py", "hub_modern_ui.py", "memory_vault.py", "memory_vault_safeguards.py", "recipe_starter_packs.py",
     "superior_engine.py", "control_api.py", "install_studio_panel.py", "install_studio_panel.bat",
     "config.json", "LICENSE", "README.md", "CHANGELOG.md", "RELEASE_NOTES_1.31.md",
 ]
@@ -72,6 +72,7 @@ def validate() -> None:
         "hub_learning_extras.py",
         "hub_superior_ui.py",
         "hub_easy_ui.py",
+        "hub_easy_runtime.py",
         "hub_modern_ui.py",
         "memory_vault.py",
         "memory_vault_safeguards.py",
@@ -116,7 +117,7 @@ def validate() -> None:
             raise RuntimeError(f"Native Studio plugin source is missing: {required}")
     for required in (
         "zeroscript_hub.py", "zeroscript_hub_launcher.py", "hub_productivity_ui.py", "hub_workflow_extras.py",
-        "hub_automation_ui.py", "hub_learning_ui.py", "hub_learning_extras.py", "hub_superior_ui.py", "hub_easy_ui.py", "hub_modern_ui.py",
+        "hub_automation_ui.py", "hub_learning_ui.py", "hub_learning_extras.py", "hub_superior_ui.py", "hub_easy_ui.py", "hub_easy_runtime.py", "hub_modern_ui.py",
         "memory_vault.py", "memory_vault_safeguards.py", "recipe_starter_packs.py", "superior_engine.py",
         "ZeroScript Hub.bat", "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "RELEASE_NOTES_1.31.md",
     ):
