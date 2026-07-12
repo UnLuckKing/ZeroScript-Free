@@ -19,6 +19,7 @@
   const log = (...a) => console.log("[zeroscript]", ...a);
   let teamToken = null;
   let teamReady = false;
+  let teamReady = false;
 
   // Every provider tab announces itself to the shared service worker. The
   // heartbeat expires automatically, so closing a model tab removes it from
