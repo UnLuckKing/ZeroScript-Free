@@ -25,6 +25,7 @@ ttk.Frame.columnconfigure = _safe_columnconfigure
 import zeroscript_hub as hub  # noqa: E402
 
 _original_log = hub.ZeroScriptHub.log
+_original_start_services = hub.ZeroScriptHub.start_services
 
 
 def _thread_safe_log(self, text: str) -> None:
@@ -34,7 +35,16 @@ def _thread_safe_log(self, text: str) -> None:
         self.after(0, _original_log, self, text)
 
 
+def _guarded_start_services(self) -> None:
+    if getattr(self, "_hub_services_starting", False):
+        return
+    self._hub_services_starting = True
+    _original_start_services(self)
+    self.after(3500, setattr, self, "_hub_services_starting", False)
+
+
 hub.ZeroScriptHub.log = _thread_safe_log
+hub.ZeroScriptHub.start_services = _guarded_start_services
 
 
 def _wait_for_control(timeout: float = 8.0) -> bool:
