@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.17.0
+
+- Added a deterministic local project preflight before every team task.
+- Added an Analyst phase that inventories scripts, remotes, UI, and world parts
+  before builders make changes.
+- Preflight flags empty scripts, suspicious RemoteEvent validation, unsafe
+  DataStore patterns, client-trusted economy code, tight loops, UI safe-area
+  risks, heavy unanchored physics, and missing server logic.
+- The evidence report is persisted with the task and passed to every specialist.
+- Kept the release entirely local: no hosted dashboard, cloud account, API key,
+  paid server, or local AI model is required.
+
 ## 1.16.0
 
 - Provider tabs now report separate open and ready states.
