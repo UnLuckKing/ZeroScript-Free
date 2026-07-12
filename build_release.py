@@ -89,6 +89,7 @@ def validate() -> None:
         "background-productivity-sync.js",
         "background-automation-pack.js",
         "background-automation-fixes.js",
+        "background-automation-instance-fixes.js",
         "popup-simple.js",
     ):
         if not (extension / required).exists():
