@@ -47,4 +47,4 @@ jobs:
           bridge = pathlib.Path('bridge.py').read_text('utf-8')
           match = re.search(r'^BRIDGE_VERSION = "([^"]+)"', bridge, re.M)
           assert match and match.group(1) == version, (version, match.group(1) if match else None)
-          assert version == '1.25.0'
+          assert version == '1.25.1'
