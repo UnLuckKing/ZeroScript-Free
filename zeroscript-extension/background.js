@@ -537,6 +537,41 @@ function studioReadinessError() {
   return null;
 }
 
+function providerDoctorRows() {
+  cleanTeamState();
+  const agents = [...teamAgents.values()];
+  const online = agents.map((a) => a.provider).filter((v, i, a) => a.indexOf(v) === i);
+  const ready = agents.filter((a) => a.ready).map((a) => a.provider).filter((v, i, a) => a.indexOf(v) === i);
+  if (!online.length) return [{ ok: false, label: "Model tab", detail: "Open DeepSeek or another supported AI page, then click Start Roblox agent there." }];
+  if (!ready.length) return [{ ok: false, label: "ZeroScript session", detail: `${online.join(", ")} is open, but no tab has a started ZeroScript session yet.` }];
+  return [{ ok: true, label: "Model tab", detail: `${ready.join(", ")} ready (${online.length} open).` }];
+}
+
+async function runConnectionDoctor({ repair = false } = {}) {
+  const rows = [];
+  const add = (ok, label, detail) => rows.push({ ok: !!ok, label, detail: String(detail || "") });
+  const socket = await waitForConnection(6000);
+  add(socket, "Bridge", socket ? "Connected to ws://127.0.0.1:17613." : "Offline. Run start.bat / python bridge.py and keep that window open.");
+  if (socket) {
+    if (repair) await send({ type: "restart_mcp", server: "roblox" }, 35000);
+    const tools = await send({ type: "list_tools" }, 25000);
+    const studio = await send({ type: "studio_status" }, 12000);
+    const roblox = serversCache.find((s) => s.id === "roblox");
+    add(!!(mcpAlive || (roblox && roblox.alive)), "Roblox MCP", roblox ? `${roblox.alive ? "Running" : "Down"} · ${roblox.tools || 0} tools.` : (mcpAlive ? "Running." : "No Roblox server status reported."));
+    add(hasRobloxTool("execute_luau"), "Roblox tools", hasRobloxTool("execute_luau") ? "execute_luau is available." : `Tools unavailable${tools && tools.error ? `: ${tools.error}` : "."}`);
+    add(studioProc !== false, "Studio window", studioProc === true ? "Roblox Studio process is open." : studioProc === false ? "Roblox Studio is not open." : "Unknown; bridge did not report process state.");
+    add(studioApp !== false, "Studio MCP toggle", studioApp === true ? "Studio is registered with MCP." : studioApp === false ? "Studio is not registered. Open Assistant Settings > MCP Servers and toggle/enable it." : "Unknown; open Assistant Settings > MCP Servers if Start still fails.");
+    add(studioConnected !== false, "Open place", studioConnected === true ? "A place is loaded and usable." : studioConnected === false ? (studioApp === true ? "Studio is open but no place is loaded." : "No usable Studio place is connected.") : "Unknown; try opening a place and clicking Restart Roblox server.");
+    const readiness = studioReadinessError();
+    add(!readiness, "Start readiness", readiness || "Ready to start ZeroScript.");
+    if (studio && !studio.ok) add(false, "Studio probe", studio.error || "Studio status probe failed.");
+  }
+  rows.push(...providerDoctorRows());
+  const ok = rows.every((r) => r.ok);
+  const summary = ok ? "Ready: bridge, Roblox Studio, tools, and model tab look usable." : "Blocked: fix the red items, then run Doctor again.";
+  return { ok, summary, rows, repaired: !!repair, team: teamObj(), status: statusObj() };
+}
+
 async function refreshRobloxReadiness() {
   await send({ type: "list_tools" }, 25000);
   await send({ type: "studio_status" }, 12000);
@@ -735,6 +770,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse(await scanAndPersistProject());
         break;
       }
+      case "connection_doctor": {
+        sendResponse(await runConnectionDoctor({ repair: msg.repair === true }));
+        break;
+      }
       case "team_task_done": {
         if (!teamTask || msg.task_id !== teamTask.id || msg.phase !== teamTask.phase) { sendResponse({ ok: false, error: "Stale task result ignored." }); break; }
         const completedPhase = teamTask.phase;
@@ -882,7 +921,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         break;
       }
       case "restart_mcp": {
-        const r = await send({ type: "restart_mcp" }, 30000);
+        const r = await send({ type: "restart_mcp", server: msg.server }, 30000);
         sendResponse(r);
         break;
       }
