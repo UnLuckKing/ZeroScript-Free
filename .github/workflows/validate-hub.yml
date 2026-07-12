@@ -11,6 +11,8 @@ on:
       - 'zeroscript-extension/**'
       - 'build_release.py'
       - '.github/workflows/validate-hub.yml'
+  pull_request:
+    branches: [master]
   workflow_dispatch:
 
 permissions:
