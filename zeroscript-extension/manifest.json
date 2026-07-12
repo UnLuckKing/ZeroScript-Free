@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ZeroScript Free × Roblox Studio Agent",
-  "version": "1.30.0",
-  "description": "Roblox Studio AI orchestration with Project Genome, deterministic intent decisions, verified learning and proof-gated automation.",
+  "version": "1.31.0",
+  "description": "Beginner-first Roblox Studio AI orchestration with one-click game blueprints, Project Genome, verified learning and proof-gated automation.",
   "permissions": ["storage", "clipboardWrite", "notifications"],
   "host_permissions": [
     "https://chat.deepseek.com/*",
