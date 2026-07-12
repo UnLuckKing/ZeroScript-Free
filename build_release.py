@@ -17,7 +17,7 @@ ROOT_FILES = [
     "bridge.py", "bridge_core.py", "launch_studio_mcp.py", "start.bat", "start_with_panel.bat",
     "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py", "control_api.py",
     "install_studio_panel.py", "install_studio_panel.bat",
-    "config.json", "LICENSE", "README.md", "CHANGELOG.md",
+    "config.json", "LICENSE", "README.md", "CHANGELOG.md", "RELEASE_NOTES_1.26.md",
 ]
 PACKAGE_DIRS = ["zeroscript-extension", "roblox-plugin", "docs"]
 
@@ -85,13 +85,16 @@ def validate() -> None:
         raise RuntimeError("Native Studio panel source is missing")
     for required in (
         "zeroscript_hub.py", "zeroscript_hub_launcher.py", "ZeroScript Hub.bat",
-        "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat",
+        "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "RELEASE_NOTES_1.26.md",
     ):
         if not (ROOT / required).exists():
             raise RuntimeError(f"ZeroScript Hub release file is missing: {required}")
 
 
 def release_notes(version: str) -> str:
+    dedicated = ROOT / f"RELEASE_NOTES_{'.'.join(version.split('.')[:2])}.md"
+    if dedicated.exists():
+        return dedicated.read_text("utf-8").strip() + "\n"
     text = (ROOT / "CHANGELOG.md").read_text("utf-8")
     pattern = rf"(?ms)^## \[?{re.escape(version)}\]?.*?\n(.*?)(?=^## |\Z)"
     match = re.search(pattern, text)
