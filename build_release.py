@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist"
 ROOT_FILES = [
-    "bridge.py", "launch_studio_mcp.py", "start.bat", "start_with_panel.bat",
+    "bridge.py", "bridge_core.py", "launch_studio_mcp.py", "start.bat", "start_with_panel.bat",
     "control_api.py", "install_studio_panel.py", "install_studio_panel.bat",
     "config.json", "LICENSE", "README.md", "CHANGELOG.md",
 ]
@@ -49,6 +49,7 @@ def validate() -> None:
         "-m",
         "py_compile",
         "bridge.py",
+        "bridge_core.py",
         "launch_studio_mcp.py",
         "control_api.py",
         "install_studio_panel.py",
