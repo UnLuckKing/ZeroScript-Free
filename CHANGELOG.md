@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.15.0
+
+- Added an optional Studio write approval mode with a persisted preview queue.
+- Script edits, Luau execution, generated assets, instance changes, and other
+  write operations can now be applied or rejected from the extension popup.
+
 ## 1.14.0
 
 - Fixed provider tabs being marked unhealthy when their ZeroScript session had
