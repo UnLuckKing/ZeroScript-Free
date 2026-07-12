@@ -5,11 +5,13 @@ from __future__ import annotations
 from tkinter import messagebox, ttk
 from typing import Any
 
+from memory_vault_safeguards import install as install_memory_safeguards
 from recipe_starter_packs import install as install_starter_recipes
 
 
 def install(hub: Any) -> None:
     vault = hub.MEMORY_VAULT
+    install_memory_safeguards(type(vault))
     install_starter_recipes(vault)
 
     previous_build_ui = hub.ZeroScriptHub._build_ui
