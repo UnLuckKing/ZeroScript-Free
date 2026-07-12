@@ -103,7 +103,7 @@ async function testBackgroundSuite() {
   assert.ok(setConfig, "suite_set_config listener must be registered");
   await Promise.resolve();
   await Promise.resolve();
-  assert.deepEqual(sandbox.phasesForGoal("build one gameplay feature"), ["builder", "qa"]);
+  assert.equal(JSON.stringify(sandbox.phasesForGoal("build one gameplay feature")), JSON.stringify(["builder", "qa"]));
 
   sandbox.teamTask = { id: "task-1", status: "running", phase: "ui", provider: "gemini", goal: "fix UI" };
   await sandbox.dispatchTask();
