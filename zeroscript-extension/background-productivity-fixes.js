@@ -24,6 +24,15 @@ zsProductivityPublic = function zsCompactProductivityPublic() {
   return value;
 };
 
+// The Output watcher is background diagnostics, not part of the active agent
+// turn. Never compete for the bridge while a model owns the Studio writer lease.
+// The next 8-second tick will catch up after the write finishes.
+const zsProductivityOutputWatchCore = zsOutputWatchTick;
+zsOutputWatchTick = async function zsOutputWatchWithoutContention() {
+  if (writerLease) return { skipped: true, reason: "writer_busy" };
+  return zsProductivityOutputWatchCore();
+};
+
 // If a queued task cannot start because Studio is temporarily unavailable,
 // retain it instead of losing it into history as a permanent start failure.
 const zsProductivityQueueStartCore = zsQueueStartNext;
