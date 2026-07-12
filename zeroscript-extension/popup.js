@@ -31,6 +31,7 @@ function renderTeam(team) {
   document.getElementById("uiDesigner").value = team.config.uiDesigner || "gemini";
   document.getElementById("reviewer").value = team.config.reviewer || "gemini";
   document.getElementById("qa").value = team.config.qa || "qwen";
+  document.getElementById("approvalMode").value = team.config.approvalMode || "autonomous";
   const online = (team.agents || []).map((a) => a.provider).filter((v, i, a) => a.indexOf(v) === i);
   const unhealthy = Object.entries(team.providerHealth || {}).map(([p, h]) => `${p}: ${h.status}`).join(", ");
   const task = team.task;
@@ -43,7 +44,14 @@ function renderTeam(team) {
   document.getElementById("teamHistory").textContent = history.length
     ? `Recent: ${history.slice(-3).reverse().map((h) => `${h.status === "done" ? "✓" : "!"} ${h.goal.slice(0, 34)}${h.rounds ? ` (${h.rounds} fixes)` : ""}`).join("\n")}`
     : "";
+  const approvals = team.approvals || [];
+  const box = document.getElementById("approvalQueue");
+  box.innerHTML = approvals.length ? approvals.map((a) => `<div class="zs-approval"><b>${esc(a.name)}</b><br><small>${esc(JSON.stringify(a.arguments).slice(0, 140))}</small><div class="task-actions"><button class="ghost" data-approval-apply="${esc(a.id)}">Apply</button><button class="ghost" data-approval-reject="${esc(a.id)}">Reject</button></div></div>`).join("") : "";
+  box.querySelectorAll("[data-approval-apply]").forEach((b) => b.addEventListener("click", () => chrome.runtime.sendMessage({ type: "team_approval_apply", id: b.dataset.approvalApply }, (r) => r && r.team && renderTeam(r.team))));
+  box.querySelectorAll("[data-approval-reject]").forEach((b) => b.addEventListener("click", () => chrome.runtime.sendMessage({ type: "team_approval_reject", id: b.dataset.approvalReject }, (r) => r && r.team && renderTeam(r.team))));
 }
+
+function esc(value) { return String(value || "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#39;" }[c])); }
 
 function saveTeam() {
   chrome.runtime.sendMessage({ type: "team_config", config: {
@@ -53,9 +61,10 @@ function saveTeam() {
     uiDesigner: document.getElementById("uiDesigner").value,
     reviewer: document.getElementById("reviewer").value,
     qa: document.getElementById("qa").value,
+    approvalMode: document.getElementById("approvalMode").value,
   }}, (r) => r && renderTeam(r.team));
 }
-["teamEnabled", "writer", "mapDesigner", "uiDesigner", "reviewer", "qa"].forEach((id) => document.getElementById(id).addEventListener("change", saveTeam));
+["teamEnabled", "writer", "mapDesigner", "uiDesigner", "reviewer", "qa", "approvalMode"].forEach((id) => document.getElementById(id).addEventListener("change", saveTeam));
 
 const TASK_TEMPLATES = {
   audit: "Inspect the entire current Roblox project. Complete unfinished or broken gameplay systems, preserve working content, verify data saving and economy, test the main loop, fix every verified runtime error, and leave the experience production-ready.",
