@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <style>
-    body { width: 248px; margin: 0; font-family: "Segoe UI", sans-serif; background: #16161a; color: #e8e8ec; }
+    body { width: 280px; margin: 0; font-family: "Segoe UI", sans-serif; background: #16161a; color: #e8e8ec; }
     .wrap { padding: 14px; }
     h1 { font-size: 14px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
     .free { font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
@@ -16,7 +16,7 @@
     .team { margin: 12px 0 8px; padding: 10px; border-radius: 9px; background: rgba(255,255,255,.06); }
     .team label { display:flex; align-items:center; justify-content:space-between; font-size:12px; font-weight:600; }
     .team input { width:auto; }
-    .team select { width:100%; margin-top:6px; padding:6px; border-radius:6px; color:#e8e8ec; background:#24242a; border:1px solid #3b3b44; }
+    .team select { box-sizing:border-box; width:100%; margin-top:6px; padding:6px; border-radius:6px; color:#e8e8ec; background:#24242a; border:1px solid #3b3b44; }
     .team textarea { box-sizing:border-box; width:100%; margin-top:8px; min-height:64px; resize:vertical; padding:7px; border-radius:6px; color:#e8e8ec; background:#24242a; border:1px solid #3b3b44; font:11px "Segoe UI",sans-serif; }
     .task-actions { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
     .task-actions button { margin-top:6px; }
@@ -32,7 +32,7 @@
 </head>
 <body>
   <div class="wrap">
-    <h1><span id="dot" class="dot"></span> ZeroScript <span class="free">Free</span> <span style="font-size:9px;opacity:.6">DeepSeek</span></h1>
+    <h1><span id="dot" class="dot"></span> ZeroScript <span class="free">Free</span> <span style="font-size:9px;opacity:.6">Multi-model</span></h1>
     <div class="row" id="state">Bridge: …</div>
     <div class="row" id="tools"></div>
     <div class="row" id="servers" style="white-space:pre-line; font-family:ui-monospace,monospace; opacity:0.75"></div>
@@ -85,7 +85,7 @@
           <option value="chatgpt">Handoff: ChatGPT</option>
           <option value="claude">Handoff: Claude</option>
           <option value="copilot">Handoff: Microsoft Copilot</option>
-          <option value="mistral">Handoff: Mistral Le Chat</option>
+          <option value="mistral">Handoff: Mistral</option>
           <option value="perplexity">Handoff: Perplexity</option>
           <option value="poe">Handoff: Poe</option>
           <option value="roblox">Handoff: Roblox Assistant</option>
@@ -97,10 +97,11 @@
     <button class="ghost" id="restart">⟳ Restart Roblox server</button>
     <button class="kofi" id="kofi">♥ Tip the developer on Ko-fi</button>
     <div class="row" style="margin-top:10px; opacity:0.6">
-      Run <code>python bridge.py</code> and open <b>Roblox Studio</b>, then go to chat.deepseek.com.
+      Run <code>python bridge.py</code>, open Roblox Studio, then open one or more supported AI tabs.
     </div>
   </div>
   <script src="popup.js"></script>
   <script src="popup-smart.js"></script>
+  <script src="popup-providers.js"></script>
 </body>
 </html>
