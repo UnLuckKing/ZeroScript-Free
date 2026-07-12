@@ -37,6 +37,13 @@ def install(hub: Any) -> None:
         self.log(f"Memory Vault geri bildirimi kaydetti: {'başarılı' if positive else 'sorunlu'} · {task_id}")
         messagebox.showinfo("ZeroScript", "Öğrenme puanı güncellendi.")
 
+    def clear_unaccepted_learning(self: Any, previous_id: str) -> None:
+        pending = getattr(self, "_zs_learning_pending", None)
+        current_id = str((self.last_status.get("task") or {}).get("id") or "")
+        if pending and current_id == previous_id:
+            self._zs_learning_pending = None
+            self.log("Görev extension tarafından alınmadığı için geçici öğrenme context'i temizlendi.")
+
     def start_task(self: Any) -> None:
         # Prevent a pending learning envelope from binding to the previous active
         # task while the extension is still accepting the new task.
@@ -45,6 +52,7 @@ def install(hub: Any) -> None:
         if current_id:
             self._zs_learning_bound_task = current_id
         previous_start_task(self)
+        self.after(20_000, clear_unaccepted_learning, self, current_id)
 
     hub.ZeroScriptHub._build_ui = build_ui
     hub.ZeroScriptHub.start_task = start_task
