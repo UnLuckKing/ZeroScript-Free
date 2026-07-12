@@ -30,6 +30,9 @@ PALETTE = {
 
 
 def install(hub: Any) -> None:
+    from hub_learning_extras import install as install_learning_extras
+
+    install_learning_extras(hub)
     previous_style = hub.ZeroScriptHub._build_style
     previous_ui = hub.ZeroScriptHub._build_ui
     previous_status_card = hub.ZeroScriptHub._status_card
@@ -118,7 +121,7 @@ def install(hub: Any) -> None:
         previous_ui(self)
         style_text_widgets(self)
         footer = ttk.Frame(self, style="Hero.TFrame", padding=(18, 8))
-        footer.pack(fill="x", side="bottom")
+        footer.pack(fill="x", side="bottom", before=self.notebook)
         ttk.Label(footer, text="ZeroScript • Yerel ve güvenli geliştirme merkezi", style="Hero.Sub.TLabel").pack(side="left")
         ttk.Label(footer, text="Memory Vault aktif", style="Pill.TLabel").pack(side="right")
 
