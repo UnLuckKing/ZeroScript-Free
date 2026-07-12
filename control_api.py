@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Authenticated loopback side-channel for ZeroScript Hub and Studio panel.
-
-The service binds only to 127.0.0.1. Normal endpoints require the random local
-token. The unauthenticated /pair endpoint is available only during a short
-pairing window explicitly opened from ZeroScript Hub.
-"""
+"""Authenticated localhost control channel for ZeroScript Hub and Studio panel."""
 from __future__ import annotations
 
 import argparse
@@ -19,36 +14,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-VERSION = "1.27.0"
+VERSION = "1.28.0"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 17614
 ALLOWED_ACTIONS = {
-    "stop",
-    "retry",
-    "cancel",
-    "rollback",
-    "probe_providers",
-    "scan_project",
-    "release_manager",
-    "start_task",
-    "set_config",
-    "repair_connection",
-    "open_provider",
-    "enqueue_task",
-    "queue_pause",
-    "queue_resume",
-    "queue_clear",
-    "queue_remove",
-    "build_index",
-    "output_watch",
-    "ui_audit",
-    "security_audit",
-    "datastore_lab",
-    "economy_simulator",
-    "marketplace_scan",
-    "release_check",
-    "multiplayer_test",
-    "record_test",
+    "stop", "retry", "cancel", "rollback", "probe_providers", "scan_project",
+    "release_manager", "start_task", "set_config", "repair_connection", "open_provider",
+    "enqueue_task", "queue_pause", "queue_resume", "queue_clear", "queue_remove",
+    "build_index", "output_watch", "ui_audit", "security_audit", "datastore_lab",
+    "economy_simulator", "marketplace_scan", "release_check", "multiplayer_test", "record_test",
+    "diagnose_fix", "decompose_task", "set_automation", "context_compact", "emergency_stop",
+    "clear_notifications", "clear_error_groups", "restore_instances", "visual_ui_compare",
+    "button_test", "remote_fuzzer", "instance_rollback_test", "auto_profile_setup",
 }
 
 
@@ -117,9 +94,8 @@ class ControlState:
             return items
 
     def add_studio_event(self, payload: dict[str, Any]) -> None:
-        event = {**payload, "createdAt": int(time.time() * 1000)}
         with self.lock:
-            self.studio_events.append(event)
+            self.studio_events.append({**payload, "createdAt": int(time.time() * 1000)})
 
     def take_studio_events(self) -> list[dict[str, Any]]:
         with self.lock:
@@ -219,14 +195,12 @@ class ControlHandler(BaseHTTPRequestHandler):
             return
         if path == "/status":
             self._json(200, {"ok": True, "status": self.control_server.state.snapshot()})
-            return
-        if path == "/actions":
+        elif path == "/actions":
             self._json(200, {"ok": True, "actions": self.control_server.state.take_actions()})
-            return
-        if path == "/studio-events":
+        elif path == "/studio-events":
             self._json(200, {"ok": True, "events": self.control_server.state.take_studio_events()})
-            return
-        self._json(404, {"ok": False, "error": "Unknown endpoint"})
+        else:
+            self._json(404, {"ok": False, "error": "Unknown endpoint"})
 
     def do_POST(self) -> None:  # noqa: N802
         path, query = self._path()
@@ -237,12 +211,10 @@ class ControlHandler(BaseHTTPRequestHandler):
         if path == "/pair/start":
             seconds = self.control_server.state.open_pairing(int(body.get("seconds", 120)))
             self._json(200, {"ok": True, "seconds": seconds, "expiresAt": int((time.time() + seconds) * 1000)})
-            return
-        if path == "/status":
+        elif path == "/status":
             self.control_server.state.publish(body)
             self._json(200, {"ok": True})
-            return
-        if path == "/action":
+        elif path == "/action":
             action = str(body.get("action", "")).strip().lower()
             if action not in ALLOWED_ACTIONS:
                 self._json(400, {"ok": False, "error": f"Unsupported action '{action}'"})
@@ -250,12 +222,11 @@ class ControlHandler(BaseHTTPRequestHandler):
             payload = body.get("payload") if isinstance(body.get("payload"), dict) else {}
             item = self.control_server.state.add_action(action, payload)
             self._json(202, {"ok": True, "queued": item})
-            return
-        if path == "/studio-event":
+        elif path == "/studio-event":
             self.control_server.state.add_studio_event(body)
             self._json(202, {"ok": True})
-            return
-        self._json(404, {"ok": False, "error": "Unknown endpoint"})
+        else:
+            self._json(404, {"ok": False, "error": "Unknown endpoint"})
 
 
 class ControlServer(ThreadingHTTPServer):
@@ -274,10 +245,8 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--token-file", default=str(Path(__file__).resolve().with_name("control_token.txt")))
     args = parser.parse_args()
-
     if args.host not in {"127.0.0.1", "localhost"}:
         raise SystemExit("For safety, the ZeroScript control API only binds to localhost.")
-
     token_path = Path(args.token_file).expanduser().resolve()
     token = load_or_create_token(token_path)
     server = ControlServer((DEFAULT_HOST, args.port), token)
