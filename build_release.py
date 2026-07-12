@@ -14,9 +14,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist"
 ROOT_FILES = [
-    "bridge.py", "launch_studio_mcp.py", "start.bat", "config.json",
-    "LICENSE", "README.md", "CHANGELOG.md",
+    "bridge.py", "launch_studio_mcp.py", "start.bat", "start_with_panel.bat",
+    "control_api.py", "install_studio_panel.py", "install_studio_panel.bat",
+    "config.json", "LICENSE", "README.md", "CHANGELOG.md",
 ]
+PACKAGE_DIRS = ["zeroscript-extension", "roblox-plugin", "docs"]
 
 
 def run(*args: str) -> None:
@@ -41,7 +43,16 @@ def validate() -> None:
         run("node", "--check", str(path.relative_to(ROOT)))
     run("node", "zeroscript-extension/test-parser.js")
     run("node", "zeroscript-extension/test-control-suite.js")
-    run(sys.executable, "-m", "py_compile", "bridge.py", "launch_studio_mcp.py")
+    run(
+        sys.executable,
+        "-m",
+        "py_compile",
+        "bridge.py",
+        "launch_studio_mcp.py",
+        "control_api.py",
+        "install_studio_panel.py",
+        "build_release.py",
+    )
 
     manifest = json.loads((extension / "manifest.json").read_text("utf-8"))
     script_paths = {path for entry in manifest.get("content_scripts", []) for path in entry.get("js", [])}
@@ -49,9 +60,18 @@ def validate() -> None:
     missing = sorted(required_content_scripts - script_paths)
     if missing:
         raise RuntimeError(f"Manifest is missing required content scripts: {', '.join(missing)}")
-    for required in ("background-suite.js", "popup-suite.js"):
+    for required in (
+        "background-suite.js",
+        "background-suite-fixes.js",
+        "background-studio-panel.js",
+        "background-studio-panel-fixes.js",
+        "popup-suite.js",
+        "popup-studio-panel.js",
+    ):
         if not (extension / required).exists():
             raise RuntimeError(f"Required release file is missing: {required}")
+    if not (ROOT / "roblox-plugin" / "ZeroScriptControlPanel.lua").exists():
+        raise RuntimeError("Native Studio panel source is missing")
 
 
 def release_notes(version: str) -> str:
@@ -73,10 +93,11 @@ def build(version: str) -> tuple[Path, Path, Path]:
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for name in ROOT_FILES:
             zf.write(ROOT / name, f"{package_root}/{name}")
-        for path in sorted((ROOT / "zeroscript-extension").rglob("*")):
-            if path.is_file() and "__pycache__" not in path.parts:
-                rel = path.relative_to(ROOT).as_posix()
-                zf.write(path, f"{package_root}/{rel}")
+        for directory in PACKAGE_DIRS:
+            for path in sorted((ROOT / directory).rglob("*")):
+                if path.is_file() and "__pycache__" not in path.parts:
+                    rel = path.relative_to(ROOT).as_posix()
+                    zf.write(path, f"{package_root}/{rel}")
 
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     checksum.write_text(f"{digest}  {archive.name}\n", "ascii")
