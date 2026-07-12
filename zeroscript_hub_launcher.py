@@ -24,7 +24,7 @@ ttk.Frame.columnconfigure = _safe_columnconfigure
 
 import zeroscript_hub as hub  # noqa: E402
 
-hub.VERSION = "1.26.0"
+hub.VERSION = "1.27.0"
 hub.QUALITY_LABELS = {
     "Akıllı otomatik": "auto",
     "Turbo": "turbo",
@@ -52,8 +52,6 @@ def _guarded_start_services(self) -> None:
         return
     self._hub_services_starting = True
 
-    # A ZIP update can leave the previous API and bridge alive on their ports.
-    # Replace both when the API is stale or the process on 17614 is not ours.
     if hub.port_open(hub.CONTROL_PORT, 0.12):
         health = hub.request_json("/health", timeout=0.6)
         if not health.get("ok") or health.get("version") != hub.VERSION:
@@ -81,7 +79,7 @@ def _run_updater(self) -> None:
         return
     if not messagebox.askyesno(
         "ZeroScript Güncelle",
-        "Güncel master sürümü indirilecek. Token, Hub ayarları ve MCP config dosyan korunacak. Devam edilsin mi?",
+        "Güncel master sürümü indirilecek. Token, Hub ayarları, oyun profilleri ve MCP config dosyan korunacak. Devam edilsin mi?",
     ):
         return
     try:
@@ -142,10 +140,10 @@ def _wait_for_control(timeout: float = 8.0) -> bool:
     return False
 
 
-def _wait_for_task_acceptance(goal: str, previous_id: str | None, timeout: float = 10.0) -> tuple[bool, str]:
+def _wait_for_task_acceptance(goal: str, previous_id: str | None, timeout: float = 12.0) -> tuple[bool, str]:
     deadline = time.time() + timeout
     last_detail = "Extension görevi henüz almadı."
-    expected_goal = goal[:500].strip()
+    expected_goal = goal[:12000].strip()
     while time.time() < deadline:
         result = hub.request_json("/status", hub.ensure_token(), timeout=0.8)
         status = result.get("status") if result.get("ok") else {}
@@ -245,6 +243,10 @@ def _safe_repair(self) -> None:
 hub.ZeroScriptHub.start_task = _safe_start_task
 hub.ZeroScriptHub.pair_extension = _safe_pair_extension
 hub.ZeroScriptHub.repair = _safe_repair
+
+from hub_productivity_ui import install as install_productivity_ui  # noqa: E402
+
+install_productivity_ui(hub)
 
 
 if __name__ == "__main__":
