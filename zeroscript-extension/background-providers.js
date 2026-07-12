@@ -47,6 +47,10 @@ importScripts("background-hub-actions.js");
 // permission to resume a task restored after restart. Retry remains explicit.
 importScripts("background-task-start-policy.js");
 
+// Smart Automatic/Turbo modes, startup caches, parallel safety preflight,
+// existing-tab reuse and stale-task replacement.
+importScripts("background-speed-pack.js");
+
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
     for (const tab of tabs || []) {
