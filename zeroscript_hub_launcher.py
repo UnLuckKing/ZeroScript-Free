@@ -51,6 +51,16 @@ def _guarded_start_services(self) -> None:
     if getattr(self, "_hub_services_starting", False):
         return
     self._hub_services_starting = True
+
+    # A ZIP update can leave the previous control API alive on the same port.
+    # Replace it when its reported version is stale or it is not a real Hub API.
+    if hub.port_open(hub.CONTROL_PORT, 0.12):
+        health = hub.request_json("/health", timeout=0.6)
+        if not health.get("ok") or health.get("version") != hub.VERSION:
+            hub.kill_port(hub.CONTROL_PORT)
+            self.log("Eski/takılmış Hub servisi kapatıldı; güncel sürüm başlatılıyor.")
+            time.sleep(0.25)
+
     _original_start_services(self)
     self.after(3500, setattr, self, "_hub_services_starting", False)
 
@@ -103,10 +113,35 @@ hub.ZeroScriptHub._build_home = _build_home_with_shortcuts
 def _wait_for_control(timeout: float = 8.0) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if hub.port_open(hub.CONTROL_PORT, 0.15):
+        health = hub.request_json("/health", timeout=0.5)
+        if health.get("ok") and health.get("version") == hub.VERSION:
             return True
         time.sleep(0.2)
     return False
+
+
+def _wait_for_task_acceptance(goal: str, previous_id: str | None, timeout: float = 10.0) -> tuple[bool, str]:
+    deadline = time.time() + timeout
+    last_detail = "Extension görevi henüz almadı."
+    while time.time() < deadline:
+        result = hub.request_json("/status", hub.ensure_token(), timeout=0.8)
+        status = result.get("status") if result.get("ok") else {}
+        if not status:
+            time.sleep(0.35)
+            continue
+        if not status.get("extensionConnected"):
+            last_detail = "Extension Hub'a bağlı değil. Extension'ı eşleştir düğmesine bas."
+            time.sleep(0.35)
+            continue
+        task = status.get("task") or {}
+        task_id = str(task.get("id") or "")
+        task_goal = str(task.get("goal") or "").strip()
+        if task_id and task_id != (previous_id or "") and task_goal == goal:
+            return True, f"{task.get('status', 'queued')} · {task.get('phase', 'hazırlanıyor')}"
+        if task and task_id == (previous_id or ""):
+            last_detail = f"Önceki görev hâlâ {task.get('status', 'aktif')}. Durdur veya tamamlanmasını bekle."
+        time.sleep(0.35)
+    return False, last_detail
 
 
 def _safe_start_task(self) -> None:
@@ -120,17 +155,28 @@ def _safe_start_task(self) -> None:
     self.start_services()
 
     def worker() -> None:
-        if not _wait_for_control():
-            self.after(0, messagebox.showerror, "ZeroScript", "Hub servisi başlatılamadı. Detaylar sekmesindeki logu kontrol et.")
+        try:
+            if not _wait_for_control():
+                self.after(0, messagebox.showerror, "ZeroScript", "Güncel Hub servisi başlatılamadı. Detaylar sekmesindeki logu kontrol et.")
+                return
+            before = hub.request_json("/status", self.token, timeout=1.0)
+            previous_task = ((before.get("status") or {}).get("task") or {}) if before.get("ok") else {}
+            previous_id = str(previous_task.get("id") or "") or None
+
+            self.send_config_action()
+            result = self.action("start_task", {"goal": goal})
+            if not result.get("ok"):
+                self.after(0, messagebox.showerror, "ZeroScript", result.get("error", "Görev başlatılamadı."))
+                return
+
+            accepted, detail = _wait_for_task_acceptance(goal, previous_id)
+            if accepted:
+                self.log(f"Görev extension tarafından alındı: {detail}. Akıllı mod en kısa güvenli yolu seçiyor.")
+            else:
+                self.log(f"Görev başlatma doğrulanamadı: {detail}")
+                self.after(0, messagebox.showerror, "ZeroScript", f"Görev başlatılamadı veya doğrulanamadı.\n\n{detail}")
+        finally:
             self.after(0, self.start_task_button.configure, {"state": "normal", "text": "▶ Çalıştır"})
-            return
-        self.send_config_action()
-        result = self.action("start_task", {"goal": goal})
-        if result.get("ok"):
-            self.log("Görev sıraya alındı. Akıllı mod görev boyutuna göre en kısa güvenli yolu seçiyor.")
-        else:
-            self.after(0, messagebox.showerror, "ZeroScript", result.get("error", "Görev başlatılamadı."))
-        self.after(0, self.start_task_button.configure, {"state": "normal", "text": "▶ Çalıştır"})
 
     threading.Thread(target=worker, daemon=True).start()
 
