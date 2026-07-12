@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Authenticated loopback side-channel for the optional ZeroScript Studio panel.
+"""Authenticated loopback side-channel for ZeroScript Hub and Studio panel.
 
-The browser extension publishes its current task state here. The Roblox Studio
-plugin reads that state and can enqueue a small, explicit set of control actions.
-No external network interface is opened; the server binds to 127.0.0.1 only.
+The service binds only to 127.0.0.1. Normal endpoints require the random local
+token. The unauthenticated /pair endpoint is available only during a short
+pairing window explicitly opened from ZeroScript Hub.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-VERSION = "1.24.0"
+VERSION = "1.25.0"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 17614
 ALLOWED_ACTIONS = {
@@ -30,6 +30,10 @@ ALLOWED_ACTIONS = {
     "probe_providers",
     "scan_project",
     "release_manager",
+    "start_task",
+    "set_config",
+    "repair_connection",
+    "open_provider",
 }
 
 
@@ -59,8 +63,9 @@ class ControlState:
             "updatedAt": int(time.time() * 1000),
             "runtime": {"state": "idle", "detail": "Waiting for browser extension"},
         }
-        self.actions: deque[dict[str, Any]] = deque(maxlen=100)
+        self.actions: deque[dict[str, Any]] = deque(maxlen=150)
         self.studio_events: deque[dict[str, Any]] = deque(maxlen=200)
+        self.pair_until = 0.0
 
     def publish(self, payload: dict[str, Any]) -> None:
         with self.lock:
@@ -74,7 +79,11 @@ class ControlState:
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
-            return json.loads(json.dumps(self.status))
+            current = json.loads(json.dumps(self.status))
+            # An extension that has not published for 15 seconds is considered stale.
+            if int(time.time() * 1000) - int(current.get("updatedAt", 0)) > 15_000:
+                current["extensionConnected"] = False
+            return current
 
     def add_action(self, action: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         item = {
@@ -94,10 +103,7 @@ class ControlState:
             return items
 
     def add_studio_event(self, payload: dict[str, Any]) -> None:
-        event = {
-            **payload,
-            "createdAt": int(time.time() * 1000),
-        }
+        event = {**payload, "createdAt": int(time.time() * 1000)}
         with self.lock:
             self.studio_events.append(event)
 
@@ -106,6 +112,16 @@ class ControlState:
             items = list(self.studio_events)
             self.studio_events.clear()
             return items
+
+    def open_pairing(self, seconds: int) -> int:
+        seconds = max(20, min(300, int(seconds)))
+        with self.lock:
+            self.pair_until = time.time() + seconds
+        return seconds
+
+    def pairing_active(self) -> bool:
+        with self.lock:
+            return self.pair_until > time.time()
 
 
 class ControlHandler(BaseHTTPRequestHandler):
@@ -116,7 +132,6 @@ class ControlHandler(BaseHTTPRequestHandler):
         return self.server  # type: ignore[return-value]
 
     def log_message(self, fmt: str, *args: object) -> None:
-        # Keep the primary bridge terminal readable. Only errors are printed.
         if args and str(args[0]).startswith(("4", "5")):
             super().log_message(fmt, *args)
 
@@ -166,7 +181,24 @@ class ControlHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         path, query = self._path()
         if path == "/health":
-            self._json(200, {"ok": True, "version": VERSION, "host": self.control_server.server_address[0], "port": self.control_server.server_address[1]})
+            self._json(200, {
+                "ok": True,
+                "version": VERSION,
+                "host": self.control_server.server_address[0],
+                "port": self.control_server.server_address[1],
+                "pairing": self.control_server.state.pairing_active(),
+            })
+            return
+        if path == "/pair":
+            if not self.control_server.state.pairing_active():
+                self._json(403, {"ok": False, "error": "Pairing window is closed. Open it from ZeroScript Hub."})
+                return
+            self._json(200, {
+                "ok": True,
+                "token": self.control_server.token,
+                "url": f"http://{DEFAULT_HOST}:{self.control_server.server_address[1]}",
+                "version": VERSION,
+            })
             return
         if not self._authorized(query):
             self._json(401, {"ok": False, "error": "Invalid ZeroScript control token"})
@@ -188,6 +220,10 @@ class ControlHandler(BaseHTTPRequestHandler):
             self._json(401, {"ok": False, "error": "Invalid ZeroScript control token"})
             return
         body = self._body()
+        if path == "/pair/start":
+            seconds = self.control_server.state.open_pairing(int(body.get("seconds", 120)))
+            self._json(200, {"ok": True, "seconds": seconds, "expiresAt": int((time.time() + seconds) * 1000)})
+            return
         if path == "/status":
             self.control_server.state.publish(body)
             self._json(200, {"ok": True})
@@ -197,7 +233,8 @@ class ControlHandler(BaseHTTPRequestHandler):
             if action not in ALLOWED_ACTIONS:
                 self._json(400, {"ok": False, "error": f"Unsupported action '{action}'"})
                 return
-            item = self.control_server.state.add_action(action, body.get("payload") if isinstance(body.get("payload"), dict) else {})
+            payload = body.get("payload") if isinstance(body.get("payload"), dict) else {}
+            item = self.control_server.state.add_action(action, payload)
             self._json(202, {"ok": True, "queued": item})
             return
         if path == "/studio-event":
@@ -218,7 +255,7 @@ class ControlServer(ThreadingHTTPServer):
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="ZeroScript local Studio panel control API")
+    parser = argparse.ArgumentParser(description="ZeroScript Hub local control API")
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--token-file", default=str(Path(__file__).resolve().with_name("control_token.txt")))
@@ -230,7 +267,7 @@ def main() -> int:
     token_path = Path(args.token_file).expanduser().resolve()
     token = load_or_create_token(token_path)
     server = ControlServer((DEFAULT_HOST, args.port), token)
-    print(f"[control] ZeroScript Studio panel API v{VERSION} on http://{DEFAULT_HOST}:{args.port}", flush=True)
+    print(f"[control] ZeroScript Hub API v{VERSION} on http://{DEFAULT_HOST}:{args.port}", flush=True)
     print(f"[control] Token file: {token_path}", flush=True)
     try:
         server.serve_forever(poll_interval=0.5)
