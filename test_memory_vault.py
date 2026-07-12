@@ -5,6 +5,9 @@ import unittest
 from pathlib import Path
 
 from memory_vault import MemoryVault
+from memory_vault_safeguards import install as install_memory_safeguards
+
+install_memory_safeguards(MemoryVault)
 
 
 class MemoryVaultTests(unittest.TestCase):
@@ -68,6 +71,27 @@ class MemoryVaultTests(unittest.TestCase):
         self.assertEqual(result["outcome"], "failure")
         context = self.vault.build_context("Repair DataStore save and rejoin", "global", [])
         self.assertIn("KNOWN FAILURES", context["context"])
+
+    def test_empty_cancel_is_history_not_lesson(self) -> None:
+        self.vault.begin_task("task-cancel", "global", "Old stale task", "enriched", [], "general", "auto")
+        result = self.vault.record_outcome(
+            "task-cancel",
+            "cancelled",
+            {"verified": [], "remaining": [], "changedPaths": [], "regression": [], "outputErrors": [], "reports": []},
+        )
+        self.assertEqual(result["outcome"], "ignored")
+        self.assertFalse(result["learned"])
+        self.assertEqual(self.vault.list_lessons("global"), [])
+
+    def test_done_without_test_evidence_is_not_success(self) -> None:
+        self.vault.begin_task("task-empty-pass", "global", "Fix a script", "enriched", [], "debug", "fast")
+        result = self.vault.record_outcome(
+            "task-empty-pass",
+            "done",
+            {"verified": [], "remaining": [], "changedPaths": ["ServerScriptService.Script"], "regression": [], "outputErrors": [], "reports": [{"verdict": "PASS"}]},
+        )
+        self.assertEqual(result["outcome"], "failure")
+        self.assertFalse(result["success"])
 
     def test_recipe_pack_round_trip(self) -> None:
         recipe_id = self.vault.save_recipe(
