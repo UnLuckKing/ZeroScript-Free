@@ -25,7 +25,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ErrorActionPreference='Stop';" ^
   "$root=[IO.Path]::GetFullPath('%ROOT%');" ^
   "$tmp='%TMP%'; $zip='%ZIP%'; $src='%SRC%';" ^
-  "$keep=@('control_token.txt','hub_settings.json','hub_profiles.json','hub_task_templates.json','config.json');" ^
+  "$keep=@('control_token.txt','hub_settings.json','hub_profiles.json','hub_task_templates.json','zeroscript_memory.db','zeroscript_memory.db-wal','zeroscript_memory.db-shm','config.json');" ^
   "$backup=Join-Path $tmp 'preserve'; New-Item -ItemType Directory -Force -Path $backup | Out-Null;" ^
   "foreach($name in $keep){$p=Join-Path $root $name; if(Test-Path $p){Copy-Item $p (Join-Path $backup $name) -Force}};" ^
   "Invoke-WebRequest -UseBasicParsing 'https://github.com/UnLuckKing/ZeroScript-Free/archive/refs/heads/master.zip' -OutFile $zip;" ^
@@ -46,7 +46,7 @@ if errorlevel 1 (
 rmdir /s /q "%TMP%" >nul 2>nul
 
 echo.
-echo [OK] ZeroScript dosyalari guncellendi.
+echo [OK] ZeroScript dosyalari ve Memory Vault korundu.
 echo Chrome extension sayfasi aciliyor. ZeroScript kartinda Yeniden Yukle'ye bas.
 start "" chrome "chrome://extensions" 2>nul
 
