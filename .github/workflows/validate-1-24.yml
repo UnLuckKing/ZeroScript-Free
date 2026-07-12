@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 jobs:
-  sync-version:
+  sync-release:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
@@ -21,33 +21,54 @@ jobs:
         with:
           ref: ${{ github.ref }}
           fetch-depth: 0
-      - name: Synchronize bridge version
+      - name: Synchronize bridge version and changelog
         shell: python
         run: |
           import json, pathlib, re
           root = pathlib.Path('.')
           version = json.loads((root / 'zeroscript-extension/manifest.json').read_text('utf-8'))['version']
-          path = root / 'bridge.py'
-          text = path.read_text('utf-8')
-          updated, count = re.subn(r'^BRIDGE_VERSION = "[^"]+"', f'BRIDGE_VERSION = "{version}"', text, count=1, flags=re.M)
+          bridge_path = root / 'bridge.py'
+          bridge = bridge_path.read_text('utf-8')
+          bridge, count = re.subn(r'^BRIDGE_VERSION = "[^"]+"', f'BRIDGE_VERSION = "{version}"', bridge, count=1, flags=re.M)
           if count != 1:
               raise SystemExit('BRIDGE_VERSION assignment not found')
-          path.write_text(updated, 'utf-8')
-      - name: Commit synchronized version
+          bridge_path.write_text(bridge, 'utf-8')
+
+          changelog_path = root / 'CHANGELOG.md'
+          changelog = changelog_path.read_text('utf-8')
+          heading = f'## {version}'
+          if heading not in changelog:
+              notes = f'''# Changelog
+
+## {version}
+
+- Added a Control Center with explicit task runtime states, task ledger, quality modes, completion notifications, update checks, and downloadable diagnostic bundles.
+- Added real provider readiness probes and one-click provider preparation that opens a fresh tab and requests ZeroScript Start only after the composer is detected.
+- Added provider permission scopes (inspect, scripts, UI, map, full), deterministic operation risk scoring, and automatic blocking of critical autonomous mutations.
+- Added domain ownership claims and conflict history for Studio areas such as StarterGui, Workspace, Lighting, ServerScriptService, and ReplicatedStorage.
+- Added manual regression recording, automatic context-recovery tab creation, and release validation for every JavaScript file.
+
+'''
+              if changelog.startswith('# Changelog\n'):
+                  changelog = notes + changelog[len('# Changelog\n\n'):]
+              else:
+                  changelog = notes + changelog
+              changelog_path.write_text(changelog, 'utf-8')
+      - name: Commit synchronized release metadata
         run: |
-          if git diff --quiet -- bridge.py; then
-            echo "bridge.py already synchronized"
+          if git diff --quiet -- bridge.py CHANGELOG.md; then
+            echo "Release metadata already synchronized"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add bridge.py
-          git commit -m "chore: sync bridge version with extension"
+          git add bridge.py CHANGELOG.md
+          git commit -m "chore: sync ZeroScript 1.24 release metadata"
           git push origin HEAD:${GITHUB_REF_NAME}
 
   validate:
-    needs: [sync-version]
-    if: always() && (needs.sync-version.result == 'success' || needs.sync-version.result == 'skipped')
+    needs: [sync-release]
+    if: always() && (needs.sync-release.result == 'success' || needs.sync-release.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -65,9 +86,11 @@ jobs:
       - name: Manifest and provider wiring checks
         shell: python
         run: |
-          import json, pathlib
+          import json, pathlib, re
           manifest = json.loads(pathlib.Path('zeroscript-extension/manifest.json').read_text('utf-8'))
           assert manifest['version'] == '1.24.0'
+          bridge = pathlib.Path('bridge.py').read_text('utf-8')
+          assert re.search(r'^BRIDGE_VERSION = "1\.24\.0"', bridge, re.M)
           paths = {p for entry in manifest['content_scripts'] for p in entry.get('js', [])}
           for required in ('core/provider-probe.js', 'core/permission-guard.js'):
               assert required in paths, required
