@@ -62,6 +62,7 @@ importScripts("background-productivity-sync.js");
 // timeout failover, visual/button/security workflows, project identity, grouped
 // errors, model scorecards, notification center and emergency stop.
 importScripts("background-automation-pack.js");
+importScripts("background-automation-fixes.js");
 
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
