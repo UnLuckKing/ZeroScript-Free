@@ -91,7 +91,23 @@ const ZSProvider = (() => {
     STABLE_MS: 9000,         // generating-flag stuck ON but text frozen → done
     RESPONSE_TIMEOUT_MS: 300000,
   };
-  const SAFE_SEND_DELAY_MS = [650, 1600];
+  const SEND_MODES = {
+    fast: { valueWait: 1200, buttonWait: 1200, delay: [150, 450] },
+    safe: { valueWait: 2500, buttonWait: 2500, delay: [650, 1600] },
+    ultra: { valueWait: 5000, buttonWait: 5000, delay: [1600, 3200] },
+  };
+  let sendMode = "safe";
+  try {
+    chrome.storage.local.get("zsDeepSeekSendMode", (r) => {
+      if (r && SEND_MODES[r.zsDeepSeekSendMode]) sendMode = r.zsDeepSeekSendMode;
+    });
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === "local" && changes.zsDeepSeekSendMode && SEND_MODES[changes.zsDeepSeekSendMode.newValue]) {
+        sendMode = changes.zsDeepSeekSendMode.newValue;
+      }
+    });
+  } catch {}
+  const sendModeConfig = () => SEND_MODES[sendMode] || SEND_MODES.safe;
 
   // ── Turn classification (multi-signal, virtualization-safe) ──────────────
   function isUserItem(item) {
@@ -569,7 +585,8 @@ const ZSProvider = (() => {
     // reflects our text before touching the send button; otherwise the click can
     // land while the button is still disabled or while the previous value is in
     // React's queue, which looks like "ZeroScript typed too fast".
-    await waitFor(() => editorText() === String(text), 2500);
+    const cfg = sendModeConfig();
+    await waitFor(() => editorText() === String(text), cfg.valueWait);
     // Attach images LAST, right before the send click - see gemini.js's
     // typeAndSend for why (attaching before retyping the text can sever the
     // site's binding between the pending upload and the message being sent).
@@ -580,8 +597,8 @@ const ZSProvider = (() => {
     await waitFor(() => {
       const btn = document.querySelector(S.sendBtn);
       return btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true" && !isStopBtn(btn);
-    }, 2500);
-    const [lo, hi] = SAFE_SEND_DELAY_MS;
+    }, cfg.buttonWait);
+    const [lo, hi] = cfg.delay;
     await sleep(lo + Math.random() * (hi - lo));
     if (!clickSendButton() && !isBusyNow()) {
       pressEnter(editor);

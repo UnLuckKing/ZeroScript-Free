@@ -29,6 +29,13 @@ chrome.storage.local.get("zsAutoStart", (r) => {
 document.getElementById("autoStart").addEventListener("change", (e) => {
   chrome.storage.local.set({ zsAutoStart: e.target.checked });
 });
+chrome.storage.local.get("zsDeepSeekSendMode", (r) => {
+  const el = document.getElementById("deepSeekSendMode");
+  if (el) el.value = (r && r.zsDeepSeekSendMode) || "safe";
+});
+document.getElementById("deepSeekSendMode").addEventListener("change", (e) => {
+  chrome.storage.local.set({ zsDeepSeekSendMode: e.target.value });
+});
 
 function renderTeam(team) {
   team = team || { config: {}, agents: [] };
