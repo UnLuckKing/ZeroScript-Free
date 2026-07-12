@@ -127,6 +127,7 @@ function fallbackAgent(preferred, phase) {
 }
 
 function phaseProvider(phase) {
+  if (phase === "analyst") return teamConfig.reviewer;
   if (phase === "builder") return teamConfig.writer;
   if (phase === "map") return teamConfig.mapDesigner;
   if (phase === "ui") return teamConfig.uiDesigner;
@@ -139,11 +140,12 @@ function phasesForGoal(goal) {
   const full = /entire|complete project|production-ready|prepare.*release|yayına|tüm proje/.test(g);
   const wantsMap = full || /\b(map|world|terrain|lobby|environment|lighting|spawn|zone|island|harita)\b/.test(g);
   const wantsUi = full || /\b(ui|gui|hud|menu|panel|button|responsive|mobile|interface|arayüz)\b/.test(g);
-  return ["builder", ...(wantsMap ? ["map"] : []), ...(wantsUi ? ["ui"] : []), "reviewer", "qa"];
+  return ["analyst", "builder", ...(wantsMap ? ["map"] : []), ...(wantsUi ? ["ui"] : []), "reviewer", "qa"];
 }
 
 function phasePrompt(task) {
   const shared = `TEAM TASK ${task.id}\nOriginal goal: ${task.goal}\n\nYou are the ${task.phase.toUpperCase()} in a coordinated Roblox Studio team. Use ZeroScript tools, act directly in Studio, and do not merely explain. End your final report with exactly TEAM_VERDICT: PASS when your phase is complete. Reviewer/QA may instead end with TEAM_VERDICT: FIX builder, TEAM_VERDICT: FIX map, or TEAM_VERDICT: FIX ui when a verified unresolved problem must return to that specialist.`;
+  if (task.phase === "analyst") return `${shared}\nAct as the Project Analyst. Use this deterministic local preflight as evidence:\n${task.auditReport || "Preflight unavailable; inspect Studio manually."}\nInspect the actual game tree and relevant scripts, confirm or reject each warning, identify dependencies and give the builder a prioritized implementation plan. Do not modify Studio in this phase.`;
   if (task.phase === "builder") return `${shared}\nInspect relevant instances and scripts first. Create a safe Studio checkpoint where available, implement the complete goal, preserve working systems, and test the main path.`;
   if (task.phase === "map") return `${shared}\nAct as the Map Designer. Inspect the existing world before editing. Build or improve only the environments required by the goal: layout, spawn safety, navigation, zones, lighting, terrain and appropriate Creator Store assets. Keep gameplay paths clear, performance reasonable, and preserve correct existing work. Playtest traversal after changes.`;
   if (task.phase === "ui") return `${shared}\nAct as the UI Designer. Inspect every relevant ScreenGui and capture the running UI when possible. Implement a professional, consistent, responsive desktop/mobile interface with clear hierarchy, feedback states, safe-area handling and working buttons. Preserve the project's visual identity and test interactions in play mode.`;
@@ -160,6 +162,33 @@ function needsWriteApproval(name) {
 async function persistApprovals() {
   pendingApprovals = pendingApprovals.slice(-20);
   await chrome.storage.local.set({ zsPendingApprovals: pendingApprovals });
+}
+
+async function runProjectPreflight() {
+  const tool = robloxTool("execute_luau");
+  if (!tool || !connected || studioConnected === false) return "PREFLIGHT_UNAVAILABLE: Studio or execute_luau is not ready.";
+  const code = `local HttpService=game:GetService("HttpService")
+local report={counts={scripts=0,remotes=0,guis=0,parts=0},warnings={}}
+local function warn(kind,path,detail) if #report.warnings<80 then table.insert(report.warnings,{kind=kind,path=path,detail=detail}) end end
+local function pathOf(inst) local out={} local cur=inst while cur and cur~=game do table.insert(out,1,cur.Name) cur=cur.Parent end return table.concat(out,".") end
+for _,inst in game:GetDescendants() do
+ if inst:IsA("LuaSourceContainer") then
+  report.counts.scripts+=1 local ok,src=pcall(function() return inst.Source end)
+  if ok then local p=pathOf(inst)
+   if #src==0 then warn("empty_script",p,"Script has no source") end
+   if src:find("OnServerEvent") and not (src:find("typeof%(") or src:find(":IsA%(") or src:find("math%.clamp") or src:find("tonumber%(") ) then warn("remote_validation",p,"Server remote handler has no obvious input validation") end
+   if src:find("DataStore") and not src:find("UpdateAsync") then warn("datastore_set",p,"DataStore code does not use UpdateAsync") end
+   if src:find("while%s+true%s+do") and not (src:find("task%.wait") or src:find("RunService")) then warn("tight_loop",p,"Possible non-yielding loop") end
+   if inst:IsA("LocalScript") and (src:find("leaderstats") or src:find("DataStore") or src:find("ProcessReceipt")) then warn("client_trust",p,"Sensitive economy/save logic appears in a LocalScript") end
+  end
+ elseif inst:IsA("RemoteEvent") or inst:IsA("RemoteFunction") then report.counts.remotes+=1
+ elseif inst:IsA("ScreenGui") then report.counts.guis+=1 if inst.IgnoreGuiInset==false then warn("safe_area",pathOf(inst),"Review top-bar/safe-area behavior") end
+ elseif inst:IsA("BasePart") then report.counts.parts+=1 if inst.Anchored==false and inst:IsDescendantOf(workspace) and inst:GetMass()>5000 then warn("physics",pathOf(inst),"Large unanchored assembly may hurt performance") end end
+end
+if not game:GetService("ServerScriptService"):FindFirstChildWhichIsA("LuaSourceContainer",true) then warn("missing_server","ServerScriptService","No server script found") end
+return "PREFLIGHT_OK:"..HttpService:JSONEncode(report)`;
+  const r = await send({ type: "call_tool", name: tool.name, arguments: { code, datamodel_type: "Edit" }, timeout: 60000 }, 70000);
+  return r && r.ok ? String(r.text || "PREFLIGHT_OK:empty") : `PREFLIGHT_ERROR:${String(r && r.error || "scan failed")}`;
 }
 
 function robloxTool(bare) {
@@ -445,6 +474,22 @@ function handleBridgeMessage(msg) {
   }
 }
 
+async function startTeamTask(goal) {
+  goal = String(goal || "").trim();
+  if (!goal) return { ok: false, error: "Enter a goal first." };
+  const phases = phasesForGoal(goal);
+  teamTask = { id: `task-${Date.now()}`, goal, phases, phaseIndex: 0, phase: phases[0], status: "scanning", provider: null, round: 0, lastReport: "", error: null, createdAt: Date.now(), updatedAt: Date.now() };
+  const checkpoint = await createCheckpoint(teamTask.id);
+  teamTask.checkpoint = checkpoint.ok ? checkpoint.id : null;
+  if (!checkpoint.ok) teamTask.error = `Checkpoint warning: ${checkpoint.error}`;
+  teamTask.auditReport = await runProjectPreflight();
+  teamTask.status = "queued";
+  await chrome.storage.local.set({ zsTeamTask: teamTask });
+  broadcastTeam();
+  dispatchTask();
+  return { ok: true, team: teamObj() };
+}
+
 function resolvePending(id, value) {
   const p = pending.get(id);
   if (!p) return;
@@ -560,15 +605,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       case "team_task_start": {
         const goal = String(msg.goal || "").trim();
-        if (!goal) { sendResponse({ ok: false, error: "Enter a goal first." }); break; }
-        const phases = phasesForGoal(goal);
-        teamTask = { id: `task-${Date.now()}`, goal, phases, phaseIndex: 0, phase: phases[0], status: "queued", provider: null, round: 0, lastReport: "", error: null, createdAt: Date.now(), updatedAt: Date.now() };
-        const checkpoint = await createCheckpoint(teamTask.id);
-        teamTask.checkpoint = checkpoint.ok ? checkpoint.id : null;
-        if (!checkpoint.ok) teamTask.error = `Checkpoint warning: ${checkpoint.error}`;
-        await chrome.storage.local.set({ zsTeamTask: teamTask });
-        sendResponse({ ok: true, team: teamObj() });
-        dispatchTask();
+        sendResponse(await startTeamTask(goal));
         break;
       }
       case "team_task_done": {
