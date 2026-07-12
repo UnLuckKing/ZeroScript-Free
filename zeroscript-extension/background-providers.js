@@ -18,60 +18,32 @@ Object.assign(ZS_PROVIDER_WEIGHTS.ui,       { chatgpt: 9, claude: 8, mistral: 7,
 Object.assign(ZS_PROVIDER_WEIGHTS.reviewer, { claude: 11, chatgpt: 10, mistral: 8, copilot: 7 });
 Object.assign(ZS_PROVIDER_WEIGHTS.qa,       { chatgpt: 9, claude: 9, mistral: 7, copilot: 7 });
 
-// Dynamic planning, structured memory, learned routing, watchdog recovery,
-// deterministic script diffing, regression memory, safety telemetry, and
-// release-readiness scoring.
 importScripts("background-manager.js");
 importScripts("background-manager-finalizer.js");
-
-// Optional free local provider. It runs LM Studio/Ollama through localhost and
-// executes the same iterative Roblox tool loop without a paid API.
 importScripts("background-local.js");
 importScripts("background-local-fixes.js");
-
-// Final reliability/control layer: explicit runtime state machine, provider
-// diagnostics and preparation, task ledger, ownership claims, quality modes,
-// permission scopes, context recovery, notifications, debug bundles and update
-// checks. Loaded last so its wrappers observe the final dispatch implementation.
 importScripts("background-suite.js");
 importScripts("background-suite-fixes.js");
-
-// Authenticated localhost channel shared by ZeroScript Hub and the optional
-// Roblox Studio DockWidget. Hub can open a short one-click pairing window.
 importScripts("background-studio-panel.js");
 importScripts("background-studio-panel-fixes.js");
 importScripts("background-hub-autopair.js");
 importScripts("background-hub-actions.js");
-
-// Never treat provider readiness (including pressing Start Roblox agent) as
-// permission to resume a task restored after restart. Retry remains explicit.
 importScripts("background-task-start-policy.js");
-
-// Smart Automatic/Turbo modes, startup caches, parallel safety preflight,
-// existing-tab reuse and stale-task replacement.
 importScripts("background-speed-pack.js");
 importScripts("background-speed-fixes.js");
-
-// Persistent task queue, project index, Output watcher, scoped checkpoints,
-// compact context, progress estimates and faster stuck-provider recovery.
 importScripts("background-productivity-pack.js");
 importScripts("background-productivity-fixes.js");
 importScripts("background-productivity-sync.js");
-
-// One-click diagnosis/repair, automatic task planning, instance-level rollback,
-// timeout failover, visual/button/security workflows, project identity, grouped
-// errors, model scorecards, notification center and emergency stop.
 importScripts("background-automation-pack.js");
 importScripts("background-automation-fixes.js");
 importScripts("background-automation-instance-fixes.js");
-
-// Compact verified evidence consumed by the persistent SQLite Memory Vault.
 importScripts("background-learning-sync.js");
-
-// Deterministic intent/risk compiler, Project Genome, Shadow Guard, behavioral
-// contracts, Proof Engine, Model Jury coordination and opt-in self-healing.
 importScripts("background-superior-pack.js");
 importScripts("background-superior-fixes.js");
+
+// Beginner-first UI companion: converts one game idea into a safe dependent
+// queue for foundation, gameplay, progression, UI, polish and release proof.
+importScripts("background-easy-pack.js");
 
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
