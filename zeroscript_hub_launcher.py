@@ -6,8 +6,6 @@ import threading
 import time
 from tkinter import messagebox, ttk
 
-# Tk flattens tuple indices into several Tcl arguments. Support the convenient
-# tuple form used by the Hub status grid by configuring each column separately.
 _original_columnconfigure = ttk.Frame.columnconfigure
 
 
@@ -24,7 +22,7 @@ ttk.Frame.columnconfigure = _safe_columnconfigure
 
 import zeroscript_hub as hub  # noqa: E402
 
-hub.VERSION = "1.27.0"
+hub.VERSION = "1.28.0"
 hub.QUALITY_LABELS = {
     "Akıllı otomatik": "auto",
     "Turbo": "turbo",
@@ -51,7 +49,6 @@ def _guarded_start_services(self) -> None:
     if getattr(self, "_hub_services_starting", False):
         return
     self._hub_services_starting = True
-
     if hub.port_open(hub.CONTROL_PORT, 0.12):
         health = hub.request_json("/health", timeout=0.6)
         if not health.get("ok") or health.get("version") != hub.VERSION:
@@ -59,7 +56,6 @@ def _guarded_start_services(self) -> None:
             hub.kill_port(hub.BRIDGE_PORT)
             self.log("Eski/takılmış Hub ve Bridge servisleri kapatıldı; güncel sürüm başlatılıyor.")
             time.sleep(0.25)
-
     _original_start_services(self)
     self.after(3500, setattr, self, "_hub_services_starting", False)
 
@@ -118,7 +114,6 @@ def _build_home_with_shortcuts(self) -> None:
             "Audit the current RemoteEvents, RemoteFunctions, DataStores, purchases, rewards, and currencies. Fix verified validation, rate-limit, duplication, session-lock, and data-loss problems, then test the corrected server-authoritative flows.",
         ),
     ).pack(side="left", padx=3)
-
     utility = ttk.Frame(self.home)
     utility.pack(fill="x", padx=4, pady=(8, 0))
     ttk.Button(utility, text="Duraklayan göreve devam", command=lambda: self.action("retry")).pack(side="left")
@@ -183,13 +178,11 @@ def _safe_start_task(self) -> None:
             before = hub.request_json("/status", self.token, timeout=1.0)
             previous_task = ((before.get("status") or {}).get("task") or {}) if before.get("ok") else {}
             previous_id = str(previous_task.get("id") or "") or None
-
             self.send_config_action()
             result = self.action("start_task", {"goal": goal})
             if not result.get("ok"):
                 self.after(0, messagebox.showerror, "ZeroScript", result.get("error", "Görev başlatılamadı."))
                 return
-
             accepted, detail = _wait_for_task_acceptance(goal, previous_id)
             if accepted:
                 self.log(f"Görev extension tarafından alındı: {detail}. Akıllı mod en kısa güvenli yolu seçiyor.")
@@ -212,12 +205,7 @@ def _safe_pair_extension(self) -> None:
         result = hub.request_json("/pair/start", self.token, "POST", {"seconds": 120}, timeout=3.0)
         if result.get("ok"):
             self.log("Extension eşleştirme penceresi 2 dakika açık; otomatik eşleşme bekleniyor.")
-            self.after(
-                0,
-                messagebox.showinfo,
-                "ZeroScript",
-                "Extension otomatik eşleşecek. 5 saniye içinde Hub ekranında görünmezse Chrome'daki ZeroScript ikonuna bir kez tıkla.",
-            )
+            self.after(0, messagebox.showinfo, "ZeroScript", "Extension otomatik eşleşecek. 5 saniye içinde Hub ekranında görünmezse Chrome'daki ZeroScript ikonuna bir kez tıkla.")
         else:
             self.after(0, messagebox.showerror, "ZeroScript", result.get("error", "Eşleştirme başlatılamadı."))
 
@@ -246,9 +234,11 @@ hub.ZeroScriptHub.repair = _safe_repair
 
 from hub_productivity_ui import install as install_productivity_ui  # noqa: E402
 from hub_workflow_extras import install as install_workflow_extras  # noqa: E402
+from hub_automation_ui import install as install_automation_ui  # noqa: E402
 
 install_productivity_ui(hub)
 install_workflow_extras(hub)
+install_automation_ui(hub)
 
 
 if __name__ == "__main__":
