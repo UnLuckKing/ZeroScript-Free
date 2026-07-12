@@ -25,7 +25,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ErrorActionPreference='Stop';" ^
   "$root=[IO.Path]::GetFullPath('%ROOT%');" ^
   "$tmp='%TMP%'; $zip='%ZIP%'; $src='%SRC%';" ^
-  "$keep=@('control_token.txt','hub_settings.json','hub_profiles.json','config.json');" ^
+  "$keep=@('control_token.txt','hub_settings.json','hub_profiles.json','hub_task_templates.json','config.json');" ^
   "$backup=Join-Path $tmp 'preserve'; New-Item -ItemType Directory -Force -Path $backup | Out-Null;" ^
   "foreach($name in $keep){$p=Join-Path $root $name; if(Test-Path $p){Copy-Item $p (Join-Path $backup $name) -Force}};" ^
   "Invoke-WebRequest -UseBasicParsing 'https://github.com/UnLuckKing/ZeroScript-Free/archive/refs/heads/master.zip' -OutFile $zip;" ^
