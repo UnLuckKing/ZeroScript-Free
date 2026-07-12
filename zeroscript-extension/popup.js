@@ -81,6 +81,7 @@ function renderTeam(team) {
   box.innerHTML = approvals.length ? approvals.map((a) => `<div class="zs-approval"><b>${esc(a.name)}</b><br><small>${esc(JSON.stringify(a.arguments).slice(0, 140))}</small><div class="task-actions"><button class="ghost" data-approval-apply="${esc(a.id)}">Apply</button><button class="ghost" data-approval-reject="${esc(a.id)}">Reject</button></div></div>`).join("") : "";
   box.querySelectorAll("[data-approval-apply]").forEach((b) => b.addEventListener("click", () => chrome.runtime.sendMessage({ type: "team_approval_apply", id: b.dataset.approvalApply }, (r) => r && r.team && renderTeam(r.team))));
   box.querySelectorAll("[data-approval-reject]").forEach((b) => b.addEventListener("click", () => chrome.runtime.sendMessage({ type: "team_approval_reject", id: b.dataset.approvalReject }, (r) => r && r.team && renderTeam(r.team))));
+  renderAutoFix(team.autoFix);
 }
 
 function esc(value) { return String(value || "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#39;" }[c])); }
@@ -93,6 +94,17 @@ function renderDoctor(report) {
     lines.push(`${row.ok ? "✓" : "✕"} ${row.label}: ${row.detail}`);
   }
   box.textContent = lines.join("\n");
+}
+
+function renderAutoFix(queue) {
+  const box = document.getElementById("autoFixQueue");
+  if (!box) return;
+  const items = queue && Array.isArray(queue.items) ? queue.items : [];
+  if (!items.length) { box.textContent = "Auto-fix queue is empty."; return; }
+  box.textContent = items.map((x, i) => {
+    const icon = x.status === "done" ? "✓" : x.status === "running" ? "▶" : x.status === "failed" ? "!" : x.manual ? "⚠" : "○";
+    return `${icon} ${i + 1}. ${x.title}${x.manual ? " (manual)" : ""}${x.error ? `\n   ${x.error}` : ""}`;
+  }).join("\n");
 }
 
 function saveTeam() {
@@ -164,6 +176,34 @@ document.getElementById("connectionDoctor").addEventListener("click", (e) => {
     if (r && r.team) renderTeam(r.team);
     setTimeout(() => { e.target.textContent = original; }, 2200);
   });
+});
+document.getElementById("autoFixPlan").addEventListener("click", (e) => {
+  const original = e.target.textContent;
+  e.target.textContent = "Planning…";
+  e.target.disabled = true;
+  document.getElementById("autoFixQueue").textContent = "Running Doctor and project scan…";
+  chrome.runtime.sendMessage({ type: "auto_fix_plan", repair: true, scan: true }, (r) => {
+    e.target.disabled = false;
+    e.target.textContent = r && r.ok ? "✓ Plan ready" : "Plan failed";
+    if (r && r.queue) renderAutoFix(r.queue);
+    if (r && r.doctor) renderDoctor(r.doctor);
+    if (r && r.team) renderTeam(r.team);
+    setTimeout(() => { e.target.textContent = original; }, 2200);
+  });
+});
+document.getElementById("autoFixNext").addEventListener("click", (e) => {
+  const original = e.target.textContent;
+  e.target.textContent = "Starting…";
+  e.target.disabled = true;
+  document.getElementById("teamEnabled").checked = true;
+  saveTeam();
+  setTimeout(() => chrome.runtime.sendMessage({ type: "auto_fix_start_next" }, (r) => {
+    e.target.disabled = false;
+    e.target.textContent = r && r.ok ? "✓ Started next" : "Start blocked";
+    if (r && r.team) renderTeam(r.team);
+    if (r && r.error) document.getElementById("autoFixQueue").textContent = r.error;
+    setTimeout(() => { e.target.textContent = original; }, 2200);
+  }), 100);
 });
 document.getElementById("retryTask").addEventListener("click", () => chrome.runtime.sendMessage({ type: "team_task_retry" }, (r) => r && renderTeam(r.team)));
 document.getElementById("cancelTask").addEventListener("click", () => chrome.runtime.sendMessage({ type: "team_task_cancel" }, (r) => r && renderTeam(r.team)));
