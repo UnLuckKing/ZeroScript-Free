@@ -40,6 +40,7 @@ def validate() -> None:
     for path in sorted(extension.rglob("*.js")):
         run("node", "--check", str(path.relative_to(ROOT)))
     run("node", "zeroscript-extension/test-parser.js")
+    run("node", "zeroscript-extension/test-control-suite.js")
     run(sys.executable, "-m", "py_compile", "bridge.py", "launch_studio_mcp.py")
 
     manifest = json.loads((extension / "manifest.json").read_text("utf-8"))
