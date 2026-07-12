@@ -7,15 +7,16 @@ ZeroScript Hub keeps the existing bridge, Smart Router, shared project memory, c
 1. Open Roblox Studio and load the place.
 2. Double-click `ZeroScript Hub.bat`.
 3. The Hub starts the local control API and MCP bridge automatically.
-4. On first use only, click **Extension'ı eşleştir**, then click the ZeroScript extension icon in Chrome once.
-5. Open or prepare a model from the extension or Hub.
-6. Write the task in the Hub and click **Çalıştır**.
+4. On first use only, click **Extension'ı eşleştir**. The extension normally pairs automatically in a few seconds; open its popup once only as a fallback.
+5. Write the task in the Hub and click **Çalıştır**. When no provider is ready, Hub opens and prepares a suitable model while Studio preflight runs.
 
 The old `start.bat`, `start_with_panel.bat`, manual token copy, and crowded extension settings are no longer required for normal use.
 
-## First-time Chrome extension setup
+## First-time setup
 
-Chrome does not allow ordinary desktop programs to silently install an unpacked extension. One manual step remains:
+For the easiest first installation, run `ZeroScript Kurulum.bat`. It checks Python, creates a desktop shortcut, opens Chrome's extension page and the correct extension folder, then launches Hub.
+
+Chrome does not allow ordinary desktop programs to silently install an unpacked extension. One manual browser step remains:
 
 1. Open `chrome://extensions`.
 2. Enable Developer mode.
@@ -23,7 +24,7 @@ Chrome does not allow ordinary desktop programs to silently install an unpacked 
 4. Select the `zeroscript-extension` folder.
 5. Reload the extension after each ZeroScript update.
 
-After installation, pairing is one click from Hub and one click on the extension icon. The temporary pairing endpoint opens only for two minutes and only on localhost.
+After installation, pairing is opened by one Hub button and claimed automatically by the extension service worker. The token-free pairing endpoint exists only for two minutes and only on localhost.
 
 ## Main screen
 
@@ -66,8 +67,8 @@ The Studio DockWidget is optional. ZeroScript Hub already shows the useful statu
 
 - **Everything ready**: Hub, bridge, Studio MCP, extension, and at least one provider are connected.
 - **Studio open, waiting for MCP**: open Studio Assistant settings and enable the Studio MCP server.
-- **Extension waiting**: click **Extension'ı eşleştir** in Hub, then open the extension popup once.
-- **No model ready**: use **Model sekmesini aç ve hazırla**, log in if required, and let ZeroScript start the session.
+- **Extension waiting**: click **Extension'ı eşleştir** in Hub; open the extension popup once only if automatic pairing does not complete.
+- **No model ready**: submit the task or use **Model sekmesini aç ve hazırla**. Hub opens the selected provider; login, CAPTCHA, or consent can still require one manual browser action.
 
 ## Security
 
