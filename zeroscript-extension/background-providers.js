@@ -41,10 +41,15 @@ importScripts("background-learning-sync.js");
 importScripts("background-superior-pack.js");
 importScripts("background-superior-fixes.js");
 
-// Beginner-first UI companion: converts one game idea into a safe dependent
-// queue for foundation, gameplay, progression, UI, polish and release proof.
+// Beginner-first UI companion. The reliability layer clears restored work and
+// guarantees that the newest Easy Mode request replaces everything older.
 importScripts("background-easy-pack.js");
 importScripts("background-easy-fixes.js");
+
+// Loaded last: one ready provider owns the request, normal jobs use one pass,
+// complete/high-risk jobs use at most one final verify pass, and idle providers
+// fail over quickly instead of holding a task for an hour.
+importScripts("background-solo-pack.js");
 
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
