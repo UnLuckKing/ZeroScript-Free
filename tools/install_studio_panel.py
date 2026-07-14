@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the ZeroScript Studio tools locally."""
+"""Install the ZeroScript Studio workspace and command palette locally."""
 from __future__ import annotations
 
 import html
@@ -8,14 +8,14 @@ import shutil
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 SOURCES = [
-    ("ZeroScriptOne", ROOT / "roblox-plugin" / "ZeroScriptOne.lua"),
     ("ZeroScriptControlPanel", ROOT / "roblox-plugin" / "ZeroScriptControlPanel.lua"),
     ("ZeroScriptCommandPalette", ROOT / "roblox-plugin" / "ZeroScriptCommandPalette.lua"),
+    ("ZeroScriptOneWorkspace", ROOT / "roblox-plugin" / "ZeroScriptOneWorkspace.lua"),
 ]
 PLUGIN_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Roblox" / "Plugins"
-OUTPUT = PLUGIN_DIR / "ZeroScriptControlPanel.rbxmx"
+OUTPUT = PLUGIN_DIR / "ZeroScriptOne.rbxmx"
 
 
 def make_item(name: str, source: str, referent: str) -> str:
@@ -29,11 +29,6 @@ def make_item(name: str, source: str, referent: str) -> str:
   </Item>'''
 
 
-def make_rbxmx(sources: list[tuple[str, str]]) -> str:
-    items = [make_item(name, source, f"RBX_ZERO_SCRIPT_{index}") for index, (name, source) in enumerate(sources, 1)]
-    return '<roblox version="4">\n' + "\n".join(items) + "\n</roblox>\n"
-
-
 def main() -> int:
     missing = [str(path) for _, path in SOURCES if not path.exists()]
     if missing:
@@ -41,15 +36,14 @@ def main() -> int:
         return 1
     PLUGIN_DIR.mkdir(parents=True, exist_ok=True)
     if OUTPUT.exists():
-        backup = OUTPUT.with_suffix(".rbxmx.bak")
-        shutil.copy2(OUTPUT, backup)
-        print(f"Backed up existing plugin to {backup}")
-    payload = [(name, path.read_text("utf-8")) for name, path in SOURCES]
-    OUTPUT.write_text(make_rbxmx(payload), "utf-8")
-    print(f"Installed ZeroScript Studio tools: {OUTPUT}")
-    print("Restart Roblox Studio, then open Plugins > ZeroScript One.")
-    print("The Studio workspace includes 15-minute Prototype, Launch Day and Custom Work modes.")
-    print("Also enable Game Settings > Security > Allow HTTP Requests.")
+        shutil.copy2(OUTPUT, OUTPUT.with_suffix(".rbxmx.bak"))
+    payload = "<roblox version=\"4\">\n" + "\n".join(
+        make_item(name, path.read_text("utf-8"), f"RBX_ZERO_SCRIPT_{index}")
+        for index, (name, path) in enumerate(SOURCES, 1)
+    ) + "\n</roblox>\n"
+    OUTPUT.write_text(payload, "utf-8")
+    print(f"Installed: {OUTPUT}")
+    print("Restart Roblox Studio and enable Allow HTTP Requests.")
     return 0
 
 
