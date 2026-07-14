@@ -50,6 +50,7 @@ importScripts("background-easy-fixes.js");
 // complete/high-risk jobs use at most one final verify pass, and idle providers
 // fail over quickly instead of holding a task for an hour.
 importScripts("background-solo-pack.js");
+importScripts("background-solo-fixes.js");
 
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
