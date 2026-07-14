@@ -45,9 +45,12 @@ importScripts("background-easy-fixes.js");
 importScripts("background-solo-pack.js");
 importScripts("background-solo-fixes.js");
 
-// Loaded last: the public ZeroScript One workflow replaces old work, starts one
-// available AI tab automatically and executes one complete implementation pass.
+// Public one-request workflow: one available AI owns implementation and testing.
 importScripts("background-workbench-pack.js");
+
+// Loaded last: deterministic Golden Templates can create a working prototype in
+// two bounded Studio calls; Launch Day adds at most one workbench polish pass.
+importScripts("background-prototype-pack.js");
 
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
