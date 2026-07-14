@@ -2,6 +2,8 @@
 // ZeroScript 1.31.1 Easy Mode reliability fixes.
 // In Easy Mode the newest request always replaces old paused/running work.
 
+const ZS_EASY_FIX_STARTED_AT = Date.now();
+
 async function zsEasyHardReset(reason = "Replaced by a newer Easy Mode request") {
   try {
     if (typeof zsStudioPanelBroadcastStop === "function") await zsStudioPanelBroadcastStop();
@@ -78,10 +80,14 @@ zsStudioPanelHandleAction = async function zsEasyFixedHubAction(item) {
   return zsEasyFixCoreHubAction(item);
 };
 
-// A browser/service-worker restart must never silently continue an old prompt in
-// Easy Mode. The user can submit it again explicitly when they still want it.
+// A browser/service-worker restart must never silently continue work restored
+// from storage. Only objects that predate this worker are cleared; a task the
+// user submits immediately after startup is preserved.
 setTimeout(() => {
-  const staleTask = teamTask && !["done", "failed", "cancelled"].includes(teamTask.status);
-  const staleQueue = typeof zsProductivity !== "undefined" && (zsProductivity.queue || []).length > 0;
+  const taskPredatesWorker = teamTask && Number(teamTask.createdAt || 0) < ZS_EASY_FIX_STARTED_AT;
+  const staleTask = taskPredatesWorker && !["done", "failed", "cancelled"].includes(teamTask.status);
+  const staleQueue = typeof zsProductivity !== "undefined" && (zsProductivity.queue || []).some(
+    (item) => Number(item && item.createdAt || 0) < ZS_EASY_FIX_STARTED_AT,
+  );
   if (staleTask || staleQueue) zsEasyHardReset("Eski oturum işi otomatik temizlendi.").catch(() => {});
 }, 1800);
