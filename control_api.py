@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-VERSION = "1.32.0"
+VERSION = "1.32.1"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 17614
 ALLOWED_ACTIONS = {
