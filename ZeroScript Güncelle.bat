@@ -29,12 +29,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$root=[IO.Path]::GetFullPath('%ROOT%');" ^
   "$tmp='%TMP%'; $zip='%ZIP%'; $src='%SRC%';" ^
   "$keep=@('control_token.txt','hub_settings.json','hub_profiles.json','hub_task_templates.json','zeroscript_memory.db','zeroscript_memory.db-wal','zeroscript_memory.db-shm','config.json');" ^
+  "$obsolete=@('RELEASE_1.22.md','RELEASE_1.23.md','RELEASE_NOTES_1.21.md','RELEASE_NOTES_1.26.md','RELEASE_NOTES_1.27.md','RELEASE_NOTES_1.28.md','RELEASE_NOTES_1.29.md','RELEASE_NOTES_1.30.md','RELEASE_NOTES_1.31.md','RELEASE_NOTES_1.32.md','RELEASE_NOTES_1.33.md');" ^
   "$backup=Join-Path $tmp 'preserve'; New-Item -ItemType Directory -Force -Path $backup | Out-Null;" ^
   "foreach($name in $keep){$p=Join-Path $root $name; if(Test-Path $p){Copy-Item $p (Join-Path $backup $name) -Force}};" ^
   "Invoke-WebRequest -UseBasicParsing 'https://github.com/UnLuckKing/ZeroScript-Free/archive/refs/heads/master.zip' -OutFile $zip;" ^
   "Expand-Archive -Path $zip -DestinationPath $tmp -Force;" ^
   "if(!(Test-Path (Join-Path $src 'zeroscript-extension\manifest.json'))){throw 'Indirilen paket gecersiz.'};" ^
   "Copy-Item (Join-Path $src '*') $root -Recurse -Force;" ^
+  "foreach($name in $obsolete){$p=Join-Path $root $name; if(Test-Path $p){Remove-Item $p -Force}};" ^
   "foreach($name in $keep){$p=Join-Path $backup $name; if(Test-Path $p){Copy-Item $p (Join-Path $root $name) -Force}};"
 
 if errorlevel 1 (
@@ -59,7 +61,8 @@ if not errorlevel 1 (
 )
 
 echo.
-echo [OK] ZeroScript One ve Memory Vault korundu.
+echo [OK] ZeroScript One, Golden Templates ve Memory Vault guncellendi.
+echo Eski root release dosyalari temizlendi; dokumanlar docs\releases altinda.
 echo Chrome extension sayfasi aciliyor. ZeroScript One kartinda Yeniden Yukle'ye bas.
 echo Roblox Studio aciksa yeni Workspace icin Studio'yu yeniden baslat.
 start "" chrome "chrome://extensions" 2>nul
