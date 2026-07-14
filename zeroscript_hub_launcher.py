@@ -22,7 +22,7 @@ ttk.Frame.columnconfigure = _safe_columnconfigure
 
 import zeroscript_hub as hub  # noqa: E402
 
-hub.VERSION = "1.32.1"
+hub.VERSION = "1.33.0"
 hub.QUALITY_LABELS = {
     "Akıllı otomatik": "auto",
     "Turbo": "turbo",
@@ -47,11 +47,7 @@ def _thread_safe_log(self, text: str) -> None:
 
 
 def _control_only_start_services(self) -> None:
-    """Start only Hub's tiny control API.
-
-    The Roblox bridge belongs to Start.exe/start.bat. Hub never launches, kills
-    or restarts it, preventing duplicate bridges and StudioMCP windows.
-    """
+    """Start only Hub's authenticated control API; Start.exe owns the bridge."""
     if getattr(self, "_hub_services_starting", False):
         return
     self._hub_services_starting = True
@@ -73,7 +69,12 @@ def _control_only_start_services(self) -> None:
                     stderr=hub.subprocess.STDOUT,
                     creationflags=hub.CREATE_NO_WINDOW,
                 )
-                self.log("Hub kontrol servisi başlatıldı.")
+                self.log("ZeroScript One kontrol servisi başlatıldı.")
+            deadline = time.time() + 5
+            while time.time() < deadline and not hub.port_open(hub.CONTROL_PORT, 0.12):
+                time.sleep(0.15)
+            if hub.port_open(hub.CONTROL_PORT, 0.12):
+                hub.request_json("/pair/start", hub.ensure_token(), "POST", {"seconds": 180}, timeout=1.5)
             if not hub.port_open(hub.BRIDGE_PORT, 0.12):
                 self.log("Bridge bekleniyor: Start.exe veya start.bat dosyasını aç.")
         except Exception as exc:
@@ -105,7 +106,7 @@ def _fill_quick_task(self, text: str, mode: str = "Akıllı otomatik") -> None:
 def _run_updater(self) -> None:
     updater = hub.ROOT / "ZeroScript Güncelle.bat"
     if not updater.exists():
-        messagebox.showerror("ZeroScript", "Güncelleme dosyası bulunamadı. Yeni ZIP paketini indirmen gerekiyor.")
+        messagebox.showerror("ZeroScript", "Güncelleme dosyası bulunamadı.")
         return
     if not messagebox.askyesno("ZeroScript Güncelle", "Güncel sürüm indirilecek ve yerel hafıza korunacak. Devam edilsin mi?"):
         return
@@ -174,8 +175,6 @@ def _safe_start_task(self) -> None:
     if not goal:
         messagebox.showwarning("ZeroScript", "Önce görevi yaz.")
         return
-    self.settings["qualityMode"] = hub.QUALITY_LABELS.get(self.mode_var.get(), "auto")
-    hub.save_json(hub.SETTINGS_FILE, self.settings)
     self.start_task_button.configure(state="disabled", text="Hazırlanıyor…")
     self.start_services()
 
@@ -187,20 +186,9 @@ def _safe_start_task(self) -> None:
             if not hub.port_open(hub.BRIDGE_PORT, 0.12):
                 self.after(0, messagebox.showerror, "ZeroScript", "Önce Start.exe veya start.bat dosyasını aç.")
                 return
-            before = hub.request_json("/status", self.token, timeout=1.0)
-            previous_task = ((before.get("status") or {}).get("task") or {}) if before.get("ok") else {}
-            previous_id = str(previous_task.get("id") or "") or None
-            self.action("easy_reset", quiet=True)
-            self.send_config_action()
-            result = self.action("start_task", {"goal": goal}, quiet=True)
+            result = self.action("workbench_start", {"goal": goal, "source": "advanced"}, quiet=True)
             if not result.get("ok"):
                 self.after(0, messagebox.showerror, "ZeroScript", result.get("error", "Görev başlatılamadı."))
-                return
-            accepted, detail = _wait_for_task_acceptance(goal, previous_id)
-            if accepted:
-                self.log(f"Yeni görev alındı: {detail}")
-            else:
-                self.after(0, messagebox.showerror, "ZeroScript", detail)
         finally:
             self.after(0, self.start_task_button.configure, {"state": "normal", "text": "▶ Çalıştır"})
 
@@ -214,7 +202,7 @@ def _safe_pair_extension(self) -> None:
         if not _wait_for_control():
             self.after(0, messagebox.showerror, "ZeroScript", "Hub servisi başlatılamadı.")
             return
-        result = hub.request_json("/pair/start", self.token, "POST", {"seconds": 120}, timeout=3.0)
+        result = hub.request_json("/pair/start", self.token, "POST", {"seconds": 180}, timeout=3.0)
         if not result.get("ok"):
             self.after(0, messagebox.showerror, "ZeroScript", result.get("error", "Eşleştirme başlatılamadı."))
 
@@ -239,6 +227,7 @@ from hub_automation_ui import install as install_automation_ui  # noqa: E402
 from hub_learning_ui import install as install_learning_ui  # noqa: E402
 from hub_superior_ui import install as install_superior_ui  # noqa: E402
 from hub_easy_ui import install as install_easy_ui  # noqa: E402
+from hub_one_ui import install as install_one_ui  # noqa: E402
 from hub_easy_feedback import install as install_easy_feedback  # noqa: E402
 from hub_modern_ui import install as install_modern_ui  # noqa: E402
 
@@ -248,6 +237,7 @@ install_automation_ui(hub)
 install_learning_ui(hub)
 install_superior_ui(hub)
 install_easy_ui(hub)
+install_one_ui(hub)
 install_easy_feedback(hub)
 install_modern_ui(hub)
 
