@@ -10,7 +10,7 @@ from control_api import ALLOWED_ACTIONS, ControlState, VERSION, load_or_create_t
 
 class ControlApiTests(unittest.TestCase):
     def test_version(self) -> None:
-        self.assertEqual(VERSION, "1.33.0")
+        self.assertEqual(VERSION, "1.34.0")
 
     def test_token_is_created_and_reused(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -44,7 +44,7 @@ class ControlApiTests(unittest.TestCase):
             "set_superior", "genome_scan", "shadow_prepare", "proof_evaluate", "jury_review",
             "self_heal_scan", "intent_compile", "studio_command",
             "build_game_blueprint", "blueprint_pause", "blueprint_resume", "easy_reset", "easy_feedback",
-            "workbench_start", "workbench_stop", "workbench_fix_output",
+            "workbench_start", "workbench_stop", "workbench_fix_output", "prototype_start", "launch_day_start",
         )
         for action in actions:
             self.assertIn(action, ALLOWED_ACTIONS)
