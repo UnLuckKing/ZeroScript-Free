@@ -15,11 +15,12 @@ ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist"
 ROOT_FILES = [
     "bridge.py", "bridge_core.py", "launch_studio_mcp.py", "start.bat", "start_with_panel.bat",
-    "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py",
+    "ZeroScript One.bat", "zeroscript_one_launcher.pyw", "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat",
+    "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py",
     "hub_productivity_ui.py", "hub_workflow_extras.py", "hub_automation_ui.py", "hub_learning_ui.py", "hub_learning_extras.py",
-    "hub_superior_ui.py", "hub_easy_ui.py", "hub_easy_runtime.py", "hub_easy_feedback.py", "hub_modern_ui.py",
+    "hub_superior_ui.py", "hub_easy_ui.py", "hub_one_ui.py", "hub_easy_runtime.py", "hub_easy_feedback.py", "hub_modern_ui.py",
     "memory_vault.py", "memory_vault_safeguards.py", "recipe_starter_packs.py", "superior_engine.py", "control_api.py",
-    "install_studio_panel.py", "install_studio_panel.bat", "config.json", "LICENSE", "README.md", "CHANGELOG.md", "RELEASE_NOTES_1.32.md",
+    "install_studio_panel.py", "install_studio_panel.bat", "config.json", "LICENSE", "README.md", "CHANGELOG.md", "RELEASE_NOTES_1.33.md",
 ]
 PACKAGE_DIRS = ["zeroscript-extension", "roblox-plugin", "docs"]
 
@@ -44,27 +45,21 @@ def validate() -> None:
     extension = ROOT / "zeroscript-extension"
     for path in sorted(extension.rglob("*.js")):
         run("node", "--check", str(path.relative_to(ROOT)))
-    run("node", "zeroscript-extension/test-parser.js")
-    run("node", "zeroscript-extension/test-control-suite.js")
-    run("node", "zeroscript-extension/test-task-start-policy.js")
-    run("node", "zeroscript-extension/test-speed-pack.js")
-    run("node", "zeroscript-extension/test-productivity-pack.js")
-    run("node", "zeroscript-extension/test-automation-pack.js")
-    run("node", "zeroscript-extension/test-automation-fixes.js")
-    run("node", "zeroscript-extension/test-learning-sync.js")
-    run("node", "zeroscript-extension/test-superior-pack.js")
-    run("node", "zeroscript-extension/test-easy-pack.js")
-    run("node", "zeroscript-extension/test-solo-pack.js")
-    run("node", "zeroscript-extension/test-browser-chat-init-fix.js")
+    for test in (
+        "test-parser.js", "test-control-suite.js", "test-task-start-policy.js", "test-speed-pack.js",
+        "test-productivity-pack.js", "test-automation-pack.js", "test-automation-fixes.js",
+        "test-learning-sync.js", "test-superior-pack.js", "test-easy-pack.js", "test-solo-pack.js",
+        "test-browser-chat-init-fix.js", "test-workbench-pack.js",
+    ):
+        run("node", f"zeroscript-extension/{test}")
     run(sys.executable, "-m", "unittest", "-v", "test_control_api.py", "test_memory_vault.py", "test_superior_engine.py")
     run(
-        sys.executable,
-        "-m",
-        "py_compile",
+        sys.executable, "-m", "py_compile",
         "bridge.py", "bridge_core.py", "launch_studio_mcp.py", "control_api.py", "zeroscript_hub.py", "zeroscript_hub_launcher.py",
         "hub_productivity_ui.py", "hub_workflow_extras.py", "hub_automation_ui.py", "hub_learning_ui.py", "hub_learning_extras.py",
-        "hub_superior_ui.py", "hub_easy_ui.py", "hub_easy_runtime.py", "hub_easy_feedback.py", "hub_modern_ui.py",
-        "memory_vault.py", "memory_vault_safeguards.py", "recipe_starter_packs.py", "superior_engine.py", "install_studio_panel.py", "build_release.py",
+        "hub_superior_ui.py", "hub_easy_ui.py", "hub_one_ui.py", "hub_easy_runtime.py", "hub_easy_feedback.py", "hub_modern_ui.py",
+        "memory_vault.py", "memory_vault_safeguards.py", "recipe_starter_packs.py", "superior_engine.py",
+        "install_studio_panel.py", "zeroscript_one_launcher.pyw", "build_release.py",
     )
 
     manifest = json.loads((extension / "manifest.json").read_text("utf-8"))
@@ -79,7 +74,7 @@ def validate() -> None:
         "background-speed-fixes.js", "background-productivity-pack.js", "background-productivity-fixes.js", "background-productivity-sync.js",
         "background-automation-pack.js", "background-automation-fixes.js", "background-automation-instance-fixes.js", "background-learning-sync.js",
         "background-superior-pack.js", "background-superior-fixes.js", "background-easy-pack.js", "background-easy-fixes.js",
-        "background-solo-pack.js", "background-solo-fixes.js", "popup-simple.js", "providers/browser-chat-init-fix.js",
+        "background-solo-pack.js", "background-solo-fixes.js", "background-workbench-pack.js", "popup-simple.js", "providers/browser-chat-init-fix.js",
     ):
         if not (extension / required).exists():
             raise RuntimeError(f"Required release file is missing: {required}")
@@ -87,12 +82,12 @@ def validate() -> None:
         if not (ROOT / "roblox-plugin" / required).exists():
             raise RuntimeError(f"Native Studio plugin source is missing: {required}")
     for required in (
-        "zeroscript_hub.py", "zeroscript_hub_launcher.py", "hub_easy_ui.py", "hub_easy_runtime.py", "hub_easy_feedback.py",
-        "hub_modern_ui.py", "memory_vault.py", "superior_engine.py", "ZeroScript Hub.bat", "ZeroScript Kurulum.bat",
-        "ZeroScript Güncelle.bat", "RELEASE_NOTES_1.32.md",
+        "zeroscript_hub.py", "zeroscript_hub_launcher.py", "hub_easy_ui.py", "hub_one_ui.py", "hub_easy_runtime.py",
+        "hub_easy_feedback.py", "hub_modern_ui.py", "memory_vault.py", "superior_engine.py", "ZeroScript One.bat",
+        "zeroscript_one_launcher.pyw", "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "RELEASE_NOTES_1.33.md",
     ):
         if not (ROOT / required).exists():
-            raise RuntimeError(f"ZeroScript Hub release file is missing: {required}")
+            raise RuntimeError(f"ZeroScript One release file is missing: {required}")
 
 
 def release_notes(version: str) -> str:
@@ -113,7 +108,6 @@ def build(version: str) -> tuple[Path, Path, Path]:
     checksum = DIST / f"ZeroScript-{version}-SHA256.txt"
     notes = DIST / f"ZeroScript-{version}-Release-Notes.md"
     notes.write_text(release_notes(version), "utf-8")
-
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for name in ROOT_FILES:
             zf.write(ROOT / name, f"{package_root}/{name}")
@@ -122,7 +116,6 @@ def build(version: str) -> tuple[Path, Path, Path]:
                 if path.is_file() and "__pycache__" not in path.parts:
                     rel = path.relative_to(ROOT).as_posix()
                     zf.write(path, f"{package_root}/{rel}")
-
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     checksum.write_text(f"{digest}  {archive.name}\n", "ascii")
     with zipfile.ZipFile(archive) as zf:
@@ -136,7 +129,7 @@ def main() -> int:
     ext, bridge = versions()
     if ext != bridge:
         raise RuntimeError(f"Version mismatch: extension={ext}, bridge={bridge}")
-    if ext != "1.32.1":
+    if ext != "1.33.0":
         raise RuntimeError(f"Unexpected release version: {ext}")
     print(f"ZeroScript {ext} local release builder")
     validate()
