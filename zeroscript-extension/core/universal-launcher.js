@@ -137,10 +137,11 @@
   stop.addEventListener("click", () => {
     const controls = mainElements();
     if (controls.stop) controls.stop.click();
-    else {
-      try { chrome.runtime.sendMessage({ type: "team_stop_all" }); } catch {}
-    }
-    state.textContent = "Durduruluyor…";
+    // Also cancel the shared team task. The native button stops generation in
+    // this tab; the runtime action prevents another ready provider from silently
+    // resuming the same task.
+    try { chrome.runtime.sendMessage({ type: "team_task_cancel" }); } catch {}
+    state.textContent = "Durduruluyor ve görev iptal ediliyor…";
     setTone("warn");
   });
 
