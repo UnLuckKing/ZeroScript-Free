@@ -14,8 +14,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist"
 ROOT_FILES = [
-    "bridge.py", "bridge_core.py", "launch_studio_mcp.py", "start.bat", "start_with_panel.bat",
-    "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "ZeroScript Hub.bat", "ZeroScript One.bat",
+    "bridge.py", "bridge_core.py", "launch_studio_mcp.py", "start.bat",
+    "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "ZeroScript One.bat",
     "zeroscript_hub.py", "zeroscript_hub_launcher.py", "zeroscript_one_launcher.pyw",
     "hub_productivity_ui.py", "hub_workflow_extras.py", "hub_automation_ui.py", "hub_learning_ui.py", "hub_learning_extras.py",
     "hub_superior_ui.py", "hub_easy_ui.py", "hub_easy_runtime.py", "hub_easy_feedback.py", "hub_one_ui.py", "hub_modern_ui.py",
@@ -75,7 +75,7 @@ def validate() -> None:
         "background-automation-pack.js", "background-automation-fixes.js", "background-automation-instance-fixes.js", "background-learning-sync.js",
         "background-superior-pack.js", "background-superior-fixes.js", "background-easy-pack.js", "background-easy-fixes.js",
         "background-solo-pack.js", "background-solo-fixes.js", "background-workbench-pack.js", "background-prototype-pack.js",
-        "popup-simple.js", "providers/browser-chat-init-fix.js",
+        "background-prototype-fixes.js", "popup-simple.js", "providers/browser-chat-init-fix.js",
     ):
         if not (extension / required).exists():
             raise RuntimeError(f"Required release file is missing: {required}")
