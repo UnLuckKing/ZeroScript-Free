@@ -13,13 +13,13 @@ mkdir "%TMP%" >nul 2>nul
 
 echo.
 echo  ==========================================
-echo          ZeroScript Tek Tik Guncelleme
+echo          ZeroScript One Guncelleme
 echo  ==========================================
 echo.
 echo Eski Hub, Bridge ve kontrol servisleri kapatiliyor...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$self=$PID;" ^
-  "Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {$_.ProcessId -ne $self -and $_.CommandLine -match 'zeroscript_hub_launcher\.py|zeroscript_hub\.py'} | ForEach-Object {try{Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop}catch{}};" ^
+  "Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {$_.ProcessId -ne $self -and $_.CommandLine -match 'zeroscript_hub_launcher\.py|zeroscript_hub\.py|zeroscript_one_launcher\.pyw'} | ForEach-Object {try{Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop}catch{}};" ^
   "$ports=17613,17614; foreach($port in $ports){Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | ForEach-Object {try{Stop-Process -Id $_.OwningProcess -Force -ErrorAction Stop}catch{}}}" >nul 2>nul
 timeout /t 2 /nobreak >nul
 
@@ -49,7 +49,7 @@ if errorlevel 1 (
 rmdir /s /q "%TMP%" >nul 2>nul
 
 echo.
-echo Studio Control Panel ve Command Palette guncelleniyor...
+echo Studio Workspace ve Command Palette guncelleniyor...
 where py >nul 2>nul
 if not errorlevel 1 (
   py -3 "%ROOT%install_studio_panel.py" >nul 2>nul
@@ -59,13 +59,17 @@ if not errorlevel 1 (
 )
 
 echo.
-echo [OK] ZeroScript dosyalari ve Memory Vault korundu.
-echo Chrome extension sayfasi aciliyor. ZeroScript kartinda Yeniden Yukle'ye bas.
-echo Roblox Studio aciksa Command Palette icin Studio'yu yeniden baslat.
+echo [OK] ZeroScript One ve Memory Vault korundu.
+echo Chrome extension sayfasi aciliyor. ZeroScript One kartinda Yeniden Yukle'ye bas.
+echo Roblox Studio aciksa yeni Workspace icin Studio'yu yeniden baslat.
 start "" chrome "chrome://extensions" 2>nul
 
 echo.
-echo Hub yeniden baslatiliyor...
-start "" "%ROOT%ZeroScript Hub.bat"
+echo ZeroScript One yeniden baslatiliyor...
+if exist "%ROOT%ZeroScript One.bat" (
+  start "" "%ROOT%ZeroScript One.bat"
+) else (
+  start "" "%ROOT%ZeroScript Hub.bat"
+)
 timeout /t 2 /nobreak >nul
 exit /b 0
