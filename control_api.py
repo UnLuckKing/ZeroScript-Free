@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-VERSION = "1.32.1"
+VERSION = "1.33.0"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 17614
 ALLOWED_ACTIONS = {
@@ -29,6 +29,7 @@ ALLOWED_ACTIONS = {
     "set_superior", "genome_scan", "shadow_prepare", "proof_evaluate", "jury_review",
     "self_heal_scan", "intent_compile", "studio_command",
     "build_game_blueprint", "blueprint_pause", "blueprint_resume", "easy_reset", "easy_feedback",
+    "workbench_start", "workbench_stop", "workbench_fix_output",
 }
 
 
