@@ -22,7 +22,7 @@ ttk.Frame.columnconfigure = _safe_columnconfigure
 
 import zeroscript_hub as hub  # noqa: E402
 
-hub.VERSION = "1.32.0"
+hub.VERSION = "1.32.1"
 hub.QUALITY_LABELS = {
     "Akıllı otomatik": "auto",
     "Turbo": "turbo",
@@ -212,7 +212,7 @@ def _safe_pair_extension(self) -> None:
 
     def worker() -> None:
         if not _wait_for_control():
-            self.after(0, messagebox.showerror, "ZeroScript", "Hub kontrol servisi başlatılamadı.")
+            self.after(0, messagebox.showerror, "ZeroScript", "Hub servisi başlatılamadı.")
             return
         result = hub.request_json("/pair/start", self.token, "POST", {"seconds": 120}, timeout=3.0)
         if not result.get("ok"):
