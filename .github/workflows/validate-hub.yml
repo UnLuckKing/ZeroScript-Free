@@ -28,6 +28,8 @@ on:
       - 'test_superior_engine.py'
       - 'roblox-plugin/**'
       - 'zeroscript-extension/**'
+      - 'templates/**'
+      - 'docs/releases/**'
       - 'build_release.py'
       - '.github/workflows/validate-hub.yml'
   pull_request:
@@ -69,6 +71,7 @@ jobs:
           node zeroscript-extension/test-solo-pack.js
           node zeroscript-extension/test-browser-chat-init-fix.js
           node zeroscript-extension/test-workbench-pack.js
+          node zeroscript-extension/test-prototype-pack.js
       - name: Manifest version parity
         shell: python
         run: |
@@ -80,4 +83,4 @@ jobs:
           control_match = re.search(r'^VERSION = "([^"]+)"', control, re.M)
           assert bridge_match and bridge_match.group(1) == version
           assert control_match and control_match.group(1) == version
-          assert version == '1.33.0'
+          assert version == '1.34.0'
