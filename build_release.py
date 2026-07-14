@@ -55,6 +55,7 @@ def validate() -> None:
     run("node", "zeroscript-extension/test-superior-pack.js")
     run("node", "zeroscript-extension/test-easy-pack.js")
     run("node", "zeroscript-extension/test-solo-pack.js")
+    run("node", "zeroscript-extension/test-browser-chat-init-fix.js")
     run(sys.executable, "-m", "unittest", "-v", "test_control_api.py", "test_memory_vault.py", "test_superior_engine.py")
     run(
         sys.executable,
@@ -68,7 +69,7 @@ def validate() -> None:
 
     manifest = json.loads((extension / "manifest.json").read_text("utf-8"))
     script_paths = {path for entry in manifest.get("content_scripts", []) for path in entry.get("js", [])}
-    required_content_scripts = {"core/provider-probe.js", "core/permission-guard.js", "core/universal-launcher.js"}
+    required_content_scripts = {"core/provider-probe.js", "core/permission-guard.js", "core/universal-launcher.js", "providers/browser-chat-init-fix.js"}
     missing = sorted(required_content_scripts - script_paths)
     if missing:
         raise RuntimeError(f"Manifest is missing required content scripts: {', '.join(missing)}")
@@ -78,7 +79,7 @@ def validate() -> None:
         "background-speed-fixes.js", "background-productivity-pack.js", "background-productivity-fixes.js", "background-productivity-sync.js",
         "background-automation-pack.js", "background-automation-fixes.js", "background-automation-instance-fixes.js", "background-learning-sync.js",
         "background-superior-pack.js", "background-superior-fixes.js", "background-easy-pack.js", "background-easy-fixes.js",
-        "background-solo-pack.js", "background-solo-fixes.js", "popup-simple.js",
+        "background-solo-pack.js", "background-solo-fixes.js", "popup-simple.js", "providers/browser-chat-init-fix.js",
     ):
         if not (extension / required).exists():
             raise RuntimeError(f"Required release file is missing: {required}")
@@ -135,7 +136,7 @@ def main() -> int:
     ext, bridge = versions()
     if ext != bridge:
         raise RuntimeError(f"Version mismatch: extension={ext}, bridge={bridge}")
-    if ext != "1.32.0":
+    if ext != "1.32.1":
         raise RuntimeError(f"Unexpected release version: {ext}")
     print(f"ZeroScript {ext} local release builder")
     validate()
