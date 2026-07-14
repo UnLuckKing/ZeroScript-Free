@@ -22,7 +22,7 @@ ttk.Frame.columnconfigure = _safe_columnconfigure
 
 import zeroscript_hub as hub  # noqa: E402
 
-hub.VERSION = "1.31.1"
+hub.VERSION = "1.32.0"
 hub.QUALITY_LABELS = {
     "Akıllı otomatik": "auto",
     "Turbo": "turbo",
@@ -49,8 +49,8 @@ def _thread_safe_log(self, text: str) -> None:
 def _control_only_start_services(self) -> None:
     """Start only Hub's tiny control API.
 
-    The Roblox bridge belongs to Start.exe/start.bat. Hub no longer launches,
-    kills or restarts it, preventing duplicate bridges and StudioMCP windows.
+    The Roblox bridge belongs to Start.exe/start.bat. Hub never launches, kills
+    or restarts it, preventing duplicate bridges and StudioMCP windows.
     """
     if getattr(self, "_hub_services_starting", False):
         return
@@ -239,6 +239,7 @@ from hub_automation_ui import install as install_automation_ui  # noqa: E402
 from hub_learning_ui import install as install_learning_ui  # noqa: E402
 from hub_superior_ui import install as install_superior_ui  # noqa: E402
 from hub_easy_ui import install as install_easy_ui  # noqa: E402
+from hub_easy_feedback import install as install_easy_feedback  # noqa: E402
 from hub_modern_ui import install as install_modern_ui  # noqa: E402
 
 install_productivity_ui(hub)
@@ -247,6 +248,7 @@ install_automation_ui(hub)
 install_learning_ui(hub)
 install_superior_ui(hub)
 install_easy_ui(hub)
+install_easy_feedback(hub)
 install_modern_ui(hub)
 
 
