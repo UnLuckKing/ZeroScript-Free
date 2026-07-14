@@ -1,0 +1,21 @@
+{
+  "template": "rng",
+  "version": 1,
+  "title": "Aura Ascend RNG",
+  "theme": "celestial",
+  "uiPreset": "dark_celestial",
+  "mapPreset": "floating_island",
+  "pityTarget": 50,
+  "baseLuck": 1,
+  "luckUpgradeBaseCost": 250,
+  "auras": [
+    {"name": "Soft Glow", "rarity": "Common", "odds": 2, "color": "#D8E2FF"},
+    {"name": "Emerald Pulse", "rarity": "Uncommon", "odds": 8, "color": "#62E6A7"},
+    {"name": "Azure Rift", "rarity": "Rare", "odds": 35, "color": "#57B8FF"},
+    {"name": "Violet Nova", "rarity": "Epic", "odds": 150, "color": "#A878FF"},
+    {"name": "Solar Crown", "rarity": "Legendary", "odds": 750, "color": "#FFD166"},
+    {"name": "Astral Monarch", "rarity": "Mythic", "odds": 5000, "color": "#FF65C3"},
+    {"name": "Celestial Oath", "rarity": "Celestial", "odds": 50000, "color": "#7EE8FA"},
+    {"name": "Eternal Eclipse", "rarity": "Secret", "odds": 1000000, "color": "#FF5370"}
+  ]
+}
