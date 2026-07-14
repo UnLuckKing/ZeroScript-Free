@@ -44,6 +44,7 @@ importScripts("background-superior-fixes.js");
 // Beginner-first UI companion: converts one game idea into a safe dependent
 // queue for foundation, gameplay, progression, UI, polish and release proof.
 importScripts("background-easy-pack.js");
+importScripts("background-easy-fixes.js");
 
 function zsBroadcastToExtraTabs(message) {
   chrome.tabs.query({ url: ZS_EXTRA_PROVIDER_URLS }, (tabs) => {
