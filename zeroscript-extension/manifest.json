@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ZeroScript Free × Roblox Studio Agent",
-  "version": "1.32.0",
-  "description": "One-screen Roblox Studio workflow with a universal AI popup, single-provider execution, fast failover and two-pass game builds.",
+  "version": "1.32.1",
+  "description": "One-screen Roblox Studio workflow with a universal AI popup, single-provider execution, fast failover and fixed ChatGPT browser-agent startup.",
   "permissions": ["storage", "clipboardWrite", "notifications"],
   "host_permissions": [
     "https://chat.deepseek.com/*",
@@ -83,13 +83,13 @@
     },
     {
       "matches": ["https://chatgpt.com/*"],
-      "js": ["core/config.js", "core/parser.js", "providers/browser-chat.js", "providers/chatgpt-fix.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
+      "js": ["core/config.js", "core/parser.js", "providers/browser-chat.js", "providers/browser-chat-init-fix.js", "providers/chatgpt-fix.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
       "css": ["overlay.css"],
       "run_at": "document_idle"
     },
     {
       "matches": ["https://claude.ai/*", "https://copilot.microsoft.com/*", "https://chat.mistral.ai/*"],
-      "js": ["core/config.js", "core/parser.js", "providers/browser-chat.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
+      "js": ["core/config.js", "core/parser.js", "providers/browser-chat.js", "providers/browser-chat-init-fix.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
       "css": ["overlay.css"],
       "run_at": "document_idle"
     }
