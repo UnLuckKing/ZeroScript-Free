@@ -5,6 +5,7 @@ const path = require("path");
 const vm = require("vm");
 
 const source = fs.readFileSync(path.join(__dirname, "background-solo-pack.js"), "utf8");
+const fixes = fs.readFileSync(path.join(__dirname, "background-solo-fixes.js"), "utf8");
 const context = {
   console,
   Date,
@@ -46,10 +47,13 @@ const context = {
 
 vm.createContext(context);
 vm.runInContext(source, context, { filename: "background-solo-pack.js" });
+vm.runInContext(fixes, context, { filename: "background-solo-fixes.js" });
 
 assert.deepStrictEqual(Array.from(context.zsSoloPhases("Fix the inventory button")), ["ui"]);
 assert.deepStrictEqual(Array.from(context.zsSoloPhases("Build a complete RNG game")), ["builder", "qa"]);
 assert.deepStrictEqual(Array.from(context.zsSoloPhases("Fix a nil error")), ["builder"]);
+assert.deepStrictEqual(Array.from(context.zsSoloPhases("GAME BLUEPRINT x STAGE 1/2: Playable game")), ["builder"]);
+assert.deepStrictEqual(Array.from(context.zsSoloPhases("GAME BLUEPRINT x STAGE 2/2: Polish and verify")), ["qa"]);
 
 const stages = context.zsEasyBuildStages({ idea: "RNG game", target: "Yayınlanabilir oyun" });
 assert.strictEqual(stages.length, 2, "publishable games should use only two large jobs");
