@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the ZeroScript Studio control panel and command palette locally."""
+"""Install the ZeroScript Studio tools locally."""
 from __future__ import annotations
 
 import html
@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 SOURCES = [
+    ("ZeroScriptOne", ROOT / "roblox-plugin" / "ZeroScriptOne.lua"),
     ("ZeroScriptControlPanel", ROOT / "roblox-plugin" / "ZeroScriptControlPanel.lua"),
     ("ZeroScriptCommandPalette", ROOT / "roblox-plugin" / "ZeroScriptCommandPalette.lua"),
 ]
@@ -46,8 +47,8 @@ def main() -> int:
     payload = [(name, path.read_text("utf-8")) for name, path in SOURCES]
     OUTPUT.write_text(make_rbxmx(payload), "utf-8")
     print(f"Installed ZeroScript Studio tools: {OUTPUT}")
-    print("Restart Roblox Studio, then open Plugins > ZeroScript > Control Center or Command Palette.")
-    print("To use Ctrl+K, bind 'ZeroScript: Command Palette' in Studio > Customize Shortcuts.")
+    print("Restart Roblox Studio, then open Plugins > ZeroScript One.")
+    print("The Studio workspace includes 15-minute Prototype, Launch Day and Custom Work modes.")
     print("Also enable Game Settings > Security > Allow HTTP Requests.")
     return 0
 
