@@ -108,6 +108,7 @@ def validate() -> None:
         "background-superior-pack.js",
         "background-superior-fixes.js",
         "background-easy-pack.js",
+        "background-easy-fixes.js",
         "popup-simple.js",
     ):
         if not (extension / required).exists():
@@ -134,8 +135,6 @@ def release_notes(version: str) -> str:
     match = re.search(pattern, text)
     if match:
         body = match.group(1).strip()
-    elif version.startswith("1.2") and (ROOT / "docs" / "ZEROSCRIPT_HUB_1_25.md").exists():
-        body = (ROOT / "docs" / "ZEROSCRIPT_HUB_1_25.md").read_text("utf-8").strip()
     else:
         body = "See CHANGELOG.md for changes."
     return f"# ZeroScript {version}\n\n{body}\n"
@@ -171,7 +170,7 @@ def main() -> int:
     ext, bridge = versions()
     if ext != bridge:
         raise RuntimeError(f"Version mismatch: extension={ext}, bridge={bridge}")
-    if ext != "1.31.0":
+    if ext != "1.31.1":
         raise RuntimeError(f"Unexpected release version: {ext}")
     print(f"ZeroScript {ext} local release builder")
     validate()
