@@ -14,6 +14,7 @@ on:
       - 'hub_superior_ui.py'
       - 'hub_easy_ui.py'
       - 'hub_easy_runtime.py'
+      - 'hub_easy_feedback.py'
       - 'hub_modern_ui.py'
       - 'memory_vault.py'
       - 'memory_vault_safeguards.py'
@@ -47,7 +48,7 @@ jobs:
           node-version: '22'
       - name: Python syntax and tests
         run: |
-          python -m py_compile bridge.py bridge_core.py launch_studio_mcp.py control_api.py zeroscript_hub.py zeroscript_hub_launcher.py hub_productivity_ui.py hub_workflow_extras.py hub_automation_ui.py hub_learning_ui.py hub_learning_extras.py hub_superior_ui.py hub_easy_ui.py hub_easy_runtime.py hub_modern_ui.py memory_vault.py memory_vault_safeguards.py recipe_starter_packs.py superior_engine.py install_studio_panel.py build_release.py
+          python -m py_compile bridge.py bridge_core.py launch_studio_mcp.py control_api.py zeroscript_hub.py zeroscript_hub_launcher.py hub_productivity_ui.py hub_workflow_extras.py hub_automation_ui.py hub_learning_ui.py hub_learning_extras.py hub_superior_ui.py hub_easy_ui.py hub_easy_runtime.py hub_easy_feedback.py hub_modern_ui.py memory_vault.py memory_vault_safeguards.py recipe_starter_packs.py superior_engine.py install_studio_panel.py build_release.py
           python -m unittest -v test_control_api.py test_memory_vault.py test_superior_engine.py
       - name: JavaScript syntax
         run: find zeroscript-extension -name '*.js' -print0 | xargs -0 -n1 node --check
@@ -63,6 +64,7 @@ jobs:
           node zeroscript-extension/test-learning-sync.js
           node zeroscript-extension/test-superior-pack.js
           node zeroscript-extension/test-easy-pack.js
+          node zeroscript-extension/test-solo-pack.js
       - name: Manifest version parity
         shell: python
         run: |
@@ -74,4 +76,4 @@ jobs:
           control_match = re.search(r'^VERSION = "([^"]+)"', control, re.M)
           assert bridge_match and bridge_match.group(1) == version
           assert control_match and control_match.group(1) == version
-          assert version == '1.31.1'
+          assert version == '1.32.0'
