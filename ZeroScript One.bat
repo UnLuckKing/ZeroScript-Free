@@ -2,15 +2,21 @@
 setlocal
 cd /d "%~dp0"
 
-where py >nul 2>nul
+where pyw >nul 2>nul
 if not errorlevel 1 (
-  start "" /b py -3w "%~dp0zeroscript_one_launcher.pyw"
+  start "" /b pyw -3 "%~dp0zeroscript_one_launcher.pyw"
   exit /b 0
 )
 
 where pythonw >nul 2>nul
 if not errorlevel 1 (
   start "" /b pythonw "%~dp0zeroscript_one_launcher.pyw"
+  exit /b 0
+)
+
+where py >nul 2>nul
+if not errorlevel 1 (
+  start "" /b py -3 "%~dp0zeroscript_one_launcher.pyw"
   exit /b 0
 )
 
