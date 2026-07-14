@@ -22,7 +22,7 @@ ttk.Frame.columnconfigure = _safe_columnconfigure
 
 import zeroscript_hub as hub  # noqa: E402
 
-hub.VERSION = "1.33.0"
+hub.VERSION = "1.34.0"
 hub.QUALITY_LABELS = {
     "Akıllı otomatik": "auto",
     "Turbo": "turbo",
