@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.34.0
+
+- Added **15 dk Prototip** mode backed by a deterministic RNG/Aura Golden Template.
+- Prototype mode installs and verifies the core game in two bounded Studio calls without requiring an AI tab.
+- Added **1 Günlük Yayın** mode: template first, then one bounded AI polish/test pass.
+- Added configurable celestial, void, neon, fantasy and cute presets with responsive UI and compact map shells.
+- Added a ZeroScript One Studio dock with Prototype, Launch Day and Custom Work actions.
+- Categorized template and release documentation under `templates/` and `docs/releases/`.
+- Removed obsolete root release notes and legacy split launchers.
+
+## 1.33.0
+
+- Added ZeroScript One: one request, one AI owner and one complete implementation/test pass.
+- Added one-click desktop launcher, browser workbench and simplified Studio command flow.
+- Disabled ordinary multi-agent reviewer chains for normal workbench tasks.
+
+## 1.32.0
+
+- Added the universal browser popup and faster single-provider execution.
+- Reduced complete-game planning to a playable pass plus an optional final verification pass.
+
 ## 1.31.0
 
 - Added beginner-first **Kolay Mod**, shown by default with technical tabs hidden until requested.
@@ -55,62 +76,3 @@
 - Added a DeepSeek send mode setting: Fast, Safe, and Ultra Safe.
 - DeepSeek injection timing now adapts value-wait, send-button wait, and final send delay based on the selected mode.
 - Safe remains the default; Ultra Safe is available for sessions where DeepSeek drops fast injected turns.
-
-## 1.19.5
-
-- Added optional Auto-start when ready.
-- When enabled, ZeroScript automatically starts on a new empty supported AI chat after bridge and Roblox Studio are ready.
-- Auto-start is guarded against existing conversations, hidden tabs, unsupported provider modes, and repeated retries in the same chat.
-- Added a popup toggle for Auto-start when ready.
-
-## 1.19.4
-
-- Added a one-click Connection Doctor in the popup.
-- Doctor checks the bridge socket, Roblox MCP server, Roblox tools, Studio process, Studio MCP registration, open-place readiness, and model tab readiness.
-- Doctor can attempt one targeted Roblox MCP repair before reporting the exact blocker.
-- Fixed Restart Roblox server routing so targeted web reconnects preserve the requested server id.
-
-## 1.19.3
-
-- Added safer DeepSeek direct-send timing so ZeroScript waits for the composer value and send button before submitting tool feedback.
-- Added a small randomized DeepSeek send delay to reduce dropped or too-fast injected turns.
-- Moved handoff controls behind a fallback section so the normal flow stays direct: Start connects ZeroScript to the current model tab.
-
-## 1.19.2
-
-- Fixed Start task handling when Roblox Studio is not actually connected.
-- Start now checks bridge, Roblox MCP tools, Studio attachment, and open-place readiness before dispatching agents.
-- If StudioMCP is stale, Start automatically restarts the Roblox MCP server once and rechecks readiness.
-- The popup now shows clear blocked-start messages instead of appearing unresponsive.
-- The in-page ZeroScript bar now keeps Start clickable when Studio is stuck disconnected, attempts a Roblox MCP restart, and shows a clear recovery banner if the reconnect still fails.
-
-## 1.19.1
-
-- Fixed team start appearing unresponsive while checkpoint and preflight tools
-  were still running.
-- Task start now acknowledges immediately and prepares the audit safely in the
-  background, keeping the Manifest V3 service worker responsive.
-- Reduced the deterministic preflight timeout and made scan failure non-blocking:
-  the coordinated task continues with an explicit warning.
-- Removed duplicated Retry state updates introduced during earlier merges.
-
-## 1.19.0
-
-- Added a strict QA evidence gate for coordinated team tasks.
-- QA reports must identify the tested path and explicitly report Output errors.
-- ZeroScript independently queries Studio Output after QA finishes when the
-  console tool is available.
-- Missing evidence or detected runtime errors automatically requeue QA up to
-  two times instead of accepting an unsupported completion claim.
-- Verified evidence and captured Output are persisted with task history and
-  summarized in the extension popup.
-
-## 1.18.0
-
-- Added a one-click **Scan current project** action in the extension popup.
-- Project scans now work independently from team tasks and persist locally.
-- The popup summarizes script, remote, GUI, and warning counts and shows the
-  first actionable findings without requiring an AI model.
-- New team tasks reuse the persisted scan evidence in the Analyst phase.
-
-## 1.17.0
