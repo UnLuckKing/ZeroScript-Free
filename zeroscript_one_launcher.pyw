@@ -6,7 +6,6 @@ It never restarts a healthy bridge and keeps bridge ownership outside the Hub.
 """
 from __future__ import annotations
 
-import os
 import socket
 import subprocess
 import sys
@@ -18,6 +17,7 @@ ROOT = Path(__file__).resolve().parent
 BRIDGE_PORT = 17613
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 CREATE_NEW_PROCESS_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+HIDDEN_PROCESS_FLAGS = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
 
 
 def port_open(port: int, timeout: float = 0.15) -> bool:
@@ -42,7 +42,7 @@ def start_bridge() -> None:
         subprocess.Popen(
             [str(start_exe)],
             cwd=ROOT,
-            creationflags=CREATE_NEW_PROCESS_GROUP,
+            creationflags=HIDDEN_PROCESS_FLAGS,
         )
         return
     bridge = ROOT / "bridge.py"
@@ -55,7 +55,7 @@ def start_bridge() -> None:
             cwd=ROOT,
             stdout=log,
             stderr=subprocess.STDOUT,
-            creationflags=CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
+            creationflags=HIDDEN_PROCESS_FLAGS,
         )
         return
     batch = ROOT / "start.bat"
@@ -63,7 +63,7 @@ def start_bridge() -> None:
         subprocess.Popen(
             ["cmd.exe", "/c", str(batch)],
             cwd=ROOT,
-            creationflags=CREATE_NEW_PROCESS_GROUP,
+            creationflags=HIDDEN_PROCESS_FLAGS,
         )
         return
     raise FileNotFoundError("Start.exe, start.bat veya bridge.py bulunamadı.")
@@ -85,7 +85,7 @@ def start_hub() -> None:
     subprocess.Popen(
         [*python_command(), str(launcher)],
         cwd=ROOT,
-        creationflags=CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
+        creationflags=HIDDEN_PROCESS_FLAGS,
     )
 
 
