@@ -78,7 +78,7 @@ def validate() -> None:
         "background-speed-fixes.js", "background-productivity-pack.js", "background-productivity-fixes.js", "background-productivity-sync.js",
         "background-automation-pack.js", "background-automation-fixes.js", "background-automation-instance-fixes.js", "background-learning-sync.js",
         "background-superior-pack.js", "background-superior-fixes.js", "background-easy-pack.js", "background-easy-fixes.js",
-        "background-solo-pack.js", "popup-simple.js",
+        "background-solo-pack.js", "background-solo-fixes.js", "popup-simple.js",
     ):
         if not (extension / required).exists():
             raise RuntimeError(f"Required release file is missing: {required}")
