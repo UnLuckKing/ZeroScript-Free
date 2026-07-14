@@ -1,168 +1,133 @@
-# ZeroScript Hub — Roblox Studio AI Team
+# ZeroScript Hub — Roblox Studio AI
 
-ZeroScript connects supported browser AI models to Roblox Studio through one local MCP bridge. Version **1.31.0** adds a beginner-first **Kolay Mod**, a one-click game blueprint builder, smart next-step guidance and a more focused modern Hub while retaining Memory Vault, Recipe Studio, Project Genome, Shadow Guard, Proof Engine and Model Jury.
+ZeroScript connects a supported browser AI to Roblox Studio through the local `Start.exe` / `start.bat` bridge. Version **1.32.0** focuses on one simple workflow: one screen, one active request, one working AI provider, and at most one final verification pass.
 
-## Recommended setup
+## Daily use
 
-1. Download the repository ZIP and extract the complete folder.
-2. Open Roblox Studio and load a place.
-3. Enable Studio's MCP server in Roblox Studio Assistant settings.
-4. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `zeroscript-extension`.
-5. Double-click `ZeroScript Hub.bat`.
-6. On first use, click **Extension'ı eşleştir** in Hub.
-7. Use the default **Kolay Mod**, write the game idea, choose genre/quality/device and press **Oyunu planla ve yap**.
+1. Open `Start.exe` or `start.bat` and leave it running.
+2. Open your place in Roblox Studio.
+3. Open one supported AI site in Chrome.
+4. Refresh the AI tab after updating the extension.
+5. Use the fixed ZeroScript popup in the top-right and press **Agent'ı başlat**.
+6. Open `ZeroScript Hub.bat`.
+7. Write what you want and press **Başlat**.
 
-For normal daily use, only Roblox Studio and `ZeroScript Hub.bat` need to be opened.
+A new request automatically cancels and clears the previous task, queue and game plan.
 
-## Kolay Mod 1.31
+## Universal AI popup
 
-Kolay Mod hides technical screens by default and gives one clean workflow:
+A fixed ZeroScript popup is injected into every supported provider:
 
-- write the idea in normal language
-- choose game type
-- choose quality target
-- choose device priority
-- start a safe dependent game plan
-- follow readiness and task progress from one screen
+- ChatGPT
+- Claude
+- Microsoft Copilot
+- Mistral
+- Gemini
+- Qwen
+- DeepSeek
+- Kimi
+- GLM
+- Arena
 
-The dashboard continuously shows:
+The popup stays visible even when a provider redesign hides the normal composer bar. It exposes:
 
-- ZeroScript/extension readiness
-- Roblox Studio MCP status
-- ready AI-provider count
-- Output and Proof quality state
-- the one most useful next action
-- active task progress and queue count
+- **Agent'ı başlat**
+- **Durdur**
+- **Göster** — reveals the original ZeroScript control bar
 
-The **Gelişmiş araçları göster** button restores all technical tabs. The setting is remembered.
+After pressing **Reload** on the unpacked extension in `chrome://extensions`, refresh any AI tabs that were already open.
 
-## One-click game blueprint builder
+## Faster single-provider execution
 
-Supported presets:
+ZeroScript no longer sends ordinary work through Analyst → Builder → Map → UI → Reviewer → QA.
 
-- RNG / Aura
-- Simulator
-- Clicker / Incremental
-- Tycoon
-- Obby
-- Pet Collection
-- Custom
+- Small fix: **one provider, one pass**
+- UI-only work: **one UI pass including testing**
+- Map-only work: **one map pass including testing**
+- Normal system work: **one complete build-and-test pass**
+- Complete game or high-risk data/purchase work: **build + one verify/fix pass**
 
-Quality targets:
+The selected provider stays responsible for the request. A different ready provider is used only when the first provider does not use Studio tools or return a report for roughly three minutes.
 
-- **Hızlı prototip:** project understanding, secure foundation, progression/persistence and UI/onboarding
-- **Yayınlanabilir oyun:** adds retention/fair monetization and release proof
-- **Premium kalite:** also adds content depth, delight/polish and an independent quality jury
+## Easy Mode game building
 
-The system does not send one huge prompt. It creates a dependency chain so each stage must complete before the next starts:
+The old six/eight-stage blueprint was reduced to:
 
-1. understand the real project and main loop
-2. build/repair the secure foundation
-3. complete progression, economy and persistence
-4. create professional responsive UI and onboarding
-5. improve retention and fair monetization when required
-6. verify security, performance, mobile and release quality
-7. add high-value content/polish for Premium
-8. run an independent jury for Premium
+1. **Playable game** — inspect the project and complete the core loop, secure server logic, progression, persistence, responsive UI, onboarding and essential feedback.
+2. **Polish and verify** — improve proven weak points, then test mobile/desktop UI, buttons, respawn, rejoin, security, data, purchases when present, performance and Studio Output.
 
-Every stage inherits Project Genome, Memory Vault, Recipe context, Design DNA, Behavioral Contracts, checkpoints and Proof requirements.
+A prototype can use only the first pass.
 
-## One-click improvements
+## One-screen Hub
 
-Kolay Mod includes four large actions:
+Easy Mode shows only:
 
-- **Oyunu düzelt:** connection, Output and verified system problems
-- **UI'yi profesyonelleştir:** visual hierarchy, responsive layout, safe areas, feedback states and button tests
-- **Oyunu eğlenceli yap:** strengthen the verified weakest part of the main loop, progression and session pacing
-- **Yayına hazırla:** data, purchases, security, performance, mobile and release checks
+- one request box
+- **Başlat**
+- **Durdur ve temizle**
+- **Start'ı aç**
+- Start/Bridge, Studio and AI readiness
+- current work and progress
+- completion result
 
-## Smart next action
+Advanced systems remain available internally for safety and learning, but they do not appear in the normal workflow.
 
-Instead of showing a technical error, ZeroScript chooses one practical next step:
+## Completion and learning
 
-- start local services
-- pair the extension
-- repair Studio MCP
-- open a supported AI model
-- show the active task
-- repair new Output errors
-- write a game idea
-- start the game blueprint
+When a job ends, the Hub shows the proof status and three actions:
 
-## How ZeroScript decides without owning an AI model
+- **Beğendim**
+- **Olmadı**
+- **Geri al**
 
-ZeroScript is an orchestration and verification system, not a hidden language model. It uses two layers:
+“Olmadı” can be classified as:
 
-1. **Local deterministic decisions:** task/category rules, risk thresholds, Project Genome counts, Recipe scores, provider history, Design DNA and Proof rules decide scope, routing, safety and required tests.
-2. **Connected AI implementation:** Gemini, Qwen, DeepSeek, ChatGPT, Claude or another ready provider performs creative coding, UI/map work and diagnosis within those constraints.
+- Çalışmıyor
+- Görünüş kötü
+- Eksik yaptı
+- Oyunu bozdu
+- Çok yavaş
 
-The local layer decides **which provider should work, what may change, what must be tested and whether evidence is sufficient**. It does not pretend to generate the creative implementation itself.
+This feedback is stored with the task/provider result and is used by the local learning/routing system.
 
-## Superior Engine
+## How decisions work without a built-in AI
 
-### Project Genome
+ZeroScript is not a hidden language model. It has two layers:
 
-A bounded Studio scan records scripts, remotes, ScreenGuis, inferred systems, dependency edges and project-size counts. The result is stored per project in `zeroscript_memory.db` and helps avoid unrelated edits.
+1. Local rules classify the request, estimate risk, select one ready provider, limit scope and require tests.
+2. The connected browser AI performs the creative coding, UI, map and debugging work through Roblox Studio tools.
 
-### Intent Compiler
+ZeroScript can connect to the browser version of ChatGPT through the extension. It cannot directly attach a remote ChatGPT conversation to software on the user's computer; the Chrome tab where the extension is installed is the provider connection.
 
-Every task becomes a local contract with category, risk, phases, recommended provider, Shadow/Jury requirements, Behavioral Contract, Proof Contract and a human-readable decision trace.
+## Existing safety retained
 
-### Shadow Guard
+- new requests replace stale work
+- one Studio writer lock
+- checkpoints and rollback
+- server-authoritative guidance
+- catastrophic-change guard
+- playtest and Output requirements
+- provider failover
+- Memory Vault and Recipe learning
+- Design DNA and behavior contracts
+- proof status instead of trusting “done” text
 
-High-risk work receives a scoped sandbox/checkpoint under `ServerStorage.ZeroScriptShadow`. It is a transaction guard inside the current Studio connection, not a second independent Studio process.
-
-### Proof Engine
-
-A model saying “done” is not enough. A result remains **UNVERIFIED** when required playtest, Output, visual, changed-path, regression or jury evidence is missing.
-
-### Design DNA and Behavioral Contracts
-
-Each project can keep a visual identity and expected behaviors independently of script names. Visual tasks reuse the Design DNA; matching contracts are injected into tasks and checked against evidence.
-
-### Command Palette, Model Jury, Self-Healing and Live Game Brain
-
-- Studio Command Palette attaches selected Explorer paths to tasks.
-- High-risk work can require an independent Reviewer comparison.
-- Self-Healing can be off, suggestion-only or auto-shadow when idle.
-- Local Roblox Analytics JSON/CSV can be interpreted without a paid API.
-
-## Memory Vault and Recipe Studio
-
-SQLite Memory Vault stores global/project lessons, known failures, provider performance, Project Genome, Design DNA, contracts and proof results. The Lemonade-style Recipe Studio contains reusable workflows for UI, RNG, inventory, purchases, DataStores, security, economy, map, VFX, onboarding, performance and release readiness.
-
-## Advanced tools retained
-
-- persistent priority/dependency queue
-- Smart Automatic, Turbo, Fast, Balanced and Best modes
-- project index and Output watcher
-- timeouts and provider failover
-- instance/script checkpoints and rollback
-- visual comparison and interaction tests
-- Remote, DataStore, economy and Toolbox workflows
-- multiplayer readiness and Release Manager
-- emergency stop
+Model Jury and automatic multi-model review are disabled in Easy Mode because they added delay and confusion. High-risk work still receives a final verify/fix pass.
 
 ## Updating
 
-Use **ZeroScript'i güncelle** in Hub or double-click `ZeroScript Güncelle.bat`. It preserves token, Hub settings, profiles, templates, Memory Vault and config. After updating, press **Reload** on the ZeroScript card in `chrome://extensions`. The updater also refreshes the local Studio panel and Command Palette; restart Roblox Studio when it was open during the update.
+Run `ZeroScript Güncelle.bat`, then:
 
-## Supported providers
+1. Open `chrome://extensions`.
+2. Press **Reload** on ZeroScript.
+3. Refresh every open AI tab.
+4. Restart the Hub.
 
-DeepSeek, Gemini, Qwen, Kimi, GLM, Arena, ChatGPT, Claude, Microsoft Copilot and Mistral are supported. LM Studio and Ollama can be used as optional local providers.
-
-## Safety
-
-- Bridge and Hub bind to localhost and require a random local token.
-- Memory and Project Genome are guidance, never proof.
-- High-risk work leaves Turbo automatically.
-- Shadow Guard never publishes or writes production DataStore values.
-- Self-Healing defaults to suggestion mode.
-- Writer locks, permission scopes, catastrophic-change blocking, checkpoints and QA evidence gates remain enabled.
+The updater preserves the token, Hub settings, profiles, task templates, Memory Vault and local config.
 
 ## Validation limits
 
-The repository includes JavaScript syntax checks, Easy Mode blueprint tests, Python compile checks, control API tests, Memory Vault tests and Superior Engine tests. Real Chrome provider pages, Windows layout, Roblox Studio visuals, long multi-stage builds, multi-client sessions and production DataStores still require live testing.
+The repository includes JavaScript syntax checks, single-provider phase tests, two-stage blueprint tests, Python compile checks, control API tests, Memory Vault tests and version parity checks. Provider websites change frequently, so live Chrome and Roblox Studio testing is still required after provider UI updates.
 
 ## License
 
