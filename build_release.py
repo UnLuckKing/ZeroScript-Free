@@ -17,9 +17,9 @@ ROOT_FILES = [
     "bridge.py", "bridge_core.py", "launch_studio_mcp.py", "start.bat", "start_with_panel.bat",
     "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "ZeroScript Hub.bat", "zeroscript_hub.py", "zeroscript_hub_launcher.py",
     "hub_productivity_ui.py", "hub_workflow_extras.py", "hub_automation_ui.py", "hub_learning_ui.py", "hub_learning_extras.py",
-    "hub_superior_ui.py", "hub_easy_ui.py", "hub_easy_runtime.py", "hub_modern_ui.py", "memory_vault.py", "memory_vault_safeguards.py", "recipe_starter_packs.py",
-    "superior_engine.py", "control_api.py", "install_studio_panel.py", "install_studio_panel.bat",
-    "config.json", "LICENSE", "README.md", "CHANGELOG.md", "RELEASE_NOTES_1.31.md",
+    "hub_superior_ui.py", "hub_easy_ui.py", "hub_easy_runtime.py", "hub_easy_feedback.py", "hub_modern_ui.py",
+    "memory_vault.py", "memory_vault_safeguards.py", "recipe_starter_packs.py", "superior_engine.py", "control_api.py",
+    "install_studio_panel.py", "install_studio_panel.bat", "config.json", "LICENSE", "README.md", "CHANGELOG.md", "RELEASE_NOTES_1.32.md",
 ]
 PACKAGE_DIRS = ["zeroscript-extension", "roblox-plugin", "docs"]
 
@@ -54,62 +54,31 @@ def validate() -> None:
     run("node", "zeroscript-extension/test-learning-sync.js")
     run("node", "zeroscript-extension/test-superior-pack.js")
     run("node", "zeroscript-extension/test-easy-pack.js")
+    run("node", "zeroscript-extension/test-solo-pack.js")
     run(sys.executable, "-m", "unittest", "-v", "test_control_api.py", "test_memory_vault.py", "test_superior_engine.py")
     run(
         sys.executable,
         "-m",
         "py_compile",
-        "bridge.py",
-        "bridge_core.py",
-        "launch_studio_mcp.py",
-        "control_api.py",
-        "zeroscript_hub.py",
-        "zeroscript_hub_launcher.py",
-        "hub_productivity_ui.py",
-        "hub_workflow_extras.py",
-        "hub_automation_ui.py",
-        "hub_learning_ui.py",
-        "hub_learning_extras.py",
-        "hub_superior_ui.py",
-        "hub_easy_ui.py",
-        "hub_easy_runtime.py",
-        "hub_modern_ui.py",
-        "memory_vault.py",
-        "memory_vault_safeguards.py",
-        "recipe_starter_packs.py",
-        "superior_engine.py",
-        "install_studio_panel.py",
-        "build_release.py",
+        "bridge.py", "bridge_core.py", "launch_studio_mcp.py", "control_api.py", "zeroscript_hub.py", "zeroscript_hub_launcher.py",
+        "hub_productivity_ui.py", "hub_workflow_extras.py", "hub_automation_ui.py", "hub_learning_ui.py", "hub_learning_extras.py",
+        "hub_superior_ui.py", "hub_easy_ui.py", "hub_easy_runtime.py", "hub_easy_feedback.py", "hub_modern_ui.py",
+        "memory_vault.py", "memory_vault_safeguards.py", "recipe_starter_packs.py", "superior_engine.py", "install_studio_panel.py", "build_release.py",
     )
 
     manifest = json.loads((extension / "manifest.json").read_text("utf-8"))
     script_paths = {path for entry in manifest.get("content_scripts", []) for path in entry.get("js", [])}
-    required_content_scripts = {"core/provider-probe.js", "core/permission-guard.js"}
+    required_content_scripts = {"core/provider-probe.js", "core/permission-guard.js", "core/universal-launcher.js"}
     missing = sorted(required_content_scripts - script_paths)
     if missing:
         raise RuntimeError(f"Manifest is missing required content scripts: {', '.join(missing)}")
     for required in (
-        "background-suite.js",
-        "background-suite-fixes.js",
-        "background-studio-panel.js",
-        "background-studio-panel-fixes.js",
-        "background-hub-autopair.js",
-        "background-hub-actions.js",
-        "background-task-start-policy.js",
-        "background-speed-pack.js",
-        "background-speed-fixes.js",
-        "background-productivity-pack.js",
-        "background-productivity-fixes.js",
-        "background-productivity-sync.js",
-        "background-automation-pack.js",
-        "background-automation-fixes.js",
-        "background-automation-instance-fixes.js",
-        "background-learning-sync.js",
-        "background-superior-pack.js",
-        "background-superior-fixes.js",
-        "background-easy-pack.js",
-        "background-easy-fixes.js",
-        "popup-simple.js",
+        "background-suite.js", "background-suite-fixes.js", "background-studio-panel.js", "background-studio-panel-fixes.js",
+        "background-hub-autopair.js", "background-hub-actions.js", "background-task-start-policy.js", "background-speed-pack.js",
+        "background-speed-fixes.js", "background-productivity-pack.js", "background-productivity-fixes.js", "background-productivity-sync.js",
+        "background-automation-pack.js", "background-automation-fixes.js", "background-automation-instance-fixes.js", "background-learning-sync.js",
+        "background-superior-pack.js", "background-superior-fixes.js", "background-easy-pack.js", "background-easy-fixes.js",
+        "background-solo-pack.js", "popup-simple.js",
     ):
         if not (extension / required).exists():
             raise RuntimeError(f"Required release file is missing: {required}")
@@ -117,10 +86,9 @@ def validate() -> None:
         if not (ROOT / "roblox-plugin" / required).exists():
             raise RuntimeError(f"Native Studio plugin source is missing: {required}")
     for required in (
-        "zeroscript_hub.py", "zeroscript_hub_launcher.py", "hub_productivity_ui.py", "hub_workflow_extras.py",
-        "hub_automation_ui.py", "hub_learning_ui.py", "hub_learning_extras.py", "hub_superior_ui.py", "hub_easy_ui.py", "hub_easy_runtime.py", "hub_modern_ui.py",
-        "memory_vault.py", "memory_vault_safeguards.py", "recipe_starter_packs.py", "superior_engine.py",
-        "ZeroScript Hub.bat", "ZeroScript Kurulum.bat", "ZeroScript Güncelle.bat", "RELEASE_NOTES_1.31.md",
+        "zeroscript_hub.py", "zeroscript_hub_launcher.py", "hub_easy_ui.py", "hub_easy_runtime.py", "hub_easy_feedback.py",
+        "hub_modern_ui.py", "memory_vault.py", "superior_engine.py", "ZeroScript Hub.bat", "ZeroScript Kurulum.bat",
+        "ZeroScript Güncelle.bat", "RELEASE_NOTES_1.32.md",
     ):
         if not (ROOT / required).exists():
             raise RuntimeError(f"ZeroScript Hub release file is missing: {required}")
@@ -133,10 +101,7 @@ def release_notes(version: str) -> str:
     text = (ROOT / "CHANGELOG.md").read_text("utf-8")
     pattern = rf"(?ms)^## \[?{re.escape(version)}\]?.*?\n(.*?)(?=^## |\Z)"
     match = re.search(pattern, text)
-    if match:
-        body = match.group(1).strip()
-    else:
-        body = "See CHANGELOG.md for changes."
+    body = match.group(1).strip() if match else "See CHANGELOG.md for changes."
     return f"# ZeroScript {version}\n\n{body}\n"
 
 
@@ -170,7 +135,7 @@ def main() -> int:
     ext, bridge = versions()
     if ext != bridge:
         raise RuntimeError(f"Version mismatch: extension={ext}, bridge={bridge}")
-    if ext != "1.31.1":
+    if ext != "1.32.0":
         raise RuntimeError(f"Unexpected release version: {ext}")
     print(f"ZeroScript {ext} local release builder")
     validate()
