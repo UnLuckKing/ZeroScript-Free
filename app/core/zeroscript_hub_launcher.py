@@ -22,7 +22,7 @@ ttk.Frame.columnconfigure = _safe_columnconfigure
 
 import zeroscript_hub as hub  # noqa: E402
 
-hub.VERSION = "1.35.0"
+hub.VERSION = "1.35.1"
 hub.QUALITY_LABELS = {
     "Akıllı otomatik": "auto",
     "Turbo": "turbo",
@@ -76,7 +76,7 @@ def _control_only_start_services(self) -> None:
             if hub.port_open(hub.CONTROL_PORT, 0.12):
                 hub.request_json("/pair/start", hub.ensure_token(), "POST", {"seconds": 180}, timeout=1.5)
             if not hub.port_open(hub.BRIDGE_PORT, 0.12):
-                self.log("Bridge bekleniyor: Start.exe veya start.bat dosyasını aç.")
+                self.log("Bridge bekleniyor: ZeroScript One.bat dosyasını yeniden aç.")
         except Exception as exc:
             self.log(f"Hub kontrol servisi başlatılamadı: {exc}")
         finally:
@@ -87,7 +87,7 @@ def _control_only_start_services(self) -> None:
 
 def _control_only_stop_services(self) -> None:
     hub.kill_port(hub.CONTROL_PORT)
-    self.log("Hub kontrol servisi durduruldu. Start bridge'e dokunulmadı.")
+    self.log("Hub kontrol servisi durduruldu. Bridge'e dokunulmadı.")
 
 
 def _control_only_restart_services(self) -> None:
@@ -184,7 +184,7 @@ def _safe_start_task(self) -> None:
                 self.after(0, messagebox.showerror, "ZeroScript", "Hub kontrol servisi başlatılamadı.")
                 return
             if not hub.port_open(hub.BRIDGE_PORT, 0.12):
-                self.after(0, messagebox.showerror, "ZeroScript", "Önce Start.exe veya start.bat dosyasını aç.")
+                self.after(0, messagebox.showerror, "ZeroScript", "ZeroScript One.bat dosyasını yeniden aç.")
                 return
             result = self.action("workbench_start", {"goal": goal, "source": "advanced"}, quiet=True)
             if not result.get("ok"):
@@ -212,7 +212,7 @@ def _safe_pair_extension(self) -> None:
 def _safe_repair(self) -> None:
     self.start_services()
     if not hub.port_open(hub.BRIDGE_PORT, 0.12):
-        messagebox.showinfo("ZeroScript", "Start.exe veya start.bat açık değil. Önce Start'ı aç.")
+        messagebox.showinfo("ZeroScript", "Bridge açık değil. ZeroScript One.bat dosyasını yeniden aç.")
         return
     self.action("repair_connection")
 
@@ -230,6 +230,7 @@ from hub_easy_ui import install as install_easy_ui  # noqa: E402
 from hub_one_ui import install as install_one_ui  # noqa: E402
 from hub_easy_feedback import install as install_easy_feedback  # noqa: E402
 from hub_modern_ui import install as install_modern_ui  # noqa: E402
+from hub_one_recovery import install as install_one_recovery  # noqa: E402
 
 install_productivity_ui(hub)
 install_workflow_extras(hub)
@@ -240,6 +241,7 @@ install_easy_ui(hub)
 install_one_ui(hub)
 install_easy_feedback(hub)
 install_modern_ui(hub)
+install_one_recovery(hub)
 
 
 if __name__ == "__main__":
