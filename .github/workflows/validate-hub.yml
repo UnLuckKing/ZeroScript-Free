@@ -50,4 +50,4 @@ jobs:
           control = pathlib.Path('app/core/control_api.py').read_text('utf-8')
           assert re.search(r'^BRIDGE_VERSION = "([^"]+)"', bridge, re.M).group(1) == version
           assert re.search(r'^VERSION = "([^"]+)"', control, re.M).group(1) == version
-          assert version == '1.35.0'
+          assert version == '1.35.1'
