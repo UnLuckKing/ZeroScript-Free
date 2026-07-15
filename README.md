@@ -1,6 +1,6 @@
 # ZeroScript One — Roblox Studio Prototype Accelerator
 
-ZeroScript One creates a working Roblox prototype from a Golden Template, then uses one browser AI only when custom development or final polish is needed. Version **1.35.0** adds **ChatGPT Max**, a ChatGPT-first single-agent workflow for Roblox Studio.
+ZeroScript One creates a working Roblox prototype from a Golden Template, then uses one browser AI only when custom development or final polish is needed. Version **1.35.1** includes **ChatGPT Max** plus the ChatGPT startup and empty desktop-screen reliability fixes.
 
 ## Daily use
 
@@ -28,6 +28,14 @@ ChatGPT Max is enabled by default for AI-owned work:
 - the browser panel detects the visible ChatGPT model/reasoning label and offers **Gücü yükselt**
 
 The extension cannot unlock a model that the ChatGPT account does not include. It selects only options that are visibly available and enabled in the model picker.
+
+## 1.35.1 reliability fixes
+
+- ChatGPT bootstrap temporarily unlocks its own composer while injecting the hidden startup prompt, then restores the user-input lock.
+- A rejected ChatGPT startup message now returns a real error instead of remaining on **Starting the Roblox agent…** indefinitely.
+- The desktop app uses a final visibility guard that re-selects the ZeroScript One workspace after every delayed UI layer settles.
+- Legacy notebook tabs are hidden rather than deleted, preventing an empty desktop window.
+- A compact functional fallback screen is created automatically if the rich One workspace fails to build.
 
 ## Clean repository layout
 
