@@ -1,15 +1,33 @@
 # ZeroScript One — Roblox Studio Prototype Accelerator
 
-ZeroScript One creates a working Roblox prototype from a Golden Template, then uses one browser AI only when custom development or final polish is needed.
+ZeroScript One creates a working Roblox prototype from a Golden Template, then uses one browser AI only when custom development or final polish is needed. Version **1.35.0** adds **ChatGPT Max**, a ChatGPT-first single-agent workflow for Roblox Studio.
 
 ## Daily use
 
 1. Run `ZeroScript One.bat`.
 2. Open the Roblox place in Studio.
-3. Choose **15 dk Prototip**, **1 Günlük Yayın** or **Özel İş**.
-4. Write the idea and press **Yap**.
+3. Open one fresh ChatGPT conversation.
+4. In the ZeroScript panel, press **Gücü yükselt** to select the strongest reasoning option available to the account.
+5. Choose **15 dk Prototip**, **1 Günlük Yayın** or **Özel İş**.
+6. Write the idea and press **Yap**.
 
 Prototype mode installs and verifies the RNG/Aura foundation directly, without waiting for an AI to rebuild standard roll, pity, luck, inventory, save, UI and map systems.
+
+## ChatGPT Max
+
+ChatGPT Max is enabled by default for AI-owned work:
+
+- ready ChatGPT is selected before other providers
+- one ChatGPT session owns inspection, implementation, self-review, Play mode testing and Output verification
+- no separate Analyst, Reviewer, UI, Map or QA model is created
+- a compact Project Capsule supplies PlaceId, known systems, recent changed paths, Output signals and verified reports
+- broad rescans and repeated script reads are discouraged
+- visual tasks require desktop/mobile and button checks in the same pass
+- data, purchase and Remote work stays server-authoritative
+- an idle ChatGPT session receives at most two bounded continuation nudges instead of silently waiting for hours
+- the browser panel detects the visible ChatGPT model/reasoning label and offers **Gücü yükselt**
+
+The extension cannot unlock a model that the ChatGPT account does not include. It selects only options that are visibly available and enabled in the model picker.
 
 ## Clean repository layout
 
@@ -30,7 +48,7 @@ Run `ZeroScript Kurulum.bat` once. It installs Python dependencies, installs the
 
 ## Updating
 
-Run `ZeroScript Güncelle.bat`, reload ZeroScript One in `chrome://extensions`, then restart Roblox Studio. The updater preserves local settings, tokens, Memory Vault and bridge configuration while removing obsolete root files.
+Run `ZeroScript Güncelle.bat`, reload ZeroScript One in `chrome://extensions`, close old ChatGPT tabs, then restart Roblox Studio. The updater preserves local settings, tokens, Memory Vault and bridge configuration while removing obsolete root files.
 
 ## Development
 
