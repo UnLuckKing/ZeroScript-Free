@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.35.0
+
+- Added **ChatGPT Max** as the default ChatGPT-first workbench policy.
+- Added visible model/reasoning detection and a **Gücü yükselt** action for the strongest enabled ChatGPT option.
+- Added compact Project Capsules to reduce broad rescans and repeated context.
+- ChatGPT now owns implementation, self-review, Play mode testing, Output checks and verified fixes in one pass.
+- Added bounded inactivity recovery with at most two same-session continuation nudges.
+- Ordinary workbench tasks do not create separate Analyst, Reviewer, UI, Map or QA agents.
+
 ## 1.34.0
 
 - Added **15 dk Prototip** mode backed by a deterministic RNG/Aura Golden Template.
