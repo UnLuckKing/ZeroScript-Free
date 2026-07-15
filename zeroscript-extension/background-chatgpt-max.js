@@ -214,12 +214,16 @@ setInterval(() => {
     zsChatGPTMax.nudges = 0;
     zsChatGPTMax.lastNudgeAt = 0;
     zsChatGPTMax.lastActivityAt = Date.now();
+    zsChatGPTMax._activitySignature = "";
     zsChatGPTMaxPersist().catch(() => {});
     return;
   }
 
   const reports = Array.isArray(teamTask.sharedReports) ? teamTask.sharedReports.length : 0;
-  const signature = `${!!writerLease}:${reports}:${String(teamTask.lastReport || "").length}:${Number(teamTask.updatedAt || 0)}`;
+  const changedCount = typeof zsManager !== "undefined" && zsManager && zsManager.memory && Array.isArray(zsManager.memory.changedPaths)
+    ? zsManager.memory.changedPaths.length
+    : 0;
+  const signature = `${!!writerLease}:${reports}:${changedCount}:${String(teamTask.lastReport || "").length}`;
   if (signature !== zsChatGPTMax._activitySignature) {
     zsChatGPTMax._activitySignature = signature;
     zsChatGPTMax.lastActivityAt = Date.now();
