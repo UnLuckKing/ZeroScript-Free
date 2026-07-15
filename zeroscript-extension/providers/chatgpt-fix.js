@@ -9,6 +9,8 @@
   if (location.hostname.replace(/^www\./, "") !== "chatgpt.com") return;
   if (typeof ZSProvider === "undefined" || !ZSProvider) return;
 
+  let inputLocked = false;
+
   function visible(element) {
     if (!element || !element.isConnected || element.closest("#zs-root")) return false;
     const style = getComputedStyle(element);
@@ -20,7 +22,9 @@
       "#prompt-textarea",
       '[data-testid="composer-text-input"]',
       'div.ProseMirror[contenteditable="true"]',
+      'div.ProseMirror[contenteditable="false"]',
       'main form div[contenteditable="true"]',
+      'main form div[contenteditable="false"]',
       'textarea[data-id="root"]',
       'textarea[placeholder*="Message" i]',
       'textarea[placeholder*="Mesaj" i]',
@@ -57,28 +61,59 @@
       editor.parentElement;
   }
 
+  function dispatchInput(editor, text) {
+    try {
+      editor.dispatchEvent(new InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        inputType: "insertText",
+        data: text,
+      }));
+    } catch {}
+    try {
+      editor.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        inputType: "insertText",
+        data: text,
+      }));
+    } catch {
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  }
+
   function setEditorText(editor, text) {
     if (editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement) {
       const proto = editor instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
       const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+      editor.readOnly = false;
       if (setter) setter.call(editor, text); else editor.value = text;
       editor.dispatchEvent(new Event("input", { bubbles: true }));
       editor.dispatchEvent(new Event("change", { bubbles: true }));
       return;
     }
 
+    // The core intentionally locks the composer while bootstrapping. The old
+    // ChatGPT override then tried to inject into contenteditable=false, so the
+    // hidden startup prompt never landed and the UI stayed on "Starting…".
+    // Temporarily unlock only for our own synthetic write, then restore the lock.
+    editor.setAttribute("contenteditable", "true");
     editor.focus();
     const selection = window.getSelection();
     const range = document.createRange();
     range.selectNodeContents(editor);
     selection.removeAllRanges();
     selection.addRange(range);
-    document.execCommand("insertText", false, text);
-    editor.dispatchEvent(new InputEvent("input", {
-      bubbles: true,
-      inputType: "insertText",
-      data: text,
-    }));
+    let inserted = false;
+    try { inserted = document.execCommand("insertText", false, text); } catch {}
+    if (!inserted || !editorText().trim()) {
+      editor.textContent = text;
+      const fallback = document.createRange();
+      fallback.selectNodeContents(editor);
+      fallback.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(fallback);
+    }
+    dispatchInput(editor, text);
   }
 
   function sendButton() {
@@ -132,25 +167,33 @@
     if (!editor) throw new Error("ChatGPT input box not found. Reload the ChatGPT tab and open a normal new chat.");
     editor.focus();
     setEditorText(editor, String(text));
-    await waitFor(() => editorText().trim().length > 0, 3500);
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    const inserted = await waitFor(() => editorText().trim().length > 0, 3500);
+    if (!inserted) {
+      if (inputLocked) setInputLock(true);
+      throw new Error("ChatGPT composer rejected the injected startup prompt. Reload this chat and retry.");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
 
     const button = sendButton();
     if (button && !button.disabled && button.getAttribute("aria-disabled") !== "true" && !stopButton()) {
       button.click();
-      return;
+    } else {
+      const eventInit = { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true };
+      editor.dispatchEvent(new KeyboardEvent("keydown", eventInit));
+      editor.dispatchEvent(new KeyboardEvent("keyup", eventInit));
     }
 
-    const eventInit = { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true };
-    editor.dispatchEvent(new KeyboardEvent("keydown", eventInit));
-    editor.dispatchEvent(new KeyboardEvent("keyup", eventInit));
+    const accepted = await waitFor(() => editorText().trim() === "" || !!stopButton() || ZSProvider.userCount() > 0, 4500);
+    if (inputLocked) setTimeout(() => setInputLock(true), 0);
+    if (!accepted) throw new Error("ChatGPT did not accept the ZeroScript startup message. Press Yenile and open a fresh chat.");
   }
 
   function setInputLock(on) {
+    inputLocked = !!on;
     const editor = getEditor();
     if (!editor) return;
-    if (editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement) editor.readOnly = !!on;
-    else editor.setAttribute("contenteditable", on ? "false" : "true");
+    if (editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement) editor.readOnly = inputLocked;
+    else editor.setAttribute("contenteditable", inputLocked ? "false" : "true");
   }
 
   // Critical fix: never insert ZeroScript into ChatGPT's React composer tree.
