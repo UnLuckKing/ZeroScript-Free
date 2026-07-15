@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ZeroScript One × Roblox Studio",
-  "version": "1.34.0",
-  "description": "15-minute Golden Template prototypes, one-request AI workbench and launch-day Roblox Studio automation.",
+  "version": "1.35.0",
+  "description": "ChatGPT Max single-agent Roblox development, 15-minute Golden Template prototypes and one-request Studio automation.",
   "permissions": ["storage", "clipboardWrite", "notifications"],
   "host_permissions": [
     "https://chat.deepseek.com/*",
@@ -65,7 +65,7 @@
     },
     {
       "matches": ["https://chatgpt.com/*"],
-      "js": ["core/config.js", "core/parser.js", "providers/browser-chat.js", "providers/browser-chat-init-fix.js", "providers/chatgpt-fix.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
+      "js": ["core/config.js", "core/parser.js", "providers/browser-chat.js", "providers/browser-chat-init-fix.js", "providers/chatgpt-fix.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js", "core/chatgpt-max.js"],
       "css": ["overlay.css"], "run_at": "document_idle"
     },
     {
