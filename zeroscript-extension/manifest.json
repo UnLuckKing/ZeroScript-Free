@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ZeroScript One × Roblox Studio",
-  "version": "1.35.0",
-  "description": "ChatGPT Max single-agent Roblox development, 15-minute Golden Template prototypes and one-request Studio automation.",
+  "version": "1.35.1",
+  "description": "ChatGPT Max with reliable composer bootstrap, visible single-screen desktop workspace and one-request Roblox Studio automation.",
   "permissions": ["storage", "clipboardWrite", "notifications"],
   "host_permissions": [
     "https://chat.deepseek.com/*",
