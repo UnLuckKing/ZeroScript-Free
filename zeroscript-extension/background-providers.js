@@ -48,6 +48,10 @@ importScripts("background-solo-fixes.js");
 // Public one-request workflow: one available AI owns implementation and testing.
 importScripts("background-workbench-pack.js");
 
+// ChatGPT-first execution: compact project capsule, strongest available reasoning
+// visibility, same-pass self-review and bounded inactivity nudges.
+importScripts("background-chatgpt-max.js");
+
 // Deterministic Golden Templates create a working prototype in two bounded
 // Studio calls; Launch Day adds at most one workbench polish pass.
 importScripts("background-prototype-pack.js");
