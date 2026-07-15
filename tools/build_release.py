@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
-VERSION = "1.35.0"
+VERSION = "1.35.1"
 INCLUDE_FILES = ["ZeroScript One.bat", "ZeroScript Güncelle.bat", "ZeroScript Kurulum.bat", "README.md", "CHANGELOG.md", "LICENSE", ".gitignore"]
 INCLUDE_DIRS = ["app", "bridge", "docs", "roblox-plugin", "templates", "tools", "tests", "zeroscript-extension"]
 PYTHONPATH = os.pathsep.join(str(ROOT / name) for name in ("app/core", "app/ui", "app/services"))
