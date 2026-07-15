@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
-VERSION = "1.34.0"
+VERSION = "1.35.0"
 INCLUDE_FILES = ["ZeroScript One.bat", "ZeroScript Güncelle.bat", "ZeroScript Kurulum.bat", "README.md", "CHANGELOG.md", "LICENSE", ".gitignore"]
 INCLUDE_DIRS = ["app", "bridge", "docs", "roblox-plugin", "templates", "tools", "tests", "zeroscript-extension"]
 PYTHONPATH = os.pathsep.join(str(ROOT / name) for name in ("app/core", "app/ui", "app/services"))
@@ -44,7 +44,7 @@ def validate() -> None:
             "test-parser.js", "test-control-suite.js", "test-task-start-policy.js", "test-speed-pack.js",
             "test-productivity-pack.js", "test-automation-pack.js", "test-automation-fixes.js",
             "test-learning-sync.js", "test-superior-pack.js", "test-easy-pack.js", "test-solo-pack.js",
-            "test-browser-chat-init-fix.js", "test-workbench-pack.js", "test-prototype-pack.js",
+            "test-browser-chat-init-fix.js", "test-workbench-pack.js", "test-prototype-pack.js", "test-chatgpt-max.js",
         ):
             path = ROOT / "zeroscript-extension" / name
             if path.exists():
