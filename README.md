@@ -1,6 +1,6 @@
 # ZeroScript One — Roblox Studio Prototype Accelerator
 
-ZeroScript One creates a working Roblox prototype from a Golden Template, then uses one browser AI only when custom development or final polish is needed. Version **1.35.1** includes **ChatGPT Max** plus the ChatGPT startup and empty desktop-screen reliability fixes.
+ZeroScript One creates a working Roblox prototype from a Golden Template, then uses one browser AI only when custom development or final polish is needed. Version **1.36.0** keeps **ChatGPT Max** and selectively ports the useful reliability work from upstream ZeroScript 1.4.1–1.4.3.
 
 ## Daily use
 
@@ -28,6 +28,21 @@ ChatGPT Max is enabled by default for AI-owned work:
 - the browser panel detects the visible ChatGPT model/reasoning label and offers **Gücü yükselt**
 
 The extension cannot unlock a model that the ChatGPT account does not include. It selects only options that are visibly available and enabled in the model picker.
+
+## 1.36 upstream reliability sync
+
+The upstream release was reviewed feature by feature rather than merged blindly:
+
+- Studio MCP port ownership now checks both TCP and TCPv6.
+- A hidden ZeroScript One launch can no longer freeze on an invisible port-conflict yes/no prompt.
+- A leftover `StudioMCP.exe` outside ZeroScript's own process tree is reclaimed when it causes the permanent **0 tools** state.
+- A proven foreign WebSocket host/port squatter is removed and the exact Studio MCP re-registration step is printed.
+- Missing optional MCP commands now show the real command/configuration error instead of looking like a silent restart loop.
+- Qwen reads the new stable response ID, removing the roughly 30-second wait that could occur after every tool turn.
+- Oversized Qwen tool results are safely shortened below its composer limit while keeping both the beginning and end.
+- The AI bootstrap wording is framed as a technical routing note rather than a prohibition, reducing unnecessary model refusals.
+
+Meta AI from upstream 1.4.3 was intentionally not added. ZeroScript One stays ChatGPT-first and avoids adding another provider that would make the interface and routing more complicated.
 
 ## 1.35.1 reliability fixes
 
