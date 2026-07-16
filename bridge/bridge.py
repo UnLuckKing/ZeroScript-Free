@@ -10,9 +10,11 @@ from __future__ import annotations
 import asyncio
 
 import bridge_core as _bridge
+from upstream_release_fixes import install as _install_upstream_release_fixes
 
-BRIDGE_VERSION = "1.35.1"
+BRIDGE_VERSION = "1.36.0"
 _bridge.BRIDGE_VERSION = BRIDGE_VERSION
+_install_upstream_release_fixes(_bridge)
 
 
 def main() -> int:
