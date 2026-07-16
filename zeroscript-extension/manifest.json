@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ZeroScript One × Roblox Studio",
-  "version": "1.35.1",
-  "description": "ChatGPT Max with reliable composer bootstrap, visible single-screen desktop workspace and one-request Roblox Studio automation.",
+  "version": "1.36.0",
+  "description": "ChatGPT Max with upstream Studio self-healing, faster Qwen fallback, bounded tool-result sends and one-request Roblox Studio automation.",
   "permissions": ["storage", "clipboardWrite", "notifications"],
   "host_permissions": [
     "https://chat.deepseek.com/*",
@@ -31,27 +31,27 @@
   "content_scripts": [
     {
       "matches": ["https://chat.deepseek.com/*"],
-      "js": ["core/config.js", "core/parser.js", "providers/deepseek.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
+      "js": ["core/config.js", "core/upstream-prompt-fixes.js", "core/parser.js", "providers/deepseek.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
       "css": ["overlay.css"], "run_at": "document_idle"
     },
     {
       "matches": ["https://gemini.google.com/*"],
-      "js": ["core/config.js", "core/parser.js", "providers/gemini.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
+      "js": ["core/config.js", "core/upstream-prompt-fixes.js", "core/parser.js", "providers/gemini.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
       "css": ["overlay.css"], "run_at": "document_idle"
     },
     {
       "matches": ["https://www.kimi.com/*", "https://kimi.com/*"],
-      "js": ["core/config.js", "core/parser.js", "providers/kimi.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
+      "js": ["core/config.js", "core/upstream-prompt-fixes.js", "core/parser.js", "providers/kimi.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
       "css": ["overlay.css"], "run_at": "document_idle"
     },
     {
       "matches": ["https://chat.z.ai/*"],
-      "js": ["core/config.js", "core/parser.js", "providers/glm.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
+      "js": ["core/config.js", "core/upstream-prompt-fixes.js", "core/parser.js", "providers/glm.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
       "css": ["overlay.css"], "run_at": "document_idle"
     },
     {
       "matches": ["https://arena.ai/*"],
-      "js": ["core/config.js", "core/parser.js", "providers/arena.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
+      "js": ["core/config.js", "core/upstream-prompt-fixes.js", "core/parser.js", "providers/arena.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
       "css": ["overlay.css"], "run_at": "document_idle"
     },
     {
@@ -60,17 +60,17 @@
     },
     {
       "matches": ["https://chat.qwen.ai/*"],
-      "js": ["core/config.js", "core/parser.js", "providers/qwen.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
+      "js": ["core/config.js", "core/upstream-prompt-fixes.js", "core/parser.js", "providers/qwen.js", "providers/qwen-release-fixes.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
       "css": ["overlay.css"], "run_at": "document_idle"
     },
     {
       "matches": ["https://chatgpt.com/*"],
-      "js": ["core/config.js", "core/parser.js", "providers/browser-chat.js", "providers/browser-chat-init-fix.js", "providers/chatgpt-fix.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js", "core/chatgpt-max.js"],
+      "js": ["core/config.js", "core/upstream-prompt-fixes.js", "core/parser.js", "providers/browser-chat.js", "providers/browser-chat-init-fix.js", "providers/chatgpt-fix.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js", "core/chatgpt-max.js"],
       "css": ["overlay.css"], "run_at": "document_idle"
     },
     {
       "matches": ["https://claude.ai/*", "https://copilot.microsoft.com/*", "https://chat.mistral.ai/*"],
-      "js": ["core/config.js", "core/parser.js", "providers/browser-chat.js", "providers/browser-chat-init-fix.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
+      "js": ["core/config.js", "core/upstream-prompt-fixes.js", "core/parser.js", "providers/browser-chat.js", "providers/browser-chat-init-fix.js", "core/catastrophic-guard.js", "core/permission-guard.js", "core/team-reliability.js", "core/provider-probe.js", "core/main.js", "core/universal-launcher.js"],
       "css": ["overlay.css"], "run_at": "document_idle"
     }
   ]
