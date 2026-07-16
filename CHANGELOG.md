@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.36.0
+
+- Reviewed upstream ZeroScript 1.4.1–1.4.3 and ported only the reliability improvements that fit the simplified ChatGPT-first product.
+- Added TCP and TCPv6 Studio MCP port ownership detection.
+- Added PID-based reclaim for a leftover `StudioMCP.exe` outside ZeroScript's own process tree.
+- Removed the hidden interactive port-conflict prompt that could freeze the one-click launcher.
+- Added proven foreign WebSocket host/port-squatter recovery and clearer Studio re-registration guidance.
+- Added explicit missing-command diagnostics for optional MCP servers.
+- Ported Qwen's stable descendant response ID fix, removing the roughly 30-second tool-turn delay.
+- Added Qwen's 131072-character composer guard with head-and-tail-preserving truncation.
+- Reframed the bootstrap tool warning as a technical routing note to reduce unnecessary model refusals.
+- Meta AI was intentionally not added; ZeroScript One remains ChatGPT-first and avoids provider clutter.
+
+## 1.35.1
+
+- Fixed ChatGPT bootstrap injection while the composer is locked.
+- Added explicit startup-send failure reporting instead of an endless **Starting the Roblox agent…** state.
+- Added the final ZeroScript One workspace visibility guard and functional fallback desktop screen.
+
 ## 1.35.0
 
 - Added **ChatGPT Max** as the default ChatGPT-first workbench policy.
